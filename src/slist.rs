@@ -1,18 +1,76 @@
+//! An intrusive singly linked list implementation.
+//!
+//! This module provides `SLinkedList`, a singly linked list optimized for FIFO (First-In, First-Out)
+//! queue-like behavior. Elements embed the list nodes themselves, offering memory efficiency
+//! and explicit control over allocation.
+//!
+//! # Features
+//! - O(1) push to back and pop from front.
+//! - Generic over pointer types (`Box`, `Arc`, `NonNull`, raw pointers).
+//!
+//! # Example
+//! ```rust
+//! use embed_collections::{slist::{SLinkedList, SListItem, SListNode}, Pointer};
+//! use std::cell::UnsafeCell;
+//!
+//! struct MyTask {
+//!     priority: u8,
+//!     description: String,
+//!     node: UnsafeCell<SListNode<MyTask, ()>>, // Node embedded directly
+//! }
+//!
+//! impl MyTask {
+//!     fn new(priority: u8, desc: &str) -> Self {
+//!         MyTask {
+//!             priority,
+//!             description: desc.to_string(),
+//!             node: UnsafeCell::new(SListNode::default()),
+//!         }
+//!     }
+//! }
+//!
+//! // Safety: Implementors must ensure `get_node` returns a valid reference
+//! // to the embedded `SListNode`. `UnsafeCell` is used for interior mutability.
+//! unsafe impl SListItem<()> for MyTask {
+//!     fn get_node(&self) -> &mut SListNode<Self, ()> {
+//!         unsafe { &mut *self.node.get() }
+//!     }
+//! }
+//!
+//! let mut task_queue = SLinkedList::<Box<MyTask>, ()>::new();
+//!
+//! task_queue.push_back(Box::new(MyTask::new(1, "Handle user login")));
+//! task_queue.push_back(Box::new(MyTask::new(2, "Process analytics data")));
+//! task_queue.push_back(Box::new(MyTask::new(1, "Send welcome email")));
+//!
+//! assert_eq!(task_queue.len(), 3);
+//!
+//! // Process tasks in FIFO order
+//! assert_eq!(task_queue.pop_front().unwrap().description, "Handle user login");
+//! assert_eq!(task_queue.pop_front().unwrap().description, "Process analytics data");
+//! assert_eq!(task_queue.pop_front().unwrap().description, "Send welcome email");
+//! assert!(task_queue.is_empty());
+//! ```
+
 use crate::Pointer;
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem;
 use std::ptr::null;
 
-/// A trait to return internal mutable SListNode for specified list
+/// A trait to return internal mutable SListNode for specified list.
 ///
-/// The tag is for distinguish different SListNode among the item.
+/// The tag is used to distinguish different SListNodes within the same item.
 ///
-/// NOTE: User must use UnsafeCell to hold SListNode
+/// # Safety
+/// Implementors must ensure `get_node` returns a valid reference to the `SListNode`
+/// embedded within `Self`. Users must use `UnsafeCell` to hold `SListNode` to support
+/// interior mutability required by list operations.
 pub unsafe trait SListItem<Tag>: Sized {
     fn get_node(&self) -> &mut SListNode<Self, Tag>;
 }
 
+/// The node structure that must be embedded in items to be stored in a `SLinkedList`.
 pub struct SListNode<T: Sized, Tag> {
     next: *const T,
     _phan: PhantomData<fn(&Tag)>,
@@ -41,7 +99,9 @@ impl<T: SListItem<Tag> + fmt::Debug, Tag> fmt::Debug for SListNode<T, Tag> {
     }
 }
 
-/// A singly linked list with head and tail pointers (FIFO queue)
+/// A singly linked list with head and tail pointers (FIFO queue).
+///
+/// Supports O(1) push to back and pop from front.
 pub struct SLinkedList<P, Tag>
 where
     P: Pointer,
@@ -86,11 +146,14 @@ where
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
+    /// Creates a new, empty singly linked list.
     #[inline(always)]
     pub fn new() -> Self {
         SLinkedList { length: 0, head: null(), tail: null(), _phan: Default::default() }
     }
 
+    /// Clears the list pointers. Note: This does NOT drop the elements.
+    /// Use `drain` or `drop` if you need to release owned resources.
     #[inline]
     pub fn clear(&mut self) {
         self.length = 0;
@@ -98,14 +161,22 @@ where
         self.tail = null();
     }
 
+    /// Returns the length of the list.
     #[inline(always)]
     pub fn get_length(&self) -> u64 {
         return self.length;
     }
 
+    /// Returns the length of the list as `usize`.
     #[inline(always)]
     pub fn len(&self) -> usize {
         return self.length as usize;
+    }
+
+    /// Returns `true` if the list contains no elements.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
     }
 
     /// Appends an element to the back of the list (FIFO: enqueue).
@@ -154,27 +225,32 @@ where
         }
     }
 
+    /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
         if self.head.is_null() { None } else { unsafe { Some(&(*self.head)) } }
     }
 
+    /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
         if self.tail.is_null() { None } else { unsafe { Some(&(*self.tail)) } }
     }
 
+    /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &P::Target) -> bool {
         if self.head.is_null() { false } else { self.head == node as *const P::Target }
     }
 
     // NOTE: If you plan on turn the raw pointer to owned, use drain instead
+    /// Returns an iterator over the list (borrowed).
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> SLinkedListIterator<'a, P, Tag> {
         SLinkedListIterator { list: self, cur: null() }
     }
 
+    /// Returns a draining iterator that removes items from the list.
     #[inline(always)]
     pub fn drain<'a>(&'a mut self) -> SLinkedListDrainer<'a, P, Tag> {
         SLinkedListDrainer { list: self }
@@ -292,22 +368,6 @@ mod tests {
     unsafe impl SListItem<TestTag> for TestNode {
         fn get_node(&self) -> &mut SListNode<Self, TestTag> {
             unsafe { &mut *self.node.get() }
-        }
-    }
-
-    impl crate::Pointer for Box<TestNode> {
-        type Target = TestNode;
-
-        fn as_ref(&self) -> &Self::Target {
-            &**self
-        }
-
-        unsafe fn from_raw(p: *const Self::Target) -> Self {
-            unsafe { Box::from_raw(p as *mut Self::Target) }
-        }
-
-        fn into_raw(self) -> *const Self::Target {
-            Box::into_raw(self) as *const Self::Target
         }
     }
 

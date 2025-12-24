@@ -1,8 +1,11 @@
 [package]
-name = "rust-template"
-version = "0.0.1"
+name = "embed-collections"
+version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "A collection of intrusive data structures (linked lists) for Rust, supporting various pointer types."
+keywords = ["intrusive", "linked-list", "collection", "no-std"]
+categories = ["data-structures", "no-std"]
 
 [dependencies]
 

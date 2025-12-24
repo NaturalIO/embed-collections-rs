@@ -1,19 +1,78 @@
+//! An intrusive doubly linked list implementation.
+//!
+//! This module provides `DLinkedList`, a doubly linked list where elements
+//! embed the list nodes themselves. This design offers memory efficiency
+//! and explicit control over allocation, suitable for scenarios like
+//! building LRU caches directly within data structures.
+//!
+//! # Features
+//! - O(1) push and pop from both front and back.
+//! - Generic over pointer types (`Box`, `Arc`, `NonNull`, raw pointers).
+//! - Supports multiple lists for the same item via `Tag`.
+//!
+//! # Example
+//! ```rust
+//! use embed_collections::{dlist::{DLinkedList, ListItem, ListNode}, Pointer};
+//! use std::cell::UnsafeCell;
+//!
+//! struct MyItem {
+//!     id: u32,
+//!     data: String,
+//!     node: UnsafeCell<ListNode<MyItem, ()>>, // Node embedded directly
+//! }
+//!
+//! impl MyItem {
+//!     fn new(id: u32, data: &str) -> Self {
+//!         MyItem {
+//!             id,
+//!             data: data.to_string(),
+//!             node: UnsafeCell::new(ListNode::default()),
+//!         }
+//!     }
+//! }
+//!
+//! // Safety: Implementors must ensure `get_node` returns a valid reference
+//! // to the embedded `ListNode`. `UnsafeCell` is used for interior mutability.
+//! unsafe impl ListItem<()> for MyItem {
+//!     fn get_node(&self) -> &mut ListNode<Self, ()> {
+//!         unsafe { &mut *self.node.get() }
+//!     }
+//! }
+//!
+//! let mut list = DLinkedList::<Box<MyItem>, ()>::new();
+//!
+//! list.push_back(Box::new(MyItem::new(1, "First")));
+//! list.push_front(Box::new(MyItem::new(2, "Second")));
+//! list.push_back(Box::new(MyItem::new(3, "Third")));
+//!
+//! assert_eq!(list.len(), 3);
+//!
+//! // List order: (2, "Second") <-> (1, "First") <-> (3, "Third")
+//! assert_eq!(list.pop_front().unwrap().id, 2);
+//! assert_eq!(list.pop_back().unwrap().id, 3);
+//! assert_eq!(list.pop_front().unwrap().id, 1);
+//! assert!(list.is_empty());
+//! ```
+
 use crate::Pointer;
 use std::marker::PhantomData;
-/// A linked list for Btree Node in LRU
-///
-/// TODO should cleanup unused functions
 use std::{fmt, mem, ptr::null};
 
-/// A trait to return internal mutable ListNode for specified list
+/// A trait to return internal mutable ListNode for specified list.
 ///
-/// The tag is for distinguish different ListNode among the item.
+/// The tag is used to distinguish different ListNodes within the same item,
+/// allowing an item to belong to multiple lists simultaneously.
 ///
-/// NOTE: User must use UnsafeCell to hold ListNode
+/// # Safety
+///
+/// Implementors must ensure `get_node` returns a valid reference to the `ListNode`
+/// embedded within `Self`. Users must use `UnsafeCell` to hold `ListNode` to support
+/// interior mutability required by list operations.
 pub unsafe trait ListItem<Tag>: Sized {
     fn get_node(&self) -> &mut ListNode<Self, Tag>;
 }
 
+/// The node structure that must be embedded in items to be stored in a `DLinkedList`.
 pub struct ListNode<T: Sized, Tag> {
     prev: *const T,
     next: *const T,
@@ -58,6 +117,9 @@ impl<T: ListItem<Tag> + fmt::Debug, Tag> fmt::Debug for ListNode<T, Tag> {
     }
 }
 
+/// An intrusive doubly linked list.
+///
+/// Supports O(1) insertion and removal at both ends.
 pub struct DLinkedList<P, Tag>
 where
     P: Pointer,
@@ -102,11 +164,14 @@ where
     P: Pointer,
     P::Target: ListItem<Tag>,
 {
+    /// Creates a new, empty doubly linked list.
     #[inline(always)]
     pub fn new() -> Self {
         DLinkedList { length: 0, head: null(), tail: null(), _phan: Default::default() }
     }
 
+    /// Clears the list pointers. Note: This does NOT drop the elements.
+    /// Use `drain` or `drop` if you need to release owned resources.
     #[inline]
     pub fn clear(&mut self) {
         self.length = 0;
@@ -114,14 +179,22 @@ where
         self.tail = null();
     }
 
+    /// Returns the length of the list.
     #[inline(always)]
     pub fn get_length(&self) -> u64 {
         return self.length;
     }
 
+    /// Returns the length of the list as `usize`.
     #[inline(always)]
     pub fn len(&self) -> usize {
         return self.length as usize;
+    }
+
+    /// Returns `true` if the list contains no elements.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
     }
 
     #[inline(always)]
@@ -142,6 +215,11 @@ where
         self.length -= 1;
     }
 
+    /// Moves a node to the front of the list (e.g., for LRU updates).
+    ///
+    /// # Safety
+    /// The pointer `ptr` must be valid and pointing to an element currently in the list
+    /// or a valid free element if properly managed (though typically used for re-ordering).
     #[inline(always)]
     pub unsafe fn peak(&mut self, ptr: *mut P::Target) {
         assert!(!self.head.is_null());
@@ -156,6 +234,7 @@ where
         self.push_front_ptr(ptr);
     }
 
+    /// Pushes an element to the front of the list.
     #[inline]
     pub fn push_front(&mut self, item: P) {
         let ptr = item.into_raw();
@@ -180,6 +259,7 @@ where
         self.length += 1;
     }
 
+    /// Pushes an element to the back of the list.
     #[inline]
     pub fn push_back(&mut self, item: P) {
         let node = item.as_ref().get_node();
@@ -199,6 +279,7 @@ where
         self.length += 1;
     }
 
+    /// Removes and returns the element at the front of the list.
     pub fn pop_front(&mut self) -> Option<P> {
         if self.head.is_null() {
             None
@@ -210,6 +291,7 @@ where
         }
     }
 
+    /// Removes and returns the element at the back of the list.
     #[inline]
     pub fn pop_back(&mut self) -> Option<P> {
         if self.tail.is_null() {
@@ -222,16 +304,19 @@ where
         }
     }
 
+    /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
         if self.head.is_null() { None } else { unsafe { Some(&(*self.head)) } }
     }
 
+    /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
         if self.tail.is_null() { None } else { unsafe { Some(&(*self.tail)) } }
     }
 
+    /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &P::Target) -> bool {
         if self.head.is_null() {
@@ -262,11 +347,14 @@ where
     }
 
     // NOTE: If you plan on turn the raw pointer to owned, use drain instead
+    /// Returns an iterator over the list (borrowed).
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> DLinkedListIterator<'a, P, Tag> {
         DLinkedListIterator { list: self, cur: null() }
     }
 
+    /// Returns a draining iterator that removes items from the list.
+    /// Crucial for cleaning up lists containing owned pointers (like `Box`).
     #[inline(always)]
     pub fn drain<'a>(&'a mut self) -> DLinkedListDrainer<'a, P, Tag> {
         DLinkedListDrainer { list: self }
@@ -389,38 +477,6 @@ mod tests {
     unsafe impl ListItem<TestTag> for TestNode {
         fn get_node(&self) -> &mut ListNode<Self, TestTag> {
             unsafe { &mut *self.node.get() }
-        }
-    }
-
-    impl crate::Pointer for Box<TestNode> {
-        type Target = TestNode;
-
-        fn as_ref(&self) -> &Self::Target {
-            &**self
-        }
-
-        unsafe fn from_raw(p: *const Self::Target) -> Self {
-            unsafe { Box::from_raw(p as *mut Self::Target) }
-        }
-
-        fn into_raw(self) -> *const Self::Target {
-            Box::into_raw(self) as *const Self::Target
-        }
-    }
-
-    impl crate::Pointer for Arc<TestNode> {
-        type Target = TestNode;
-
-        fn as_ref(&self) -> &Self::Target {
-            &**self
-        }
-
-        unsafe fn from_raw(p: *const Self::Target) -> Self {
-            unsafe { Arc::from_raw(p as *const Self::Target) }
-        }
-
-        fn into_raw(self) -> *const Self::Target {
-            Arc::into_raw(self) as *const Self::Target
         }
     }
 
