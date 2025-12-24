@@ -53,10 +53,10 @@
 //! ```
 
 use crate::Pointer;
-use std::fmt;
-use std::marker::PhantomData;
-use std::mem;
-use std::ptr::null;
+use core::fmt;
+use core::marker::PhantomData;
+use core::mem;
+use core::ptr::null;
 
 /// A trait to return internal mutable SListNode for specified list.
 ///

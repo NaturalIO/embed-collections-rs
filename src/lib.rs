@@ -1,9 +1,17 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![doc = include_str!("../README.md")]
 
-use std::mem;
-use std::ptr::NonNull;
+extern crate alloc;
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
+use alloc::boxed::Box;
+use alloc::rc::Rc;
+use alloc::sync::Arc;
+use core::mem;
+use core::ptr::NonNull;
 
 /// Abstract pointer trait to support various pointer types in collections.
 ///
@@ -74,7 +82,7 @@ impl<T> Pointer for Box<T> {
     }
 }
 
-impl<T> Pointer for std::rc::Rc<T> {
+impl<T> Pointer for Rc<T> {
     type Target = T;
 
     #[inline]
@@ -83,15 +91,15 @@ impl<T> Pointer for std::rc::Rc<T> {
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
-        unsafe { std::rc::Rc::from_raw(p) }
+        unsafe { Rc::from_raw(p) }
     }
 
     fn into_raw(self) -> *const Self::Target {
-        std::rc::Rc::into_raw(self)
+        Rc::into_raw(self)
     }
 }
 
-impl<T> Pointer for std::sync::Arc<T> {
+impl<T> Pointer for Arc<T> {
     type Target = T;
 
     #[inline]
@@ -100,11 +108,11 @@ impl<T> Pointer for std::sync::Arc<T> {
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
-        unsafe { std::sync::Arc::from_raw(p) }
+        unsafe { Arc::from_raw(p) }
     }
 
     fn into_raw(self) -> *const Self::Target {
-        std::sync::Arc::into_raw(self)
+        Arc::into_raw(self)
     }
 }
 

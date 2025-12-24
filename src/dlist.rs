@@ -55,8 +55,8 @@
 //! ```
 
 use crate::Pointer;
-use std::marker::PhantomData;
-use std::{fmt, mem, ptr::null};
+use core::marker::PhantomData;
+use core::{fmt, mem, ptr::null};
 
 /// A trait to return internal mutable DListNode for specified list.
 ///
@@ -332,6 +332,7 @@ where
         }
     }
 
+    #[cfg(feature = "std")]
     pub fn print<U: std::fmt::Debug>(&self) {
         println!("print list begin! length={}", self.length);
         let mut ptr = self.head;
