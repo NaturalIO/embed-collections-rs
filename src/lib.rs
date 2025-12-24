@@ -49,3 +49,4 @@ impl<T> Pointer for NonNull<T> {
 }
 
 pub mod dlist;
+pub mod slist;
