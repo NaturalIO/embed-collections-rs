@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 /// A linked list for Btree Node in LRU
 ///
 /// TODO should cleanup unused functions
-use std::{fmt, ptr::null};
+use std::{fmt, mem, ptr::null};
 
 /// A trait to return internal mutable ListNode for specified list
 ///
@@ -273,6 +273,21 @@ where
     }
 }
 
+impl<P, Tag> Drop for DLinkedList<P, Tag>
+where
+    P: Pointer,
+    P::Target: ListItem<Tag>,
+{
+    fn drop(&mut self) {
+        // Calling drain will remove all elements from the list and drop them.
+        // The DLinkedListDrainer iterator returns P, which will be dropped
+        // when the iterator is consumed.
+        if mem::needs_drop::<P>() {
+            self.drain().for_each(drop);
+        }
+    }
+}
+
 pub struct DLinkedListIterator<'a, P, Tag>
 where
     P: Pointer,
@@ -348,6 +363,7 @@ mod tests {
     use super::*;
     use std::cell::UnsafeCell;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     pub struct TestTag;
 
@@ -355,6 +371,16 @@ mod tests {
     pub struct TestNode {
         pub value: i64,
         pub node: UnsafeCell<ListNode<Self, TestTag>>,
+        pub drop_detector: usize, // Field to uniquely identify nodes and track drops
+    }
+
+    static NEXT_DROP_ID: AtomicUsize = AtomicUsize::new(0);
+    static ACTIVE_NODE_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    impl Drop for TestNode {
+        fn drop(&mut self) {
+            ACTIVE_NODE_COUNT.fetch_sub(1, Ordering::SeqCst);
+        }
     }
 
     unsafe impl Send for TestNode {}
@@ -398,7 +424,12 @@ mod tests {
     }
 
     fn new_node(v: i64) -> TestNode {
-        TestNode { value: v, node: UnsafeCell::new(ListNode::default()) }
+        ACTIVE_NODE_COUNT.fetch_add(1, Ordering::SeqCst);
+        TestNode {
+            value: v,
+            node: UnsafeCell::new(ListNode::default()),
+            drop_detector: NEXT_DROP_ID.fetch_add(1, Ordering::SeqCst),
+        }
     }
 
     #[test]
@@ -737,5 +768,70 @@ mod tests {
             assert!(drain.next().is_none());
         }
         assert_eq!(l2.get_length(), 0);
+    }
+
+    #[test]
+    fn test_drop_box_implementation() {
+        // Reset the counter before the test
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+
+        {
+            let mut l = DLinkedList::<Box<TestNode>, TestTag>::new();
+
+            let node1 = Box::new(new_node(1));
+            l.push_back(node1);
+
+            let node2 = Box::new(new_node(2));
+            l.push_back(node2);
+
+            let node3 = Box::new(new_node(3));
+            l.push_back(node3);
+
+            assert_eq!(l.get_length(), 3);
+            assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
+        } // `l` goes out of scope here, triggering DLinkedList's Drop, which drains and drops nodes.
+
+        // All nodes should have been dropped
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_raw_pointer_list() {
+        // Reset the counter before the test
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+
+        // Manually create nodes as raw pointers
+        let node1 = Box::into_raw(Box::new(new_node(10)));
+        let node2 = Box::into_raw(Box::new(new_node(20)));
+
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
+
+        {
+            let mut l = DLinkedList::<*const TestNode, TestTag>::new();
+            l.push_back(node1);
+            l.push_back(node2);
+
+            let mut iter = l.iter();
+            unsafe {
+                assert_eq!(iter.next().unwrap().value, 10);
+                assert_eq!(iter.next().unwrap().value, 20);
+                assert!(iter.next().is_none());
+            }
+        } // l dropped here. Because P is *const TestNode, needs_drop is false, so drain is NOT called.
+
+        // Nodes should still exist
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
+
+        unsafe {
+            // Check values
+            assert_eq!((*node1).value, 10);
+            assert_eq!((*node2).value, 20);
+
+            // Clean up
+            drop(Box::from_raw(node1));
+            drop(Box::from_raw(node2));
+        }
+
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
     }
 }
