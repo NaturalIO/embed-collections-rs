@@ -156,5 +156,7 @@ impl<T> Pointer for std::sync::Arc<T> {
     }
 }
 
+#[cfg(feature = "dlist")]
 pub mod dlist;
+#[cfg(feature = "slist")]
 pub mod slist;

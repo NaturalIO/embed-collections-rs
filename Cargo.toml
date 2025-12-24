@@ -4,8 +4,14 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A collection of intrusive data structures (linked lists) for Rust, supporting various pointer types."
-keywords = ["intrusive", "linked-list", "collection", "no-std"]
+keywords = ["intrusive", "linked-list", "collection"]
 categories = ["data-structures", "no-std"]
+
+[features]
+default = ["full"]
+slist = []
+dlist = []
+full = ["slist", "dlist"]
 
 [dependencies]
 
