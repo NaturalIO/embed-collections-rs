@@ -362,6 +362,7 @@ where
 mod tests {
     use super::*;
     use std::cell::UnsafeCell;
+    use std::ptr::NonNull;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -812,11 +813,9 @@ mod tests {
             l.push_back(node2);
 
             let mut iter = l.iter();
-            unsafe {
-                assert_eq!(iter.next().unwrap().value, 10);
-                assert_eq!(iter.next().unwrap().value, 20);
-                assert!(iter.next().is_none());
-            }
+            assert_eq!(iter.next().unwrap().value, 10);
+            assert_eq!(iter.next().unwrap().value, 20);
+            assert!(iter.next().is_none());
         } // l dropped here. Because P is *const TestNode, needs_drop is false, so drain is NOT called.
 
         // Nodes should still exist
@@ -830,6 +829,44 @@ mod tests {
             // Clean up
             drop(Box::from_raw(node1));
             drop(Box::from_raw(node2));
+        }
+
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_non_null_list() {
+        // Reset the counter before the test
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+
+        // Manually create nodes
+        // Box::leak returns &mut T, which helps creating NonNull
+        let node1 = Box::leak(Box::new(new_node(100)));
+        let node2 = Box::leak(Box::new(new_node(200)));
+
+        let ptr1 = NonNull::from(node1);
+        let ptr2 = NonNull::from(node2);
+
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
+
+        {
+            let mut l = DLinkedList::<NonNull<TestNode>, TestTag>::new();
+            l.push_back(ptr1);
+            l.push_back(ptr2);
+
+            let mut iter = l.iter();
+            assert_eq!(iter.next().unwrap().value, 100);
+            assert_eq!(iter.next().unwrap().value, 200);
+            assert!(iter.next().is_none());
+        } // l dropped here. NonNull doesn't need drop, so no drain.
+
+        // Nodes should still exist
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
+
+        unsafe {
+            // Clean up
+            drop(Box::from_raw(ptr1.as_ptr()));
+            drop(Box::from_raw(ptr2.as_ptr()));
         }
 
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
