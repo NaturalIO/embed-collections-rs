@@ -12,13 +12,13 @@
 //!
 //! # Example
 //! ```rust
-//! use embed_collections::{dlist::{DLinkedList, ListItem, ListNode}, Pointer};
+//! use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
 //! use std::cell::UnsafeCell;
 //!
 //! struct MyItem {
 //!     id: u32,
 //!     data: String,
-//!     node: UnsafeCell<ListNode<MyItem, ()>>, // Node embedded directly
+//!     node: UnsafeCell<DListNode<MyItem, ()>>, // Node embedded directly
 //! }
 //!
 //! impl MyItem {
@@ -26,15 +26,15 @@
 //!         MyItem {
 //!             id,
 //!             data: data.to_string(),
-//!             node: UnsafeCell::new(ListNode::default()),
+//!             node: UnsafeCell::new(DListNode::default()),
 //!         }
 //!     }
 //! }
 //!
 //! // Safety: Implementors must ensure `get_node` returns a valid reference
-//! // to the embedded `ListNode`. `UnsafeCell` is used for interior mutability.
-//! unsafe impl ListItem<()> for MyItem {
-//!     fn get_node(&self) -> &mut ListNode<Self, ()> {
+//! // to the embedded `DListNode`. `UnsafeCell` is used for interior mutability.
+//! unsafe impl DListItem<()> for MyItem {
+//!     fn get_node(&self) -> &mut DListNode<Self, ()> {
 //!         unsafe { &mut *self.node.get() }
 //!     }
 //! }
@@ -58,49 +58,50 @@ use crate::Pointer;
 use std::marker::PhantomData;
 use std::{fmt, mem, ptr::null};
 
-/// A trait to return internal mutable ListNode for specified list.
+/// A trait to return internal mutable DListNode for specified list.
 ///
-/// The tag is used to distinguish different ListNodes within the same item,
+/// The tag is used to distinguish different DListNodes within the same item,
 /// allowing an item to belong to multiple lists simultaneously.
 ///
 /// # Safety
 ///
-/// Implementors must ensure `get_node` returns a valid reference to the `ListNode`
-/// embedded within `Self`. Users must use `UnsafeCell` to hold `ListNode` to support
+/// Implementors must ensure `get_node` returns a valid reference to the `DListNode`
+/// embedded within `Self`. Users must use `UnsafeCell` to hold `DListNode` to support
 /// interior mutability required by list operations.
-pub unsafe trait ListItem<Tag>: Sized {
-    fn get_node(&self) -> &mut ListNode<Self, Tag>;
+pub unsafe trait DListItem<Tag>: Sized {
+    fn get_node(&self) -> &mut DListNode<Self, Tag>;
 }
 
 /// The node structure that must be embedded in items to be stored in a `DLinkedList`.
-pub struct ListNode<T: Sized, Tag> {
+#[repr(C)]
+pub struct DListNode<T: Sized, Tag> {
     prev: *const T,
     next: *const T,
     _phan: PhantomData<fn(&Tag)>,
 }
 
-unsafe impl<T, Tag> Send for ListNode<T, Tag> {}
+unsafe impl<T, Tag> Send for DListNode<T, Tag> {}
 
-impl<T: ListItem<Tag>, Tag> ListNode<T, Tag> {
+impl<T: DListItem<Tag>, Tag> DListNode<T, Tag> {
     #[inline]
-    fn get_prev<'a>(&self) -> Option<&'a mut ListNode<T, Tag>> {
+    fn get_prev<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
         if self.prev.is_null() { None } else { unsafe { Some((*self.prev).get_node()) } }
     }
 
     #[inline]
-    fn get_next<'a>(&self) -> Option<&'a mut ListNode<T, Tag>> {
+    fn get_next<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
         if self.next.is_null() { None } else { unsafe { Some((*self.next).get_node()) } }
     }
 }
 
-impl<T, Tag> Default for ListNode<T, Tag> {
+impl<T, Tag> Default for DListNode<T, Tag> {
     #[inline(always)]
     fn default() -> Self {
         Self { prev: null(), next: null(), _phan: Default::default() }
     }
 }
 
-impl<T: ListItem<Tag> + fmt::Debug, Tag> fmt::Debug for ListNode<T, Tag> {
+impl<T: DListItem<Tag> + fmt::Debug, Tag> fmt::Debug for DListNode<T, Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(")?;
         if !self.prev.is_null() {
@@ -120,10 +121,11 @@ impl<T: ListItem<Tag> + fmt::Debug, Tag> fmt::Debug for ListNode<T, Tag> {
 /// An intrusive doubly linked list.
 ///
 /// Supports O(1) insertion and removal at both ends.
+#[repr(C)]
 pub struct DLinkedList<P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     length: u64,
     head: *const P::Target,
@@ -134,14 +136,14 @@ where
 unsafe impl<P, Tag> Send for DLinkedList<P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
 }
 
 impl<P: fmt::Debug, Tag> fmt::Debug for DLinkedList<P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{ length: {} ", self.length)?;
@@ -162,7 +164,7 @@ where
 impl<P, Tag> DLinkedList<P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     /// Creates a new, empty doubly linked list.
     #[inline(always)]
@@ -225,8 +227,8 @@ where
         assert!(!self.head.is_null());
         let item = unsafe { &(*ptr) };
         if !self.head.is_null() {
-            let head_node = unsafe { (*self.head).get_node() } as *const ListNode<P::Target, Tag>;
-            if head_node == item.get_node() as *const ListNode<P::Target, Tag> {
+            let head_node = unsafe { (*self.head).get_node() } as *const DListNode<P::Target, Tag>;
+            if head_node == item.get_node() as *const DListNode<P::Target, Tag> {
                 return;
             }
         }
@@ -323,9 +325,9 @@ where
             false
         } else {
             // This comparison is tricky because self.head is *mut HrcWrapper<T>
-            // and node is &mut ListNode<T>.
+            // and node is &mut DListNode<T>.
             // We need to compare the node address or the wrapper address.
-            // Converting head -> node and comparing addresses of ListNode is safer.
+            // Converting head -> node and comparing addresses of DListNode is safer.
             self.head == node as *const P::Target
         }
     }
@@ -364,7 +366,7 @@ where
 impl<P, Tag> Drop for DLinkedList<P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     fn drop(&mut self) {
         // Calling drain will remove all elements from the list and drop them.
@@ -379,7 +381,7 @@ where
 pub struct DLinkedListIterator<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     list: &'a DLinkedList<P, Tag>,
     cur: *const P::Target,
@@ -388,14 +390,14 @@ where
 unsafe impl<'a, P, Tag> Send for DLinkedListIterator<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
 }
 
 impl<'a, P, Tag> Iterator for DLinkedListIterator<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     type Item = &'a P::Target;
 
@@ -421,7 +423,7 @@ where
 pub struct DLinkedListDrainer<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     list: &'a mut DLinkedList<P, Tag>,
 }
@@ -429,14 +431,14 @@ where
 unsafe impl<'a, P, Tag> Send for DLinkedListDrainer<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
 }
 
 impl<'a, P, Tag> Iterator for DLinkedListDrainer<'a, P, Tag>
 where
     P: Pointer,
-    P::Target: ListItem<Tag>,
+    P::Target: DListItem<Tag>,
 {
     type Item = P;
 
@@ -459,7 +461,7 @@ mod tests {
     #[derive(Debug)]
     pub struct TestNode {
         pub value: i64,
-        pub node: UnsafeCell<ListNode<Self, TestTag>>,
+        pub node: UnsafeCell<DListNode<Self, TestTag>>,
         pub drop_detector: usize, // Field to uniquely identify nodes and track drops
     }
 
@@ -474,8 +476,8 @@ mod tests {
 
     unsafe impl Send for TestNode {}
 
-    unsafe impl ListItem<TestTag> for TestNode {
-        fn get_node(&self) -> &mut ListNode<Self, TestTag> {
+    unsafe impl DListItem<TestTag> for TestNode {
+        fn get_node(&self) -> &mut DListNode<Self, TestTag> {
             unsafe { &mut *self.node.get() }
         }
     }
@@ -484,7 +486,7 @@ mod tests {
         ACTIVE_NODE_COUNT.fetch_add(1, Ordering::SeqCst);
         TestNode {
             value: v,
-            node: UnsafeCell::new(ListNode::default()),
+            node: UnsafeCell::new(DListNode::default()),
             drop_detector: NEXT_DROP_ID.fetch_add(1, Ordering::SeqCst),
         }
     }

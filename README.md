@@ -10,7 +10,7 @@ This allows for:
 
 Difference to crate `intrusive-collections`:
 
-This crate choose to use ListItem::get_node() instead of c like `offset_of!`, mainly because:
+This crate choose to use DListItem::get_node() instead of c like `offset_of!`, mainly because:
 
 - Mangling with offset conversion makes the code hard to read (for people not used to c style coding).
 
@@ -20,7 +20,7 @@ This crate choose to use ListItem::get_node() instead of c like `offset_of!`, ma
 and using memtion to return the node ref is more safer approach.
 (For example, the default `repr(Rust) might reorder the field`, or you mistakenly use `repr(packed)`)
 
-There're three usage scenario:
+There're three usage scenarios:
 
 1. Push smart pointer to the list, so that the list hold 1 ref count when the type is `Arc` /
    `Rc`, but you have to use UnsafeCell for internal mutation.
@@ -40,25 +40,25 @@ for temporary usage. You must ensure the list item not dropped be other refcount
 ## Example
 
 ```rust
-use embed_collections::{dlist::{DLinkedList, ListItem, ListNode}, Pointer};
+use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
 use std::cell::UnsafeCell;
 
 struct MyItem {
     val: i32,
-    link: UnsafeCell<ListNode<MyItem, ()>>,
+    link: UnsafeCell<DListNode<MyItem, ()>>,
 }
 
 impl MyItem {
     fn new(val: i32) -> Self {
         Self {
             val,
-            link: UnsafeCell::new(ListNode::default()),
+            link: UnsafeCell::new(DListNode::default()),
         }
     }
 }
 
-unsafe impl ListItem<()> for MyItem {
-    fn get_node(&self) -> &mut ListNode<Self, ()> {
+unsafe impl DListItem<()> for MyItem {
+    fn get_node(&self) -> &mut DListNode<Self, ()> {
         unsafe { &mut *self.link.get() }
     }
 }

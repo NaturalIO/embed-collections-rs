@@ -71,6 +71,7 @@ pub unsafe trait SListItem<Tag>: Sized {
 }
 
 /// The node structure that must be embedded in items to be stored in a `SLinkedList`.
+#[repr(C)]
 pub struct SListNode<T: Sized, Tag> {
     next: *const T,
     _phan: PhantomData<fn(&Tag)>,
@@ -102,6 +103,7 @@ impl<T: SListItem<Tag> + fmt::Debug, Tag> fmt::Debug for SListNode<T, Tag> {
 /// A singly linked list with head and tail pointers (FIFO queue).
 ///
 /// Supports O(1) push to back and pop from front.
+#[repr(C)]
 pub struct SLinkedList<P, Tag>
 where
     P: Pointer,
