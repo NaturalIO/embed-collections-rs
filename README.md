@@ -56,31 +56,54 @@ To compile with `no_std` and only the `slist` module, you would use:
 ```rust
 use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
 use std::cell::UnsafeCell;
+use std::sync::Arc;
+
+struct CacheTag;
+struct IOTag;
 
 struct MyItem {
     val: i32,
-    link: UnsafeCell<DListNode<MyItem, ()>>,
+    cache_link: UnsafeCell<DListNode<MyItem, CacheTag>>,
+    io_link: UnsafeCell<DListNode<MyItem, IOTag>>,
 }
 
 impl MyItem {
     fn new(val: i32) -> Self {
         Self {
             val,
-            link: UnsafeCell::new(DListNode::default()),
+            cache_link: UnsafeCell::new(DListNode::default()),
+            io_link: UnsafeCell::new(DListNode::default()),
         }
     }
 }
 
-unsafe impl DListItem<()> for MyItem {
-    fn get_node(&self) -> &mut DListNode<Self, ()> {
-        unsafe { &mut *self.link.get() }
+unsafe impl DListItem<CacheTag> for MyItem {
+    fn get_node(&self) -> &mut DListNode<Self, CacheTag> {
+        unsafe { &mut *self.cache_link.get() }
     }
 }
 
-let mut list = DLinkedList::<Box<MyItem>, ()>::new();
-list.push_back(Box::new(MyItem::new(10)));
-list.push_back(Box::new(MyItem::new(20)));
+unsafe impl DListItem<IOTag> for MyItem {
+    fn get_node(&self) -> &mut DListNode<Self, IOTag> {
+        unsafe { &mut *self.io_link.get() }
+    }
+}
 
-assert_eq!(list.pop_front().unwrap().val, 10);
-assert_eq!(list.pop_front().unwrap().val, 20);
+let mut cache_list = DLinkedList::<Arc<MyItem>, CacheTag>::new();
+let mut io_list = DLinkedList::<Arc<MyItem>, IOTag>::new();
+
+let item1 = Arc::new(MyItem::new(10));
+let item2 = Arc::new(MyItem::new(20));
+
+// Push the same item to both lists
+cache_list.push_back(item1.clone());
+io_list.push_back(item1.clone());
+
+cache_list.push_back(item2.clone());
+io_list.push_back(item2.clone());
+
+assert_eq!(cache_list.pop_front().unwrap().val, 10);
+assert_eq!(io_list.pop_front().unwrap().val, 10);
+assert_eq!(cache_list.pop_front().unwrap().val, 20);
+assert_eq!(io_list.pop_front().unwrap().val, 20);
 ```
