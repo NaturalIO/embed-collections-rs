@@ -6,6 +6,9 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 
+[dev-dependencies]
+rstest = "0"
+
 [package.metadata.docs.rs]
 all-features = true
 # enable features in the documentation
