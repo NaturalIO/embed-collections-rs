@@ -353,10 +353,8 @@ mod tests {
     pub struct TestNode {
         pub value: i64,
         pub node: UnsafeCell<SListNode<Self, TestTag>>,
-        pub drop_detector: usize,
     }
 
-    static NEXT_DROP_ID: AtomicUsize = AtomicUsize::new(0);
     static ACTIVE_NODE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     impl Drop for TestNode {
@@ -375,11 +373,7 @@ mod tests {
 
     fn new_node(v: i64) -> TestNode {
         ACTIVE_NODE_COUNT.fetch_add(1, Ordering::SeqCst);
-        TestNode {
-            value: v,
-            node: UnsafeCell::new(SListNode::default()),
-            drop_detector: NEXT_DROP_ID.fetch_add(1, Ordering::SeqCst),
-        }
+        TestNode { value: v, node: UnsafeCell::new(SListNode::default()) }
     }
 
     #[test]
