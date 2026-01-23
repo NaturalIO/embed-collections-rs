@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.1.5] - 2026-01-24
+
+### Fixed
+
+- Fix dlist::drain() order to FIFO
+
 ## [0.1.2] - 2025-12-25
 
 ### Added
