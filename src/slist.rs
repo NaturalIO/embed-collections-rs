@@ -61,6 +61,7 @@ use core::ptr::null;
 /// A trait to return internal mutable SListNode for specified list.
 ///
 /// The tag is used to distinguish different SListNodes within the same item.
+/// For only one ownership, you can use `()`.
 ///
 /// # Safety
 /// Implementors must ensure `get_node` returns a valid reference to the `SListNode`
@@ -71,6 +72,7 @@ pub unsafe trait SListItem<Tag>: Sized {
 }
 
 /// The node structure that must be embedded in items to be stored in a `SLinkedList`.
+///
 #[repr(C)]
 pub struct SListNode<T: Sized, Tag> {
     next: *const T,

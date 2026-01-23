@@ -62,6 +62,7 @@ use core::{fmt, mem, ptr::null};
 ///
 /// The tag is used to distinguish different DListNodes within the same item,
 /// allowing an item to belong to multiple lists simultaneously.
+/// For only one ownership, you can use `()`.
 ///
 /// # Safety
 ///

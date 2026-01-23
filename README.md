@@ -9,6 +9,8 @@ This allows for:
 - **Memory Efficiency**: No extra allocation for nodes.
 - **Deterministic Memory Management**: You control where the node lives.
 - **Flexibility**: Works with various pointer types (`Box`, `Arc`, `Rc`, `NonNull`, raw pointers).
+- **Multiple ownership**: The trait and collection come with Tag to distinguish from each other,
+  allow compiler checks.
 
 Difference to crate `intrusive-collections`:
 
@@ -60,6 +62,7 @@ use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 
+// The tag structure only for labeling, distinguish two lists
 struct CacheTag;
 struct IOTag;
 
