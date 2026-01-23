@@ -368,6 +368,10 @@ where
 
     /// Returns a draining iterator that removes items from the list.
     /// Crucial for cleaning up lists containing owned pointers (like `Box`).
+    ///
+    /// # Note
+    ///
+    /// The iterator removes elements from the **front** of the list (FIFO order),
     #[inline(always)]
     pub fn drain<'a>(&'a mut self) -> DLinkedListDrainer<'a, P, Tag> {
         DLinkedListDrainer { list: self }
@@ -455,7 +459,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<P> {
-        self.list.pop_back()
+        self.list.pop_front()
     }
 }
 
@@ -519,9 +523,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -550,9 +554,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -581,9 +585,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -612,9 +616,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -651,8 +655,8 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -691,8 +695,8 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -726,9 +730,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
@@ -762,9 +766,9 @@ mod tests {
 
         {
             let mut drain = l.drain();
-            assert_eq!(drain.next().unwrap().value, 3);
-            assert_eq!(drain.next().unwrap().value, 2);
             assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
         assert_eq!(l.get_length(), 0);
