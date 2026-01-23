@@ -1,5 +1,7 @@
 # Embed Collections
 
+docs.rs: <https://docs.rs/embed-collections/latest/embed_collections/>
+
 `embed-collections` provides intrusive data structures for Rust. Unlike standard collections,
 intrusive collections require the elements to store the node data (links) themselves.
 This allows for:
