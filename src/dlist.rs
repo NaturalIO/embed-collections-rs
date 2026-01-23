@@ -349,8 +349,17 @@ where
         println!("print list end:");
     }
 
-    // NOTE: If you plan on turn the raw pointer to owned, use drain instead
     /// Returns an iterator over the list (borrowed).
+    ///
+    /// # NOTE
+    ///
+    /// If you plan on turn the raw pointer to owned, use drain instead
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the list is not modified in a way that can
+    /// invalidate internal pointers (such as removing elements or dropping
+    /// items) for the duration of the iterator's use.
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> DLinkedListIterator<'a, P, Tag> {
         DLinkedListIterator { list: self, cur: null() }
