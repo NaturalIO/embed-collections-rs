@@ -1,6 +1,65 @@
 //! An intrusive AVL tree implementation.
 //!
-//! The algothim originate from open-zfs
+//! The algorithm origin from open-zfs
+//!
+//! # Examples
+//!
+//! ## Using `Box` with `remove_with`
+//!
+//! ```rust
+//! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+//! use core::cell::UnsafeCell;
+//! use core::cmp::Ordering;
+//!
+//! struct MyNode {
+//!     value: i32,
+//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//! }
+//!
+//! unsafe impl AvlItem<()> for MyNode {
+//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!         unsafe { &mut *self.avl_node.get() }
+//!     }
+//! }
+//!
+//! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
+//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) }), |a, b| a.value.cmp(&b.value));
+//!
+//! // Search and remove
+//! if let Some(node) = tree.remove_by_key(&10, |key, node| key.cmp(&node.value)) {
+//!     assert_eq!(node.value, 10);
+//! }
+//! ```
+//!
+//! ## Using `Arc` for multiple ownership
+//!
+//! ```rust
+//! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+//! use core::cell::UnsafeCell;
+//! use std::sync::Arc;
+//!
+//! struct MyNode {
+//!     value: i32,
+//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//! }
+//!
+//! unsafe impl AvlItem<()> for MyNode {
+//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!         unsafe { &mut *self.avl_node.get() }
+//!     }
+//! }
+//!
+//! let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
+//! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
+//!
+//! tree.add(node.clone(), |a, b| a.value.cmp(&b.value));
+//! assert_eq!(tree.get_count(), 1);
+//!
+//! // Remove by reference (decrements RefCount)
+//! tree.remove_ref(&node);
+//! assert_eq!(tree.get_count(), 0);
+//! ```
+//!
 
 use crate::Pointer;
 use alloc::rc::Rc;
@@ -130,6 +189,10 @@ impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
 
 pub type AvlCmpFunc<K, T> = fn(&K, &T) -> Ordering;
 
+/// An intrusive AVL tree (balanced binary search tree).
+///
+/// Elements in the tree must implement the [`AvlItem`] trait.
+/// The tree supports various pointer types (`Box`, `Arc`, `Rc`, etc.) through the [`Pointer`] trait.
 pub struct AvlTree<P, Tag>
 where
     P: Pointer,
@@ -140,6 +203,11 @@ where
     _phan: PhantomData<fn(P, &Tag)>,
 }
 
+/// Result of a search operation in an [`AvlTree`].
+///
+/// The lifetime `'a` ties the search result to the tree's borrow,
+/// ensuring that the tree is not modified while the search result is in use
+/// (unless explicitly decoupled via unsafe transmute for operations like `remove_with`).
 pub struct AvlSearchResult<'a, P: Pointer> {
     node: *const P::Target,
     pub direction: Option<AvlDirection>,
@@ -163,6 +231,12 @@ impl<'a, P: Pointer> AvlSearchResult<'a, P> {
             }
         }
         None
+    }
+
+    /// Returns `true` if the search result is an exact match.
+    #[inline(always)]
+    pub fn is_exact(&self) -> bool {
+        self.direction.is_none() && !self.node.is_null()
     }
 }
 
@@ -210,12 +284,15 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
+    /// Creates a new, empty `AvlTree`.
     pub fn new() -> Self {
         AvlTree { count: 0, root: null(), _phan: Default::default() }
     }
 
-    /// Optimized non-recursive, stack-less post-order traversal to destroy all nodes.
-    /// Follows the same algorithm as ZFS's avl_destroy_nodes.
+    /// Returns an iterator that removes all elements from the tree in post-order.
+    ///
+    /// This is an optimized, non-recursive, and stack-less traversal that preserves
+    /// tree invariants during destruction.
     #[inline]
     pub fn drain(&mut self) -> AvlDrain<'_, P, Tag> {
         AvlDrain { tree: self, parent: null(), dir: None }
@@ -666,20 +743,31 @@ where
         del_node.detach();
     }
 
+    /// Removes a node from the tree by key.
+    ///
+    /// The `cmp_func` should compare the key `K` with the elements in the tree.
+    /// Returns `Some(P)` if an exact match was found and removed, `None` otherwise.
     #[inline]
-    pub fn remove_with(&mut self, result: AvlSearchResult<P>) -> Option<P> {
+    pub fn remove_by_key<K>(&mut self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>) -> Option<P> {
+        let result = self.find(val, cmp_func);
         if result.direction.is_none() && !result.node.is_null() {
+            let node_ptr = result.node;
+            // Explicitly drop result to release immutable borrow on self
+            drop(result);
             unsafe {
-                self.remove(result.node);
-                Some(P::from_raw(result.node))
+                self.remove(node_ptr);
+                Some(P::from_raw(node_ptr))
             }
         } else {
             None
         }
     }
 
-    // When found node equal to value, return (Some(node), None);
-    // otherwise return (Some(node), direction) to indicate where to insert
+    /// Searches for an element in the tree.
+    ///
+    /// The `cmp_func` should compare the key `K` with the elements in the tree.
+    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
+    /// or where a new element should be inserted.
     #[inline]
     pub fn find<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
@@ -973,7 +1061,11 @@ where
         assert_eq!(visited, self.count);
     }
 
-    // return added: bool
+    /// Adds a new element to the tree， takes the ownership of P.
+    ///
+    /// The `cmp_func` should compare two elements to determine their relative order.
+    /// Returns `true` if the element was added, `false` if an equivalent element
+    /// already exists (in which case the provided `node` is dropped).
     #[inline]
     pub fn add(&mut self, node: P, cmp_func: AvlCmpFunc<P::Target, P::Target>) -> bool {
         if self.count == 0 && self.root.is_null() {
@@ -1166,13 +1258,7 @@ mod tests {
 
     impl AvlTree<Box<IntAvlNode>, ()> {
         fn remove_int(&mut self, i: i64) -> bool {
-            let result = self.find_int(i);
-
-            // Decouple lifetime to allow mutable borrow in remove_with
-            let result_static =
-                unsafe { mem::transmute::<_, AvlSearchResult<'static, Box<IntAvlNode>>>(result) };
-
-            if let Some(_node) = self.remove_with(result_static) {
+            if let Some(_node) = self.remove_by_key(&i, cmp_int) {
                 // node is Box<IntAvlNode>, dropped automatically
                 return true;
             }
@@ -1486,12 +1572,7 @@ mod tests {
         let node = Arc::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: 300 });
         tree.add(node.clone(), cmp_int_node);
 
-        let result = tree.find(&300, cmp_int);
-        // unsafe decouple to simulate independent search result or allow mutation during search result holding (if careful)
-        let result_static =
-            unsafe { mem::transmute::<_, AvlSearchResult<'static, Arc<IntAvlNode>>>(result) };
-
-        let removed = tree.remove_with(result_static);
+        let removed = tree.remove_by_key(&300, cmp_int);
         assert!(removed.is_some());
         let removed_arc = removed.unwrap();
         assert_eq!(removed_arc.value, 300);
