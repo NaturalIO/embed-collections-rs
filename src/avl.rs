@@ -4,7 +4,7 @@
 //!
 //! # Examples
 //!
-//! ## Using `Box` with `remove_with`
+//! ## Using `Box` to search and remove by key
 //!
 //! ```rust
 //! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
@@ -33,6 +33,8 @@
 //!
 //! ## Using `Arc` for multiple ownership
 //!
+//! remove_ref only available to `Arc` and `Rc`
+//!
 //! ```rust
 //! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
 //! use core::cell::UnsafeCell;
@@ -55,7 +57,7 @@
 //! tree.add(node.clone(), |a, b| a.value.cmp(&b.value));
 //! assert_eq!(tree.get_count(), 1);
 //!
-//! // Remove by reference (decrements RefCount)
+//! // Remove by reference (detach from avl tree)
 //! tree.remove_ref(&node);
 //! assert_eq!(tree.get_count(), 0);
 //! ```
@@ -68,7 +70,7 @@ use core::marker::PhantomData;
 use core::{
     cmp::{Ordering, PartialEq},
     fmt, mem,
-    ptr::null,
+    ptr::{NonNull, null},
 };
 
 /// A trait to return internal mutable AvlNode for specified list.
@@ -205,11 +207,19 @@ where
 
 /// Result of a search operation in an [`AvlTree`].
 ///
-/// The lifetime `'a` ties the search result to the tree's borrow,
-/// ensuring that the tree is not modified while the search result is in use
-/// (unless explicitly decoupled via unsafe transmute for operations like `remove_with`).
+/// An `AvlSearchResult` identifies either:
+/// 1. An exact match: `direction` is `None` and `node` points to the matching item.
+/// 2. An insertion point: `direction` is `Some(dir)` and `node` points to the parent
+///    where a new node should be attached as the `dir` child.
+///
+/// The lifetime `'a` ties the search result to the tree's borrow, ensuring safety.
+/// However, this lifetime often prevents further mutable operations on the tree
+/// (e.g., adding a node while holding the search result). Use [`detach`](Self::detach)
+/// to de-couple the result from the tree's lifetime when necessary.
 pub struct AvlSearchResult<'a, P: Pointer> {
-    node: *const P::Target,
+    /// The matching node or the parent for insertion.
+    pub node: *const P::Target,
+    /// `None` if exact match found, or `Some(direction)` indicating insertion point.
     pub direction: Option<AvlDirection>,
     _phan: PhantomData<&'a P::Target>,
 }
@@ -221,16 +231,10 @@ impl<P: Pointer> Default for AvlSearchResult<'_, P> {
 }
 
 impl<'a, P: Pointer> AvlSearchResult<'a, P> {
+    /// Returns a reference to the matching node if the search was an exact match.
     #[inline(always)]
     pub fn get_node_ref(&self) -> Option<&'a P::Target> {
-        if self.direction.is_none() {
-            if self.node.is_null() {
-                return None;
-            } else {
-                return unsafe { self.node.as_ref() };
-            }
-        }
-        None
+        if self.is_exact() { unsafe { self.node.as_ref() } } else { None }
     }
 
     /// Returns `true` if the search result is an exact match.
@@ -238,11 +242,52 @@ impl<'a, P: Pointer> AvlSearchResult<'a, P> {
     pub fn is_exact(&self) -> bool {
         self.direction.is_none() && !self.node.is_null()
     }
+
+    /// De-couple the lifetime of the search result from the tree.
+    ///
+    /// This method is essential for performing mutable operations on the tree
+    /// using search results. In Rust, a search result typically borrows the tree
+    /// immutably. If you need to modify the tree (e.g., call `insert` or `remove`)
+    /// based on that result, the borrow checker would normally prevent it.
+    ///
+    /// `detach` effectively "erases" the lifetime `'a`, returning a result with
+    /// an unbounded lifetime `'b`.
+    ///
+    /// # Examples
+    ///
+    /// Used in `RangeTree::add`:
+    /// ```ignore
+    /// let result = self.root.find(&rs_key, range_tree_segment_cmp);
+    /// // result is AvlSearchResult<'a, ...> and borrows self.root
+    ///
+    /// let detached = unsafe { result.detach() };
+    /// // detached has no lifetime bound to self.root
+    ///
+    /// self.space += size; // Mutable operation on self permitted
+    /// self.merge_seg(start, end, detached); // Mutation on tree permitted
+    /// ```
+    ///
+    /// # Safety
+    /// This is an unsafe operation. The compiler no longer protects the validity
+    /// of the internal pointer via lifetimes. You must ensure that the tree
+    /// structure is not modified in a way that invalidates `node` (e.g., the
+    /// parent node being removed) before using the detached result.
+    #[inline(always)]
+    pub unsafe fn detach<'b>(&'a self) -> AvlSearchResult<'b, P> {
+        AvlSearchResult { node: self.node, direction: self.direction, _phan: PhantomData }
+    }
+
+    /// Return the nearest node in the search result
+    #[inline(always)]
+    pub fn get_nearest(&self) -> Option<&P::Target> {
+        if self.node.is_null() { None } else { unsafe { self.node.as_ref() } }
+    }
 }
 
 impl<'a, T> AvlSearchResult<'a, Arc<T>> {
+    /// Returns the matching Arc node if this is an exact match.
     pub fn get_exact(&self) -> Option<Arc<T>> {
-        if self.direction.is_none() && !self.node.is_null() {
+        if self.is_exact() {
             unsafe {
                 Arc::increment_strong_count(self.node);
                 Some(Arc::from_raw(self.node))
@@ -254,8 +299,9 @@ impl<'a, T> AvlSearchResult<'a, Arc<T>> {
 }
 
 impl<'a, T> AvlSearchResult<'a, Rc<T>> {
+    /// Returns the matching Rc node if this is an exact match.
     pub fn get_exact(&self) -> Option<Rc<T>> {
-        if self.direction.is_none() && !self.node.is_null() {
+        if self.is_exact() {
             unsafe {
                 Rc::increment_strong_count(self.node);
                 Some(Rc::from_raw(self.node))
@@ -311,8 +357,47 @@ where
         unsafe { return_end!(self, AvlDirection::Right).as_ref() }
     }
 
+    /// Inserts a new node into the tree at the location specified by a search result.
+    ///
+    /// This is typically used after a [`find`](Self::find) operation didn't find an exact match.
+    ///
+    /// **NOTE: ** you should [detach()](AvlSearchResult::detach) the result before calling insert
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+    /// use core::cell::UnsafeCell;
+    /// use std::sync::Arc;
+    ///
+    /// struct MyNode {
+    ///     value: i32,
+    ///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+    /// }
+    ///
+    /// unsafe impl AvlItem<()> for MyNode {
+    ///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+    ///         unsafe { &mut *self.avl_node.get() }
+    ///     }
+    /// }
+    ///
+    /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
+    /// let key = 42;
+    /// let result = tree.find(&key, |k, n| k.cmp(&n.value));
+    ///
+    /// if !result.is_exact() {
+    ///     let new_node = Arc::new(MyNode {
+    ///         value: key,
+    ///         avl_node: UnsafeCell::new(Default::default()),
+    ///     });
+    ///     tree.insert(new_node, unsafe{result.detach()});
+    /// }
+    /// ```
+    ///
+    /// # Panics
+    /// Panics if the search result is an exact match (i.e. node already exists).
     #[inline]
-    pub fn insert<'a>(&'a mut self, new_data: P, w: AvlSearchResult<'a, P>) {
+    pub fn insert(&mut self, new_data: P, w: AvlSearchResult<'_, P>) {
         debug_assert!(w.direction.is_some());
         self._insert(new_data, w.node, w.direction.unwrap());
     }
@@ -379,16 +464,18 @@ where
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
     pub unsafe fn insert_here(
-        &mut self, new_data: P, here: *const P::Target, direction: AvlDirection,
+        &mut self, new_data: P, here: AvlSearchResult<P>, direction: AvlDirection,
     ) {
         let mut dir_child = direction;
-        let child = unsafe { (*here).get_node().get_child(dir_child) };
+        assert_eq!(here.node.is_null(), false);
+        let here_node = here.node;
+        let child = unsafe { (*here_node).get_node().get_child(dir_child) };
         if !child.is_null() {
             dir_child = dir_child.reverse();
             let node = self.bottom_child_ref(child, dir_child);
             self._insert(new_data, node, dir_child);
         } else {
-            self._insert(new_data, here, dir_child);
+            self._insert(new_data, here_node, dir_child);
         }
     }
 
@@ -551,6 +638,9 @@ where
     */
 
     /// Requires `del` to be a valid pointer to a node in this tree.
+    ///
+    /// # Safety
+    ///
     /// It does not drop the node data, only unlinks it.
     /// Caller is responsible for re-taking ownership (e.g. via from_raw) and dropping if needed.
     pub unsafe fn remove(&mut self, del: *const P::Target) {
@@ -750,13 +840,25 @@ where
     #[inline]
     pub fn remove_by_key<K>(&mut self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>) -> Option<P> {
         let result = self.find(val, cmp_func);
-        if result.direction.is_none() && !result.node.is_null() {
-            let node_ptr = result.node;
-            // Explicitly drop result to release immutable borrow on self
-            drop(result);
+        self.remove_with(unsafe { result.detach() })
+    }
+
+    /// remove with a previous search result
+    ///
+    /// #NOTE
+    ///
+    /// In order to resolve the borrowing issue from AvlSearchResult, use
+    /// [AvlSearchResult::detach()] before calling this function
+    ///
+    /// - If the result is exact match, return the removed element ownership
+    /// - If the result is not exact match, return None
+    #[inline]
+    pub fn remove_with(&mut self, result: AvlSearchResult<'_, P>) -> Option<P> {
+        if result.is_exact() {
             unsafe {
-                self.remove(node_ptr);
-                Some(P::from_raw(node_ptr))
+                let p = result.node;
+                self.remove(p);
+                Some(P::from_raw(p))
             }
         } else {
             None
@@ -899,6 +1001,7 @@ where
         }
     }
 
+    /// For range tree
     #[inline]
     pub fn find_nearest<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
@@ -959,33 +1062,46 @@ where
         }
     }
 
-    pub fn next(&self, data: &P::Target) -> Option<&P::Target> {
-        self.walk_dir(data, AvlDirection::Right)
-    }
-
-    pub fn prev(&self, data: &P::Target) -> Option<&P::Target> {
-        self.walk_dir(data, AvlDirection::Left)
+    #[inline]
+    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
+        if let Some(p) = self.walk_dir(data, AvlDirection::Right) {
+            Some(unsafe { p.as_ref() })
+        } else {
+            None
+        }
     }
 
     #[inline]
-    pub fn walk_dir(&self, data: &P::Target, dir: AvlDirection) -> Option<&P::Target> {
+    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
+        if let Some(p) = self.walk_dir(data, AvlDirection::Left) {
+            Some(unsafe { p.as_ref() })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn walk_dir(
+        &self, mut data_ptr: *const P::Target, dir: AvlDirection,
+    ) -> Option<NonNull<P::Target>> {
         let dir_inverse = dir.reverse();
-        let node = data.get_node();
+        let node = unsafe { (*data_ptr).get_node() };
         let temp = node.get_child(dir);
         if !temp.is_null() {
-            unsafe { self.bottom_child_ref(temp, dir_inverse).as_ref() }
+            unsafe {
+                Some(NonNull::new_unchecked(
+                    self.bottom_child_ref(temp, dir_inverse) as *mut P::Target
+                ))
+            }
         } else {
             let mut parent = node.parent;
             if parent.is_null() {
                 return None;
             }
-            let mut data_ptr = data as *const P::Target;
             loop {
                 let pdir = self.parent_direction(data_ptr, parent);
                 if pdir == dir_inverse {
-                    unsafe {
-                        return parent.as_ref();
-                    }
+                    return Some(unsafe { NonNull::new_unchecked(parent as *mut P::Target) });
                 }
                 data_ptr = parent;
                 parent = unsafe { (*parent).get_node() }.parent;
@@ -1014,15 +1130,20 @@ where
     #[inline]
     pub fn nearest<'a>(
         &'a self, current: &AvlSearchResult<'a, P>, direction: AvlDirection,
-    ) -> Option<&'a P::Target> {
+    ) -> AvlSearchResult<'a, P> {
         if !current.node.is_null() {
             if current.direction.is_some() && current.direction != Some(direction) {
-                return unsafe { current.node.as_ref() };
+                return AvlSearchResult { node: current.node, direction: None, _phan: PhantomData };
             }
-            return self.walk_dir(unsafe { &*current.node }, direction);
-        } else {
-            return None;
+            if let Some(node) = self.walk_dir(current.node, direction) {
+                return AvlSearchResult {
+                    node: node.as_ptr(),
+                    direction: None,
+                    _phan: PhantomData,
+                };
+            }
         }
+        return AvlSearchResult::default();
     }
 
     pub fn validate(&self, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
@@ -1193,8 +1314,9 @@ where
     T: AvlItem<Tag>,
 {
     pub fn remove_ref(&mut self, node: &Arc<T>) {
-        unsafe { self.remove(Arc::as_ptr(node)) };
-        unsafe { drop(Arc::from_raw(Arc::as_ptr(node))) };
+        let p = Arc::as_ptr(node);
+        unsafe { self.remove(p) };
+        unsafe { drop(Arc::from_raw(p)) };
     }
 }
 
@@ -1203,8 +1325,9 @@ where
     T: AvlItem<Tag>,
 {
     pub fn remove_ref(&mut self, node: &Rc<T>) {
-        unsafe { self.remove(Rc::as_ptr(node)) };
-        unsafe { drop(Rc::from_raw(Rc::as_ptr(node))) };
+        let p = Rc::as_ptr(node);
+        unsafe { self.remove(p) };
+        unsafe { drop(Rc::from_raw(p)) };
     }
 }
 
@@ -1316,15 +1439,21 @@ mod tests {
         let temp_node = new_intnode(0);
         let temp_node_val = Pointer::as_ref(&temp_node);
         assert!(tree.find_node(temp_node_val).get_node_ref().is_none());
-        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Left).is_none());
-        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Right).is_none());
+        assert_eq!(
+            tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Left).is_exact(),
+            false
+        );
+        assert_eq!(
+            tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Right).is_exact(),
+            false
+        );
         drop(temp_node);
 
         tree.add_int_node(new_intnode(0));
         let result = tree.find_int(0);
         assert!(result.get_node_ref().is_some());
-        assert!(tree.nearest(&result, AvlDirection::Left).is_none());
-        assert!(tree.nearest(&result, AvlDirection::Right).is_none());
+        assert_eq!(tree.nearest(&result, AvlDirection::Left).is_exact(), false);
+        assert_eq!(tree.nearest(&result, AvlDirection::Right).is_exact(), false);
 
         let rs = tree.find_larger_eq(&0, cmp_int).get_node_ref();
         assert!(rs.is_some());
@@ -1336,9 +1465,9 @@ mod tests {
 
         let result = tree.find_int(1);
         let left = tree.nearest(&result, AvlDirection::Left);
-        assert!(left.is_some());
-        assert_eq!(left.unwrap().value, 0);
-        assert!(tree.nearest(&result, AvlDirection::Right).is_none());
+        assert_eq!(left.is_exact(), true);
+        assert_eq!(left.get_nearest().unwrap().value, 0);
+        assert_eq!(tree.nearest(&result, AvlDirection::Right).is_exact(), false);
 
         tree.add_int_node(new_intnode(2));
         let rs = tree.find_larger_eq(&1, cmp_int).get_node_ref();
@@ -1505,30 +1634,33 @@ mod tests {
         let mut tree = new_inttree();
         let node1 = new_intnode(10);
         tree.add_int_node(node1);
-        let rs = tree.find_int(10);
-        let node1_ptr = rs.node;
-
         // Insert 5 before 10
-        unsafe { tree.insert_here(new_intnode(5), node1_ptr, AvlDirection::Left) };
+        let rs = tree.find_int(10);
+        let here = unsafe { rs.detach() };
+        unsafe { tree.insert_here(new_intnode(5), here, AvlDirection::Left) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 2);
         assert_eq!(tree.find_int(5).get_node_ref().unwrap().value, 5);
 
         // Insert 15 after 10
-        unsafe { tree.insert_here(new_intnode(15), node1_ptr, AvlDirection::Right) };
+        let rs = tree.find_int(10);
+        let here = unsafe { rs.detach() };
+        unsafe { tree.insert_here(new_intnode(15), here, AvlDirection::Right) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 3);
         assert_eq!(tree.find_int(15).get_node_ref().unwrap().value, 15);
 
-        let rs = tree.find_int(5);
-        let node5_ptr = rs.node;
         // Insert 3 before 5 (which is left child of 10)
-        unsafe { tree.insert_here(new_intnode(3), node5_ptr, AvlDirection::Left) };
+        let rs = tree.find_int(5);
+        let here = unsafe { rs.detach() };
+        unsafe { tree.insert_here(new_intnode(3), here, AvlDirection::Left) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 4);
 
         // Insert 7 after 5
-        unsafe { tree.insert_here(new_intnode(7), node5_ptr, AvlDirection::Right) };
+        let rs = tree.find_int(5);
+        let here = unsafe { rs.detach() };
+        unsafe { tree.insert_here(new_intnode(7), here, AvlDirection::Right) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 5);
     }
