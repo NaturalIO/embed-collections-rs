@@ -464,7 +464,10 @@ where
     }
     */
 
-    pub fn remove(&mut self, del: &P::Target) {
+    /// Requires `del` to be a valid pointer to a node in this tree.
+    /// It does not drop the node data, only unlinks it.
+    /// Caller is responsible for re-taking ownership (e.g. via from_raw) and dropping if needed.
+    pub unsafe fn remove(&mut self, del: *const P::Target) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
          * We swap a node with 2 children with a sequentially valued
@@ -478,18 +481,18 @@ where
         if self.count == 0 {
             return;
         }
-        let del_ptr = del as *const P::Target;
+        let del_ptr = del;
         if self.count == 1 && self.root == del_ptr {
             self.root = null();
             self.count = 0;
-            del.get_node().detach();
+            (*del).get_node().detach();
             return;
         }
         let mut which_child: AvlDirection;
         let imm_data: *const P::Target;
         let parent: *const P::Target;
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
-        let del_node = del.get_node();
+        let del_node = (*del).get_node();
 
         let node_swap_flag: bool;
         node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
@@ -656,8 +659,21 @@ where
         del_node.detach();
     }
 
+    #[inline]
+    pub fn remove_with(&mut self, result: AvlSearchResult<P>) -> Option<P> {
+        if result.direction.is_none() && !result.node.is_null() {
+            unsafe {
+                self.remove(result.node);
+                Some(P::from_raw(result.node))
+            }
+        } else {
+            None
+        }
+    }
+
     // When found node equal to value, return (Some(node), None);
     // otherwise return (Some(node), direction) to indicate where to insert
+    #[inline]
     pub fn find<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> AvlSearchResult<'a, P> {
@@ -704,6 +720,7 @@ where
     }
 
     // for range tree, val may overlap multiple range(node), ensure return the smallest
+    #[inline]
     pub fn find_contained<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> Option<&'a P::Target> {
@@ -747,6 +764,7 @@ where
     }
 
     // for slab, return any block larger or equal than search param
+    #[inline]
     pub fn find_larger_eq<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> AvlSearchResult<'a, P> {
@@ -786,6 +804,7 @@ where
         }
     }
 
+    #[inline]
     pub fn find_nearest<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> AvlSearchResult<'a, P> {
@@ -853,6 +872,7 @@ where
         self.walk_dir(data, AvlDirection::Left)
     }
 
+    #[inline]
     pub fn walk_dir(&self, data: &P::Target, dir: AvlDirection) -> Option<&P::Target> {
         let dir_inverse = dir.reverse();
         let node = data.get_node();
@@ -881,6 +901,7 @@ where
         }
     }
 
+    #[inline]
     fn validate_node(&self, data: *const P::Target, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
         let node = unsafe { (*data).get_node() };
         let left = node.left;
@@ -946,6 +967,7 @@ where
     }
 
     // return added: bool
+    #[inline]
     pub fn add(&mut self, node: P, cmp_func: AvlCmpFunc<P::Target, P::Target>) -> bool {
         if self.count == 0 && self.root.is_null() {
             self.root = node.into_raw();
@@ -984,10 +1006,29 @@ where
         if mem::needs_drop::<P>() {
             while !self.root.is_null() {
                 let root = self.root;
-                unsafe { self.remove(&*root) };
+                unsafe { self.remove(root) };
                 unsafe { drop(P::from_raw(root)) };
             }
         }
+    }
+}
+impl<T, Tag> AvlTree<Arc<T>, Tag>
+where
+    T: AvlItem<Tag>,
+{
+    pub fn remove_ref(&mut self, node: &Arc<T>) {
+        unsafe { self.remove(Arc::as_ptr(node)) };
+        unsafe { drop(Arc::from_raw(Arc::as_ptr(node))) };
+    }
+}
+
+impl<T, Tag> AvlTree<Rc<T>, Tag>
+where
+    T: AvlItem<Tag>,
+{
+    pub fn remove_ref(&mut self, node: &Rc<T>) {
+        unsafe { self.remove(Rc::as_ptr(node)) };
+        unsafe { drop(Rc::from_raw(Rc::as_ptr(node))) };
     }
 }
 
@@ -1043,14 +1084,12 @@ mod tests {
         fn remove_int(&mut self, i: i64) -> bool {
             let result = self.find_int(i);
 
-            if let Some(node) = result.get_node_ref() {
-                let node_ptr = node as *const IntAvlNode;
-                // Drop borrow of self
-                drop(result);
-                unsafe { self.remove(&*node_ptr) };
+            // Decouple lifetime to allow mutable borrow in remove_with
+            let result_static =
+                unsafe { mem::transmute::<_, AvlSearchResult<'static, Box<IntAvlNode>>>(result) };
 
-                // We must take ownership back to drop it, otherwise leak.
-                unsafe { drop(Box::from_raw(node_ptr as *mut IntAvlNode)) };
+            if let Some(node) = self.remove_with(result_static) {
+                // node is Box<IntAvlNode>, dropped automatically
                 return true;
             }
             // else
@@ -1143,8 +1182,7 @@ mod tests {
         let max;
         #[cfg(miri)]
         {
-            max = 500;
-            //max = 2000;
+            max = 2000;
         }
         #[cfg(not(miri))]
         {
@@ -1250,8 +1288,7 @@ mod tests {
 
     #[test]
     fn int_avl_tree_random() {
-        let count = 200;
-        //let count = 1000;
+        let count = 1000;
         let mut test_list: Vec<i64> = Vec::with_capacity(count);
         let mut rng = rand::thread_rng();
         let mut tree = new_inttree();
@@ -1343,5 +1380,41 @@ mod tests {
         assert!(Arc::ptr_eq(&node, &exact_arc));
         // Check ref count: 1 (original) + 1 (in tree) + 1 (exact_arc) = 3
         assert_eq!(Arc::strong_count(&node), 3);
+    }
+
+    #[test]
+    fn test_arc_avl_tree_remove_ref() {
+        let mut tree = AvlTree::<Arc<IntAvlNode>, ()>::new();
+        let node = Arc::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: 200 });
+        tree.add(node.clone(), cmp_int_node);
+        assert_eq!(tree.get_count(), 1);
+        assert_eq!(Arc::strong_count(&node), 2);
+
+        tree.remove_ref(&node);
+        assert_eq!(tree.get_count(), 0);
+        assert_eq!(Arc::strong_count(&node), 1);
+    }
+
+    #[test]
+    fn test_arc_avl_tree_remove_with() {
+        let mut tree = AvlTree::<Arc<IntAvlNode>, ()>::new();
+        let node = Arc::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: 300 });
+        tree.add(node.clone(), cmp_int_node);
+
+        let result = tree.find(&300, cmp_int);
+        // unsafe decouple to simulate independent search result or allow mutation during search result holding (if careful)
+        let result_static =
+            unsafe { mem::transmute::<_, AvlSearchResult<'static, Arc<IntAvlNode>>>(result) };
+
+        let removed = tree.remove_with(result_static);
+        assert!(removed.is_some());
+        let removed_arc = removed.unwrap();
+        assert_eq!(removed_arc.value, 300);
+        assert_eq!(tree.get_count(), 0);
+        // count: 1 (node) + 1 (removed_arc) = 2. Tree dropped its count.
+        assert_eq!(Arc::strong_count(&node), 2);
+
+        drop(removed_arc);
+        assert_eq!(Arc::strong_count(&node), 1);
     }
 }
