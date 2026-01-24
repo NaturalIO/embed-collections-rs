@@ -214,8 +214,15 @@ where
         AvlTree { count: 0, root: null(), _phan: Default::default() }
     }
 
+    /// Optimized non-recursive, stack-less post-order traversal to destroy all nodes.
+    /// Follows the same algorithm as ZFS's avl_destroy_nodes.
+    #[inline]
+    pub fn drain(&mut self) -> AvlDrain<'_, P, Tag> {
+        AvlDrain { tree: self, parent: null(), dir: None }
+    }
+
     pub fn get_count(&self) -> i64 {
-        return self.count;
+        self.count
     }
 
     pub fn first(&self) -> Option<&P::Target> {
@@ -294,9 +301,11 @@ where
     /// if the given child of the node is already present we move to either
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
-    pub fn insert_here(&mut self, new_data: P, here: &P::Target, direction: AvlDirection) {
+    pub unsafe fn insert_here(
+        &mut self, new_data: P, here: *const P::Target, direction: AvlDirection,
+    ) {
         let mut dir_child = direction;
-        let child = here.get_node().get_child(dir_child);
+        let child = unsafe { (*here).get_node().get_child(dir_child) };
         if !child.is_null() {
             dir_child = dir_child.reverse();
             let node = self.bottom_child_ref(child, dir_child);
@@ -481,21 +490,19 @@ where
         if self.count == 0 {
             return;
         }
-        let del_ptr = del;
-        if self.count == 1 && self.root == del_ptr {
+        if self.count == 1 && self.root == del {
             self.root = null();
             self.count = 0;
-            (*del).get_node().detach();
+            unsafe { (*del).get_node().detach() };
             return;
         }
         let mut which_child: AvlDirection;
         let imm_data: *const P::Target;
         let parent: *const P::Target;
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
-        let del_node = (*del).get_node();
+        let del_node = unsafe { (*del).get_node() };
 
-        let node_swap_flag: bool;
-        node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
+        let node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
 
         if node_swap_flag {
             let dir: AvlDirection;
@@ -1004,14 +1011,91 @@ where
 {
     fn drop(&mut self) {
         if mem::needs_drop::<P>() {
-            while !self.root.is_null() {
-                let root = self.root;
-                unsafe { self.remove(root) };
-                unsafe { drop(P::from_raw(root)) };
-            }
+            for _ in self.drain() {}
         }
     }
 }
+
+pub struct AvlDrain<'a, P: Pointer, Tag>
+where
+    P::Target: AvlItem<Tag>,
+{
+    tree: &'a mut AvlTree<P, Tag>,
+    parent: *const P::Target,
+    dir: Option<AvlDirection>,
+}
+
+impl<'a, P: Pointer, Tag> Iterator for AvlDrain<'a, P, Tag>
+where
+    P::Target: AvlItem<Tag>,
+{
+    type Item = P;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.tree.root.is_null() {
+            return None;
+        }
+
+        let mut node: *const P::Target;
+        let parent: *const P::Target;
+
+        if self.dir.is_none() && self.parent.is_null() {
+            // Initial call: find the leftmost node
+            let mut curr = self.tree.root;
+            while unsafe { !(*curr).get_node().left.is_null() } {
+                curr = unsafe { (*curr).get_node().left };
+            }
+            node = curr;
+        } else {
+            parent = self.parent;
+            if parent.is_null() {
+                // Should not happen if root was nulled
+                return None;
+            }
+
+            let child_dir = self.dir.unwrap();
+            // child_dir child of parent was just nulled in previous call?
+            // NO, we null it in THIS call.
+
+            if child_dir == AvlDirection::Right || unsafe { (*parent).get_node().right.is_null() } {
+                node = parent;
+            } else {
+                // Finished left, go to right sibling
+                node = unsafe { (*parent).get_node().right };
+                while unsafe { !(*node).get_node().left.is_null() } {
+                    node = unsafe { (*node).get_node().left };
+                }
+            }
+        }
+
+        // Goto check_right_side logic
+        if unsafe { !(*node).get_node().right.is_null() } {
+            // It has a right child, so we must yield that first (in post-order)
+            // Note: in AVL, if left is null, right must be a leaf.
+            node = unsafe { (*node).get_node().right };
+        }
+
+        // Determine next state
+        let next_parent = unsafe { (*node).get_node().parent };
+        if next_parent.is_null() {
+            self.tree.root = null();
+            self.parent = null();
+            self.dir = Some(AvlDirection::Left);
+        } else {
+            self.parent = next_parent;
+            self.dir = Some(self.tree.parent_direction(node, next_parent));
+            // Unlink from parent NOW
+            unsafe { (*next_parent).get_node().set_child(self.dir.unwrap(), null()) };
+        }
+
+        self.tree.count -= 1;
+        unsafe {
+            (*node).get_node().detach();
+            Some(P::from_raw(node))
+        }
+    }
+}
+
 impl<T, Tag> AvlTree<Arc<T>, Tag>
 where
     T: AvlItem<Tag>,
@@ -1088,7 +1172,7 @@ mod tests {
             let result_static =
                 unsafe { mem::transmute::<_, AvlSearchResult<'static, Box<IntAvlNode>>>(result) };
 
-            if let Some(node) = self.remove_with(result_static) {
+            if let Some(_node) = self.remove_with(result_static) {
                 // node is Box<IntAvlNode>, dropped automatically
                 return true;
             }
@@ -1197,7 +1281,6 @@ mod tests {
         tree.validate_tree();
         assert_eq!(tree.get_count(), max as i64);
 
-        let mut count = 0;
         let mut count = 0;
         let mut current = tree.first();
         let last = tree.last();
@@ -1336,28 +1419,30 @@ mod tests {
         let mut tree = new_inttree();
         let node1 = new_intnode(10);
         tree.add_int_node(node1);
-        let node1_ref = unsafe { &*(tree.find_int(10).get_node_ref().unwrap() as *const _) }; // Keep a reference
+        let rs = tree.find_int(10);
+        let node1_ptr = rs.node;
 
         // Insert 5 before 10
-        tree.insert_here(new_intnode(5), node1_ref, AvlDirection::Left);
+        unsafe { tree.insert_here(new_intnode(5), node1_ptr, AvlDirection::Left) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 2);
         assert_eq!(tree.find_int(5).get_node_ref().unwrap().value, 5);
 
         // Insert 15 after 10
-        tree.insert_here(new_intnode(15), node1_ref, AvlDirection::Right);
+        unsafe { tree.insert_here(new_intnode(15), node1_ptr, AvlDirection::Right) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 3);
         assert_eq!(tree.find_int(15).get_node_ref().unwrap().value, 15);
 
-        let node5 = unsafe { &*(tree.find_int(5).get_node_ref().unwrap() as *const _) };
+        let rs = tree.find_int(5);
+        let node5_ptr = rs.node;
         // Insert 3 before 5 (which is left child of 10)
-        tree.insert_here(new_intnode(3), node5, AvlDirection::Left);
+        unsafe { tree.insert_here(new_intnode(3), node5_ptr, AvlDirection::Left) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 4);
 
         // Insert 7 after 5
-        tree.insert_here(new_intnode(7), node5, AvlDirection::Right);
+        unsafe { tree.insert_here(new_intnode(7), node5_ptr, AvlDirection::Right) };
         tree.validate_tree();
         assert_eq!(tree.get_count(), 5);
     }
@@ -1416,5 +1501,23 @@ mod tests {
 
         drop(removed_arc);
         assert_eq!(Arc::strong_count(&node), 1);
+    }
+
+    #[test]
+    fn test_avl_drain() {
+        let mut tree = new_inttree();
+        for i in 0..100 {
+            tree.add_int_node(new_intnode(i));
+        }
+        assert_eq!(tree.get_count(), 100);
+
+        let mut count = 0;
+        for node in tree.drain() {
+            assert!(node.value >= 0 && node.value < 100);
+            count += 1;
+        }
+        assert_eq!(count, 100);
+        assert_eq!(tree.get_count(), 0);
+        assert!(tree.first().is_none());
     }
 }
