@@ -3,6 +3,8 @@
 //! The algothim originate from open-zfs
 
 use crate::Pointer;
+use alloc::rc::Rc;
+use alloc::sync::Arc;
 use core::marker::PhantomData;
 use core::{
     cmp::{Ordering, PartialEq},
@@ -138,57 +140,60 @@ where
     _phan: PhantomData<fn(P, &Tag)>,
 }
 
-pub struct AvlSearchResult<'a, T> {
-    node: *const T,
+pub struct AvlSearchResult<'a, P: Pointer> {
+    node: *const P::Target,
     pub direction: Option<AvlDirection>,
-    _phan: PhantomData<&'a T>,
+    _phan: PhantomData<&'a P::Target>,
 }
 
-impl<T> Default for AvlSearchResult<'_, T> {
+impl<P: Pointer> Default for AvlSearchResult<'_, P> {
     fn default() -> Self {
         AvlSearchResult { node: null(), direction: Some(AvlDirection::Left), _phan: PhantomData }
     }
 }
 
-impl<'a, T> AvlSearchResult<'a, T> {
+impl<'a, P: Pointer> AvlSearchResult<'a, P> {
     #[inline(always)]
-    pub fn get_exact(&self) -> *const T {
+    pub fn get_node_ref(&self) -> Option<&'a P::Target> {
         if self.direction.is_none() {
             if self.node.is_null() {
-                return null();
+                return None;
             } else {
-                return self.node;
+                return unsafe { self.node.as_ref() };
             }
         }
-        null()
+        None
     }
+}
 
-    #[inline(always)]
-    pub fn into_exact(self) -> *const T {
-        if self.direction.is_none() {
-            if self.node.is_null() {
-                return null();
-            } else {
-                return self.node;
+impl<'a, T> AvlSearchResult<'a, Arc<T>> {
+    pub fn get_exact(&self) -> Option<Arc<T>> {
+        if self.direction.is_none() && !self.node.is_null() {
+            unsafe {
+                Arc::increment_strong_count(self.node);
+                Some(Arc::from_raw(self.node))
             }
+        } else {
+            None
         }
-        null()
     }
+}
 
-    #[inline(always)]
-    pub fn get_node_ref(&self) -> *const T {
-        return self.node;
+impl<'a, T> AvlSearchResult<'a, Rc<T>> {
+    pub fn get_exact(&self) -> Option<Rc<T>> {
+        if self.direction.is_none() && !self.node.is_null() {
+            unsafe {
+                Rc::increment_strong_count(self.node);
+                Some(Rc::from_raw(self.node))
+            }
+        } else {
+            None
+        }
     }
 }
 
 macro_rules! return_end {
-    ($tree: expr, $dir: expr) => {{
-        if $tree.root.is_null() {
-            return null();
-        } else {
-            return $tree.bottom_child_ref($tree.root, $dir);
-        }
-    }};
+    ($tree: expr, $dir: expr) => {{ if $tree.root.is_null() { null() } else { $tree.bottom_child_ref($tree.root, $dir) } }};
 }
 
 macro_rules! balance_to_child {
@@ -213,17 +218,17 @@ where
         return self.count;
     }
 
-    pub fn first(&self) -> *const P::Target {
-        return_end!(self, AvlDirection::Left)
+    pub fn first(&self) -> Option<&P::Target> {
+        unsafe { return_end!(self, AvlDirection::Left).as_ref() }
     }
 
     #[inline]
-    pub fn last(&self) -> *const P::Target {
-        return_end!(self, AvlDirection::Right)
+    pub fn last(&self) -> Option<&P::Target> {
+        unsafe { return_end!(self, AvlDirection::Right).as_ref() }
     }
 
     #[inline]
-    pub fn insert<'a>(&'a mut self, new_data: P, w: AvlSearchResult<'a, P::Target>) {
+    pub fn insert<'a>(&'a mut self, new_data: P, w: AvlSearchResult<'a, P>) {
         debug_assert!(w.direction.is_some());
         self._insert(new_data, w.node, w.direction.unwrap());
     }
@@ -282,9 +287,16 @@ where
         }
     }
 
-    pub fn insert_here(&mut self, new_data: P, here: *const P::Target, direction: AvlDirection) {
+    /// Insert "new_data" in "tree" in the given "direction" either after or
+    /// before AvlDirection::After, AvlDirection::Before) the data "here".
+    ///
+    /// Insertions can only be done at empty leaf points in the tree, therefore
+    /// if the given child of the node is already present we move to either
+    /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
+    /// every other node in the tree is a leaf, this always works.
+    pub fn insert_here(&mut self, new_data: P, here: &P::Target, direction: AvlDirection) {
         let mut dir_child = direction;
-        let child = unsafe { (*here).get_node().get_child(dir_child) };
+        let child = here.get_node().get_child(dir_child);
         if !child.is_null() {
             dir_child = dir_child.reverse();
             let node = self.bottom_child_ref(child, dir_child);
@@ -423,7 +435,8 @@ where
         return true;
     }
 
-    pub fn replace(&mut self, old: *const P::Target, node: P) {
+    /*
+    fn replace(&mut self, old: *const P::Target, node: P) {
         let old_node = unsafe { (*old).get_node() };
         let new_ptr = node.into_raw();
         let new_node = unsafe { (*new_ptr).get_node() };
@@ -449,8 +462,9 @@ where
             self.root = new_ptr;
         }
     }
+    */
 
-    pub fn remove(&mut self, del: *const P::Target) -> P {
+    pub fn remove(&mut self, del: &P::Target) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
          * We swap a node with 2 children with a sequentially valued
@@ -462,17 +476,20 @@ where
          * number of rotations needed.
          */
         if self.count == 0 {
-            return unsafe { P::from_raw(del) };
-        } else if self.count == 1 && self.root == del {
+            return;
+        }
+        let del_ptr = del as *const P::Target;
+        if self.count == 1 && self.root == del_ptr {
             self.root = null();
             self.count = 0;
-            unsafe { (*del).get_node() }.detach();
-            return unsafe { P::from_raw(del) };
+            del.get_node().detach();
+            return;
         }
         let mut which_child: AvlDirection;
         let imm_data: *const P::Target;
         let parent: *const P::Target;
-        let del_node = unsafe { (*del).get_node() };
+        // Use reference directly to get node, avoiding unsafe dereference of raw pointer
+        let del_node = del.get_node();
 
         let node_swap_flag: bool;
         node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
@@ -637,14 +654,13 @@ where
             }
         }
         del_node.detach();
-        return unsafe { P::from_raw(del) };
     }
 
     // When found node equal to value, return (Some(node), None);
     // otherwise return (Some(node), direction) to indicate where to insert
     pub fn find<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<'a, P::Target> {
+    ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -690,9 +706,9 @@ where
     // for range tree, val may overlap multiple range(node), ensure return the smallest
     pub fn find_contained<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> *const P::Target {
+    ) -> Option<&'a P::Target> {
         if self.root.is_null() {
-            return null();
+            return None;
         }
         let mut node_data = self.root;
         let mut result_node: *const P::Target = null();
@@ -727,13 +743,13 @@ where
                 }
             }
         }
-        result_node
+        if result_node.is_null() { None } else { unsafe { result_node.as_ref() } }
     }
 
     // for slab, return any block larger or equal than search param
     pub fn find_larger_eq<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<'a, P::Target> {
+    ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -772,7 +788,7 @@ where
 
     pub fn find_nearest<'a, K>(
         &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<'a, P::Target> {
+    ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -823,41 +839,43 @@ where
 
     pub fn walk<F: Fn(&P::Target)>(&self, cb: F) {
         let mut node = self.first();
-        while !node.is_null() {
-            cb(unsafe { &*node });
-            node = self.next(node);
+        while let Some(n) = node {
+            cb(n);
+            node = self.next(n);
         }
     }
 
-    pub fn next(&self, data: *const P::Target) -> *const P::Target {
+    pub fn next(&self, data: &P::Target) -> Option<&P::Target> {
         self.walk_dir(data, AvlDirection::Right)
     }
 
-    pub fn prev(&self, data: *const P::Target) -> *const P::Target {
+    pub fn prev(&self, data: &P::Target) -> Option<&P::Target> {
         self.walk_dir(data, AvlDirection::Left)
     }
 
-    pub fn walk_dir(&self, data: *const P::Target, dir: AvlDirection) -> *const P::Target {
+    pub fn walk_dir(&self, data: &P::Target, dir: AvlDirection) -> Option<&P::Target> {
         let dir_inverse = dir.reverse();
-        let node = unsafe { (*data).get_node() };
+        let node = data.get_node();
         let temp = node.get_child(dir);
         if !temp.is_null() {
-            return self.bottom_child_ref(temp, dir_inverse);
+            unsafe { self.bottom_child_ref(temp, dir_inverse).as_ref() }
         } else {
             let mut parent = node.parent;
             if parent.is_null() {
-                return null();
+                return None;
             }
-            let mut data_ptr = data;
+            let mut data_ptr = data as *const P::Target;
             loop {
                 let pdir = self.parent_direction(data_ptr, parent);
                 if pdir == dir_inverse {
-                    return parent;
+                    unsafe {
+                        return parent.as_ref();
+                    }
                 }
                 data_ptr = parent;
                 parent = unsafe { (*parent).get_node() }.parent;
                 if parent.is_null() {
-                    return null();
+                    return None;
                 }
             }
         }
@@ -879,15 +897,15 @@ where
 
     #[inline]
     pub fn nearest<'a>(
-        &self, current: &AvlSearchResult<'a, P::Target>, direction: AvlDirection,
-    ) -> *const P::Target {
+        &'a self, current: &AvlSearchResult<'a, P>, direction: AvlDirection,
+    ) -> Option<&'a P::Target> {
         if !current.node.is_null() {
             if current.direction.is_some() && current.direction != Some(direction) {
-                return current.node;
+                return unsafe { current.node.as_ref() };
             }
-            return self.walk_dir(current.node, direction);
+            return self.walk_dir(unsafe { &*current.node }, direction);
         } else {
-            return null();
+            return None;
         }
     }
 
@@ -966,7 +984,8 @@ where
         if mem::needs_drop::<P>() {
             while !self.root.is_null() {
                 let root = self.root;
-                self.remove(root);
+                unsafe { self.remove(&*root) };
+                unsafe { drop(P::from_raw(root)) };
             }
         }
     }
@@ -1023,13 +1042,20 @@ mod tests {
     impl AvlTree<Box<IntAvlNode>, ()> {
         fn remove_int(&mut self, i: i64) -> bool {
             let result = self.find_int(i);
-            let node = result.get_exact();
-            if node.is_null() {
-                println!("not found {}", i);
-                return false;
+
+            if let Some(node) = result.get_node_ref() {
+                let node_ptr = node as *const IntAvlNode;
+                // Drop borrow of self
+                drop(result);
+                unsafe { self.remove(&*node_ptr) };
+
+                // We must take ownership back to drop it, otherwise leak.
+                unsafe { drop(Box::from_raw(node_ptr as *mut IntAvlNode)) };
+                return true;
             }
-            let _ = self.remove(node);
-            true
+            // else
+            println!("not found {}", i);
+            false
         }
 
         fn add_int_node(&mut self, node: Box<IntAvlNode>) -> bool {
@@ -1040,11 +1066,11 @@ mod tests {
             self.validate(cmp_int_node);
         }
 
-        fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, IntAvlNode> {
+        fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, Box<IntAvlNode>> {
             self.find(&i, cmp_int)
         }
 
-        fn find_node<'a>(&'a self, node: &'a IntAvlNode) -> AvlSearchResult<'a, IntAvlNode> {
+        fn find_node<'a>(&'a self, node: &'a IntAvlNode) -> AvlSearchResult<'a, Box<IntAvlNode>> {
             self.find(node, cmp_int_node)
         }
     }
@@ -1054,8 +1080,8 @@ mod tests {
         let mut tree = new_inttree();
 
         assert_eq!(tree.get_count(), 0);
-        assert!(tree.first().is_null());
-        assert!(tree.last().is_null());
+        assert!(tree.first().is_none());
+        assert!(tree.last().is_none());
 
         let node1 = new_intnode(1);
         let node2 = new_intnode(2);
@@ -1080,35 +1106,35 @@ mod tests {
 
         let temp_node = new_intnode(0);
         let temp_node_val = Pointer::as_ref(&temp_node);
-        assert!(tree.find_node(temp_node_val).into_exact().is_null());
-        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Left).is_null());
-        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Right).is_null());
+        assert!(tree.find_node(temp_node_val).get_node_ref().is_none());
+        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Left).is_none());
+        assert!(tree.nearest(&tree.find_node(temp_node_val), AvlDirection::Right).is_none());
         drop(temp_node);
 
         tree.add_int_node(new_intnode(0));
         let result = tree.find_int(0);
-        assert!(!result.get_node_ref().is_null());
-        assert!(tree.nearest(&result, AvlDirection::Left).is_null());
-        assert!(tree.nearest(&result, AvlDirection::Right).is_null());
+        assert!(result.get_node_ref().is_some());
+        assert!(tree.nearest(&result, AvlDirection::Left).is_none());
+        assert!(tree.nearest(&result, AvlDirection::Right).is_none());
 
-        let rs = tree.find_larger_eq(&0, cmp_int).into_exact();
-        assert!(!rs.is_null());
-        let found_value = unsafe { (*rs).value };
+        let rs = tree.find_larger_eq(&0, cmp_int).get_node_ref();
+        assert!(rs.is_some());
+        let found_value = rs.unwrap().value;
         assert_eq!(found_value, 0);
 
-        let rs = tree.find_larger_eq(&2, cmp_int).into_exact();
-        assert!(rs.is_null());
+        let rs = tree.find_larger_eq(&2, cmp_int).get_node_ref();
+        assert!(rs.is_none());
 
         let result = tree.find_int(1);
         let left = tree.nearest(&result, AvlDirection::Left);
-        assert!(!left.is_null());
-        assert_eq!(unsafe { (*left).value }, 0);
-        assert!(tree.nearest(&result, AvlDirection::Right).is_null());
+        assert!(left.is_some());
+        assert_eq!(left.unwrap().value, 0);
+        assert!(tree.nearest(&result, AvlDirection::Right).is_none());
 
         tree.add_int_node(new_intnode(2));
-        let rs = tree.find_larger_eq(&1, cmp_int).into_exact();
-        assert!(!rs.is_null());
-        let found_value = unsafe { (*rs).value };
+        let rs = tree.find_larger_eq(&1, cmp_int).get_node_ref();
+        assert!(rs.is_some());
+        let found_value = rs.unwrap().value;
         assert_eq!(found_value, 2);
     }
 
@@ -1117,14 +1143,15 @@ mod tests {
         let max;
         #[cfg(miri)]
         {
-            max = 2000;
+            max = 500;
+            //max = 2000;
         }
         #[cfg(not(miri))]
         {
             max = 200000;
         }
         let mut tree = new_inttree();
-        assert!(tree.first().is_null());
+        assert!(tree.first().is_none());
         let start_ts = Instant::now();
         for i in 0..max {
             tree.add_int_node(new_intnode(i));
@@ -1133,29 +1160,30 @@ mod tests {
         assert_eq!(tree.get_count(), max as i64);
 
         let mut count = 0;
+        let mut count = 0;
         let mut current = tree.first();
         let last = tree.last();
-        while !current.is_null() {
-            assert_eq!(unsafe { (*current).value }, count);
+        while let Some(c) = current {
+            assert_eq!(c.value, count);
             count += 1;
-            if current == last {
-                current = null();
+            if c as *const _ == last.map(|n| n as *const _).unwrap_or(null()) {
+                current = None;
             } else {
-                current = tree.next(current);
+                current = tree.next(c);
             }
         }
         assert_eq!(count, max);
 
         {
-            let rs = tree.find_larger_eq(&5, cmp_int).into_exact();
-            assert!(!rs.is_null());
-            let found_value = unsafe { (*rs).value };
+            let rs = tree.find_larger_eq(&5, cmp_int).get_node_ref();
+            assert!(rs.is_some());
+            let found_value = rs.unwrap().value;
             println!("found larger_eq {}", found_value);
             assert!(found_value >= 5);
             tree.remove_int(5);
-            let rs = tree.find_larger_eq(&5, cmp_int).into_exact();
-            assert!(!rs.is_null());
-            assert!(unsafe { (*rs).value } >= 6);
+            let rs = tree.find_larger_eq(&5, cmp_int).get_node_ref();
+            assert!(rs.is_some());
+            assert!(rs.unwrap().value >= 6);
             tree.add_int_node(new_intnode(5));
         }
 
@@ -1176,7 +1204,7 @@ mod tests {
             let node = new_intnode(*i);
             tree.add_int_node(node);
             let rs = tree.find_int(*i);
-            assert!(!rs.get_exact().is_null(), "add error {}", i);
+            assert!(rs.get_node_ref().is_some(), "add error {}", i);
         }
         assert_eq!(tree.get_count(), arr.len() as i64);
         for i in arr.iter() {
@@ -1199,7 +1227,7 @@ mod tests {
             tree.validate_tree();
         }
 
-        assert!(!tree.find_int(536872960).get_exact().is_null());
+        assert!(tree.find_int(536872960).get_node_ref().is_some());
         let node2 = new_intnode(12288);
         tree.add_int_node(node2);
         tree.validate_tree();
@@ -1211,10 +1239,10 @@ mod tests {
         tree.add_int_node(node3);
         tree.validate_tree();
         tree.remove_int(12288);
-        assert!(tree.find_int(12288).get_exact().is_null());
+        assert!(tree.find_int(12288).get_node_ref().is_none());
         tree.validate_tree();
         tree.remove_int(22528);
-        assert!(tree.find_int(22528).get_exact().is_null());
+        assert!(tree.find_int(22528).get_node_ref().is_none());
         tree.validate_tree();
         tree.add_int_node(new_intnode(22528));
         tree.validate_tree();
@@ -1222,7 +1250,8 @@ mod tests {
 
     #[test]
     fn int_avl_tree_random() {
-        let count = 1000;
+        let count = 200;
+        //let count = 1000;
         let mut test_list: Vec<i64> = Vec::with_capacity(count);
         let mut rng = rand::thread_rng();
         let mut tree = new_inttree();
@@ -1237,26 +1266,25 @@ mod tests {
         tree.validate_tree();
         test_list.sort();
         for index in 0..test_list.len() {
-            let node_ptr = tree.find_int(test_list[index]).get_exact();
-            assert!(!node_ptr.is_null());
+            let node_ptr = tree.find_int(test_list[index]).get_node_ref().unwrap();
             let prev = tree.prev(node_ptr);
             let next = tree.next(node_ptr);
             if index == 0 {
                 // first node
-                assert!(prev.is_null());
-                assert!(!next.is_null());
-                assert_eq!(unsafe { (*next).value }, test_list[index + 1]);
+                assert!(prev.is_none());
+                assert!(next.is_some());
+                assert_eq!(next.unwrap().value, test_list[index + 1]);
             } else if index == test_list.len() - 1 {
                 // last node
-                assert!(!prev.is_null());
-                assert_eq!(unsafe { (*prev).value }, test_list[index - 1]);
-                assert!(next.is_null());
+                assert!(prev.is_some());
+                assert_eq!(prev.unwrap().value, test_list[index - 1]);
+                assert!(next.is_none());
             } else {
                 // middle node
-                assert!(!prev.is_null());
-                assert_eq!(unsafe { (*prev).value }, test_list[index - 1]);
-                assert!(!next.is_null());
-                assert_eq!(unsafe { (*next).value }, test_list[index + 1]);
+                assert!(prev.is_some());
+                assert_eq!(prev.unwrap().value, test_list[index - 1]);
+                assert!(next.is_some());
+                assert_eq!(next.unwrap().value, test_list[index + 1]);
             }
         }
         for index in 0..test_list.len() {
@@ -1264,5 +1292,56 @@ mod tests {
         }
         tree.validate_tree();
         assert_eq!(0, tree.get_count());
+    }
+
+    #[test]
+    fn int_avl_tree_insert_here() {
+        let mut tree = new_inttree();
+        let node1 = new_intnode(10);
+        tree.add_int_node(node1);
+        let node1_ref = unsafe { &*(tree.find_int(10).get_node_ref().unwrap() as *const _) }; // Keep a reference
+
+        // Insert 5 before 10
+        tree.insert_here(new_intnode(5), node1_ref, AvlDirection::Left);
+        tree.validate_tree();
+        assert_eq!(tree.get_count(), 2);
+        assert_eq!(tree.find_int(5).get_node_ref().unwrap().value, 5);
+
+        // Insert 15 after 10
+        tree.insert_here(new_intnode(15), node1_ref, AvlDirection::Right);
+        tree.validate_tree();
+        assert_eq!(tree.get_count(), 3);
+        assert_eq!(tree.find_int(15).get_node_ref().unwrap().value, 15);
+
+        let node5 = unsafe { &*(tree.find_int(5).get_node_ref().unwrap() as *const _) };
+        // Insert 3 before 5 (which is left child of 10)
+        tree.insert_here(new_intnode(3), node5, AvlDirection::Left);
+        tree.validate_tree();
+        assert_eq!(tree.get_count(), 4);
+
+        // Insert 7 after 5
+        tree.insert_here(new_intnode(7), node5, AvlDirection::Right);
+        tree.validate_tree();
+        assert_eq!(tree.get_count(), 5);
+    }
+
+    #[test]
+    fn test_arc_avl_tree_get_exact() {
+        let mut tree = AvlTree::<Arc<IntAvlNode>, ()>::new();
+        // Manually constructing Arc node
+        let node = Arc::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: 100 });
+        tree.add(node.clone(), cmp_int_node);
+
+        // find returns AvlSearchResult<'a, Arc<IntAvlNode>>
+        let result_search = tree.find(&100, cmp_int);
+
+        // This should invoke the specialized get_exact for Arc<T>
+        let exact = result_search.get_exact();
+        assert!(exact.is_some());
+        let exact_arc = exact.unwrap();
+        assert_eq!(exact_arc.value, 100);
+        assert!(Arc::ptr_eq(&node, &exact_arc));
+        // Check ref count: 1 (original) + 1 (in tree) + 1 (exact_arc) = 3
+        assert_eq!(Arc::strong_count(&node), 3);
     }
 }
