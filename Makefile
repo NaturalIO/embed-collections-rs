@@ -18,11 +18,11 @@ test-all:
 
 .PHONY: test
 test: init
-	cargo test ${ARGS} -- --nocapture --test-threads=1
+	cargo test ${ARGS} -F full --  --nocapture --test-threads=1
 
 .PHONY: build
 build: init
-	cargo build
+	cargo build -F full
 
 .DEFAULT_GOAL = build
 
