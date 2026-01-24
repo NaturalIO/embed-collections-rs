@@ -116,6 +116,8 @@ impl<T> Pointer for Arc<T> {
     }
 }
 
+#[cfg(feature = "avl")]
+pub mod avl;
 #[cfg(feature = "dlist")]
 pub mod dlist;
 #[cfg(feature = "slist")]
