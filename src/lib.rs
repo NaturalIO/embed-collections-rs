@@ -120,5 +120,7 @@ impl<T> Pointer for Arc<T> {
 pub mod avl;
 #[cfg(feature = "dlist")]
 pub mod dlist;
+#[cfg(feature = "avl")]
+pub mod range_tree;
 #[cfg(feature = "slist")]
 pub mod slist;
