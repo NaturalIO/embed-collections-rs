@@ -138,19 +138,19 @@ where
     _phan: PhantomData<fn(P, &Tag)>,
 }
 
-#[derive(Debug)]
-pub struct AvlSearchResult<T> {
+pub struct AvlSearchResult<'a, T> {
     node: *const T,
     pub direction: Option<AvlDirection>,
+    _phan: PhantomData<&'a T>,
 }
 
-impl<T> Default for AvlSearchResult<T> {
-    fn default() -> AvlSearchResult<T> {
-        AvlSearchResult { node: null(), direction: Some(AvlDirection::Left) }
+impl<T> Default for AvlSearchResult<'_, T> {
+    fn default() -> Self {
+        AvlSearchResult { node: null(), direction: Some(AvlDirection::Left), _phan: PhantomData }
     }
 }
 
-impl<T> AvlSearchResult<T> {
+impl<'a, T> AvlSearchResult<'a, T> {
     #[inline(always)]
     pub fn get_exact(&self) -> *const T {
         if self.direction.is_none() {
@@ -223,7 +223,7 @@ where
     }
 
     #[inline]
-    pub fn insert(&mut self, new_data: P, w: AvlSearchResult<P::Target>) {
+    pub fn insert<'a>(&'a mut self, new_data: P, w: AvlSearchResult<'a, P::Target>) {
         debug_assert!(w.direction.is_some());
         self._insert(new_data, w.node, w.direction.unwrap());
     }
@@ -249,7 +249,7 @@ where
         let parent = unsafe { &*here };
         let node = unsafe { (*new_ptr).get_node() };
         let parent_node = parent.get_node();
-        node.parent = parent as *const P::Target;
+        node.parent = here;
         parent_node.set_child(which_child, new_ptr);
         self.count += 1;
 
@@ -259,7 +259,7 @@ where
          * need to do a rotation.  If we back out of the tree we are done.
          * If we brought any subtree into perfect balance (0), we are also done.
          */
-        let mut data: *const P::Target = parent as *const P::Target;
+        let mut data: *const P::Target = here;
         loop {
             let node = unsafe { (*data).get_node() };
             let old_balance = node.balance;
@@ -488,8 +488,23 @@ where
 
             dir_inverse = dir.reverse();
             let child = self.bottom_child_ref(child_temp, dir_inverse);
-            dir_child_temp = self.parent_direction2(child);
-            dir_child_del = self.parent_direction2(del);
+
+            // Fix Miri UB: Avoid calling parent_direction2(child) if child's parent is del,
+            // because that would create a aliasing &mut ref to del while we hold del_node.
+            if child == child_temp {
+                dir_child_temp = dir;
+            } else {
+                dir_child_temp = self.parent_direction2(child);
+            }
+
+            // Fix Miri UB: Do not call parent_direction2(del) as it creates a new &mut AvlNode
+            // alias while we hold del_node. Use del_node to find parent direction.
+            let parent = del_node.get_parent();
+            if !parent.is_null() {
+                dir_child_del = self.parent_direction(del, parent);
+            } else {
+                dir_child_del = AvlDirection::Left;
+            }
 
             let child_node = unsafe { (*child).get_node() };
             child_node.swap(del_node);
@@ -500,8 +515,19 @@ where
                 child_node.set_child(dir, del);
             }
 
-            unsafe { (*child_node.get_child(dir)).get_node() }.parent = child;
-            unsafe { (*child_node.get_child(dir_inverse)).get_node() }.parent = child;
+            let c_dir = child_node.get_child(dir);
+            if c_dir == del {
+                del_node.parent = child;
+            } else if !c_dir.is_null() {
+                unsafe { (*c_dir).get_node() }.parent = child;
+            }
+
+            let c_inv = child_node.get_child(dir_inverse);
+            if c_inv == del {
+                del_node.parent = child;
+            } else if !c_inv.is_null() {
+                unsafe { (*c_inv).get_node() }.parent = child;
+            }
 
             let parent = child_node.get_parent();
             if !parent.is_null() {
@@ -525,7 +551,13 @@ where
             }
             which_child = dir_child_temp;
         } else {
-            which_child = self.parent_direction2(del);
+            // Fix Miri UB here as well
+            let parent = del_node.get_parent();
+            if !parent.is_null() {
+                which_child = self.parent_direction(del, parent);
+            } else {
+                which_child = AvlDirection::Left;
+            }
         }
 
         // Here we know "delete" is at least partially a leaf node. It can
@@ -611,8 +643,8 @@ where
     // When found node equal to value, return (Some(node), None);
     // otherwise return (Some(node), direction) to indicate where to insert
     pub fn find<'a, K>(
-        &'a self, val: &'a K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<P::Target> {
+        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    ) -> AvlSearchResult<'a, P::Target> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -620,7 +652,13 @@ where
         loop {
             let diff = cmp_func(val, unsafe { &*node_data });
             match diff {
-                Ordering::Equal => return AvlSearchResult { node: node_data, direction: None },
+                Ordering::Equal => {
+                    return AvlSearchResult {
+                        node: node_data,
+                        direction: None,
+                        _phan: PhantomData,
+                    };
+                }
                 Ordering::Less => {
                     let node = unsafe { (*node_data).get_node() };
                     let left = node.get_child(AvlDirection::Left);
@@ -628,6 +666,7 @@ where
                         return AvlSearchResult {
                             node: node_data,
                             direction: Some(AvlDirection::Left),
+                            _phan: PhantomData,
                         };
                     }
                     node_data = left;
@@ -639,6 +678,7 @@ where
                         return AvlSearchResult {
                             node: node_data,
                             direction: Some(AvlDirection::Right),
+                            _phan: PhantomData,
                         };
                     }
                     node_data = right;
@@ -648,8 +688,8 @@ where
     }
 
     // for range tree, val may overlap multiple range(node), ensure return the smallest
-    pub(crate) fn find_contained<'a, K>(
-        &'a self, val: &'a K, cmp_func: AvlCmpFunc<K, P::Target>,
+    pub fn find_contained<'a, K>(
+        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> *const P::Target {
         if self.root.is_null() {
             return null();
@@ -692,8 +732,8 @@ where
 
     // for slab, return any block larger or equal than search param
     pub fn find_larger_eq<'a, K>(
-        &'a self, val: &'a K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<P::Target> {
+        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    ) -> AvlSearchResult<'a, P::Target> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -701,12 +741,28 @@ where
         loop {
             let diff = cmp_func(val, unsafe { &*node_data });
             match diff {
-                Ordering::Equal => return AvlSearchResult { node: node_data, direction: None },
-                Ordering::Less => return AvlSearchResult { node: node_data, direction: None },
+                Ordering::Equal => {
+                    return AvlSearchResult {
+                        node: node_data,
+                        direction: None,
+                        _phan: PhantomData,
+                    };
+                }
+                Ordering::Less => {
+                    return AvlSearchResult {
+                        node: node_data,
+                        direction: None,
+                        _phan: PhantomData,
+                    };
+                }
                 Ordering::Greater => {
                     let right = unsafe { (*node_data).get_node() }.get_child(AvlDirection::Right);
                     if right.is_null() {
-                        return AvlSearchResult { node: null(), direction: None };
+                        return AvlSearchResult {
+                            node: null(),
+                            direction: None,
+                            _phan: PhantomData,
+                        };
                     }
                     node_data = right;
                 }
@@ -715,8 +771,8 @@ where
     }
 
     pub fn find_nearest<'a, K>(
-        &'a self, val: &'a K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<P::Target> {
+        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    ) -> AvlSearchResult<'a, P::Target> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
@@ -727,7 +783,11 @@ where
             let diff = cmp_func(val, unsafe { &*node_data });
             match diff {
                 Ordering::Equal => {
-                    return AvlSearchResult { node: node_data, direction: None };
+                    return AvlSearchResult {
+                        node: node_data,
+                        direction: None,
+                        _phan: PhantomData,
+                    };
                 }
                 Ordering::Less => {
                     nearest_node = node_data;
@@ -746,7 +806,7 @@ where
                 }
             }
         }
-        return AvlSearchResult { node: nearest_node, direction: None };
+        return AvlSearchResult { node: nearest_node, direction: None, _phan: PhantomData };
     }
 
     #[inline(always)]
@@ -818,8 +878,8 @@ where
     }
 
     #[inline]
-    pub fn nearest(
-        &self, current: &AvlSearchResult<P::Target>, direction: AvlDirection,
+    pub fn nearest<'a>(
+        &self, current: &AvlSearchResult<'a, P::Target>, direction: AvlDirection,
     ) -> *const P::Target {
         if !current.node.is_null() {
             if current.direction.is_some() && current.direction != Some(direction) {
@@ -842,8 +902,10 @@ where
         let mut visited = 0;
         loop {
             if !data.is_null() {
-                let node = unsafe { (*data).get_node() };
-                let left = node.get_child(AvlDirection::Left);
+                let left = {
+                    let node = unsafe { (*data).get_node() };
+                    node.get_child(AvlDirection::Left)
+                };
                 if !left.is_null() {
                     stack.push(data);
                     data = left;
@@ -851,7 +913,7 @@ where
                 }
                 visited += 1;
                 self.validate_node(data, cmp_func);
-                data = node.get_child(AvlDirection::Right);
+                data = unsafe { (*data).get_node() }.get_child(AvlDirection::Right);
             } else if stack.len() > 0 {
                 let _data = stack.pop().unwrap();
                 self.validate_node(_data, cmp_func);
@@ -872,14 +934,25 @@ where
             self.count = 1;
             return true;
         }
-        let w: AvlSearchResult<P::Target> = self.find(node.as_ref(), cmp_func);
+
+        let w = self.find(node.as_ref(), cmp_func);
         if w.direction.is_none() {
             // To prevent memory leak, we must drop the node.
             // But since we took ownership, we have to convert it back to P and drop it.
             drop(node);
             return false;
         }
-        self.insert(node, w);
+
+        // Safety: We need to decouple the lifetime of 'w' from 'self' to call 'insert'.
+        // We extract the pointers and reconstruct the result.
+        let w_node = w.node;
+        let w_dir = w.direction;
+        // Drop w explicitly to release the borrow on self (though not strictly needed with NLL, being explicit helps)
+        drop(w);
+
+        let w_detached = AvlSearchResult { node: w_node, direction: w_dir, _phan: PhantomData };
+
+        self.insert(node, w_detached);
         return true;
     }
 }
@@ -967,11 +1040,11 @@ mod tests {
             self.validate(cmp_int_node);
         }
 
-        fn find_int(&self, i: i64) -> AvlSearchResult<IntAvlNode> {
+        fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, IntAvlNode> {
             self.find(&i, cmp_int)
         }
 
-        fn find_node(&self, node: &IntAvlNode) -> AvlSearchResult<IntAvlNode> {
+        fn find_node<'a>(&'a self, node: &'a IntAvlNode) -> AvlSearchResult<'a, IntAvlNode> {
             self.find(node, cmp_int_node)
         }
     }
@@ -1041,7 +1114,15 @@ mod tests {
 
     #[test]
     fn int_avl_tree_order() {
-        let max = 20000;
+        let max;
+        #[cfg(miri)]
+        {
+            max = 2000;
+        }
+        #[cfg(not(miri))]
+        {
+            max = 200000;
+        }
         let mut tree = new_inttree();
         assert!(tree.first().is_null());
         let start_ts = Instant::now();
