@@ -20,6 +20,11 @@ test-all:
 test: init
 	cargo test ${ARGS} -F full --  --nocapture --test-threads=1
 
+.PHONY: test_release
+test_release: init
+	cargo test ${ARGS} --release -F full --  --nocapture --test-threads=1
+
+
 .PHONY: build
 build: init
 	cargo build -F full
