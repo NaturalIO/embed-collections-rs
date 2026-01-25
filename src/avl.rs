@@ -66,6 +66,7 @@
 use crate::Pointer;
 use alloc::rc::Rc;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::{
     cmp::{Ordering, PartialEq},
@@ -1147,8 +1148,17 @@ where
     }
 
     pub fn validate(&self, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
-        let mut stack: Vec<*const P::Target> =
-            Vec::with_capacity(((self.get_count() + 10) as f32).log2() as usize);
+        let c = {
+            #[cfg(feature = "std")]
+            {
+                ((self.get_count() + 10) as f32).log2() as usize
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                100
+            }
+        };
+        let mut stack: Vec<*const P::Target> = Vec::with_capacity(c);
         if self.root.is_null() {
             assert_eq!(self.count, 0);
             return;

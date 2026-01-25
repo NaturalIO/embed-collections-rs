@@ -1,9 +1,9 @@
 use crate::avl::{AvlDirection, AvlItem, AvlNode, AvlSearchResult, AvlTree};
-use std::{
+use alloc::sync::Arc;
+use core::{
     cell::{Cell, UnsafeCell},
     cmp::Ordering,
     fmt,
-    sync::Arc,
 };
 
 const MIDDLE_SIZE_LOW_BOUND: u64 = 16 * 1024;
@@ -585,6 +585,7 @@ pub fn size_tree_find_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
     return size_a.cmp(&size_b);
 }
 
+#[cfg(feature = "std")]
 pub fn range_tree_print(tree: &RangeTreeSimple) {
     if tree.get_space() == 0 {
         println!("tree is empty");

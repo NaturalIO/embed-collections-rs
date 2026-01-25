@@ -24,6 +24,10 @@ test: init
 build: init
 	cargo build -F full
 
+.PHONY: build_nostd
+build_nostd: init
+	cargo build --no-default-features --features full
+
 .DEFAULT_GOAL = build
 
 # Target name % means that it is a rule that matches anything, @: is a recipe;
