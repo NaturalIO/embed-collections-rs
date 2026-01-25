@@ -362,7 +362,15 @@ where
     ///
     /// This is typically used after a [`find`](Self::find) operation didn't find an exact match.
     ///
-    /// **NOTE: ** you should [detach()](AvlSearchResult::detach) the result before calling insert
+    /// # Safety
+    ///
+    /// Once the tree structure changed, previous search result is not safe to use anymore.
+    ///
+    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
+    /// to avoid the borrowing issue.
+    ///
+    /// # Panics
+    /// Panics if the search result is an exact match (i.e. node already exists).
     ///
     /// # Examples
     ///
@@ -394,9 +402,6 @@ where
     ///     tree.insert(new_node, unsafe{result.detach()});
     /// }
     /// ```
-    ///
-    /// # Panics
-    /// Panics if the search result is an exact match (i.e. node already exists).
     #[inline]
     pub fn insert(&mut self, new_data: P, w: AvlSearchResult<'_, P>) {
         debug_assert!(w.direction.is_some());
@@ -464,6 +469,13 @@ where
     /// if the given child of the node is already present we move to either
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
+    ///
+    /// # Safety
+    ///
+    /// Once the tree structure changed, previous search result is not safe to use anymore.
+    ///
+    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
+    /// to avoid the borrowing issue.
     pub unsafe fn insert_here(
         &mut self, new_data: P, here: AvlSearchResult<P>, direction: AvlDirection,
     ) {
@@ -644,6 +656,7 @@ where
     ///
     /// It does not drop the node data, only unlinks it.
     /// Caller is responsible for re-taking ownership (e.g. via from_raw) and dropping if needed.
+    ///
     pub unsafe fn remove(&mut self, del: *const P::Target) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
@@ -846,13 +859,15 @@ where
 
     /// remove with a previous search result
     ///
-    /// #NOTE
-    ///
-    /// In order to resolve the borrowing issue from AvlSearchResult, use
-    /// [AvlSearchResult::detach()] before calling this function
-    ///
     /// - If the result is exact match, return the removed element ownership
     /// - If the result is not exact match, return None
+    ///
+    /// # Safety
+    ///
+    /// Once the tree structure changed, previous search result is not safe to use anymore.
+    ///
+    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
+    /// to avoid the borrowing issue.
     #[inline]
     pub fn remove_with(&mut self, result: AvlSearchResult<'_, P>) -> Option<P> {
         if result.is_exact() {
