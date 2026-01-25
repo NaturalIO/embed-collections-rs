@@ -1,4 +1,7 @@
 name: miri
+permissions:
+  contents: read
+  pull-requests: read
 
 on:
   workflow_dispatch:

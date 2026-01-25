@@ -1,4 +1,7 @@
 name: cron
+permissions:
+  contents: read
+  pull-requests: read
 
 on:
   schedule: [cron: "20 */5 * * *"]
