@@ -28,9 +28,17 @@ harness = false
 required-features = ["avl"]
 
 [[bench]]
+name = "avl_old"
+harness = false
+
+[[bench]]
 name = "range_tree"
 harness = false
 required-features = ["avl"]
+
+[[bench]]
+name = "range_tree_old"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true
