@@ -22,7 +22,7 @@ This crate choose to use DListItem::get_node() instead of c like `offset_of!`, m
 
 - It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
 and using memtion to return the node ref is more safer approach.
-(For example, the default `repr(Rust) might reorder the field`, or you mistakenly use `repr(packed)`)
+ For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
 
 There're three usage scenarios:
 
