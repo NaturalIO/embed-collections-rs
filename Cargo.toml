@@ -25,6 +25,12 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "avl"
 harness = false
+required-features = ["avl"]
+
+[[bench]]
+name = "range_tree"
+harness = false
+required-features = ["avl"]
 
 [package.metadata.docs.rs]
 all-features = true
