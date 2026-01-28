@@ -47,6 +47,8 @@ where
     enable_stats: bool,
 }
 
+unsafe impl<T: RangeTreeOps> Send for RangeTree<T> {}
+
 pub trait RangeTreeOps {
     fn op_add(&mut self, rs: Arc<RangeSeg>);
     fn op_remove(&mut self, rs: &RangeSeg);
