@@ -105,6 +105,33 @@ fn range_tree_segment_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
     }
 }
 
+pub struct RangeTreeIter<'a, T: RangeTreeOps> {
+    tree: &'a RangeTree<T>,
+    current: Option<&'a RangeSeg>,
+}
+
+impl<'a, T: RangeTreeOps> Iterator for RangeTreeIter<'a, T> {
+    type Item = &'a RangeSeg;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.current.take();
+        if let Some(seg) = current {
+            self.current = self.tree.root.next(seg);
+        }
+        current
+    }
+}
+
+impl<'a, T: RangeTreeOps> IntoIterator for &'a RangeTree<T> {
+    type Item = &'a RangeSeg;
+    type IntoIter = RangeTreeIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 #[allow(dead_code)]
 impl<T: RangeTreeOps> RangeTree<T> {
     pub fn new() -> Self {
@@ -196,11 +223,12 @@ impl<T: RangeTreeOps> RangeTree<T> {
         self.add(start, end - start);
     }
 
-    // Add range segment, possible adjacent, assume no overlapping with existing range
-    //
-    // # panic
-    //
-    // Panic if there's overlapping range
+    /// Add range segment, possible adjacent, assume no overlapping with existing range
+    ///
+    /// # panic
+    ///
+    /// Panic if there's overlapping range
+    #[inline]
     pub fn add(&mut self, start: u64, size: u64) {
         assert!(size > 0, "range tree add size={} error", size);
         let rs_key = RangeSeg {
@@ -218,9 +246,10 @@ impl<T: RangeTreeOps> RangeTree<T> {
         self.merge_seg(start, start + size, detached_result);
     }
 
-    // Add range segment, possible adjacent, and check overlapping.
-    //
-    // If there's overlapping with existing range, return `Err((start, end))`
+    /// Add range segment, possible adjacent, and check overlapping.
+    ///
+    /// If there's overlapping with existing range, return `Err((start, end))`
+    #[inline]
     pub fn add_find_overlap(&mut self, start: u64, size: u64) -> Result<(), (u64, u64)> {
         assert!(size > 0, "range tree add size={} error", size);
         let rs_key = RangeSeg {
@@ -250,7 +279,8 @@ impl<T: RangeTreeOps> RangeTree<T> {
         return Ok(());
     }
 
-    // Add range which may be crossed section or larger with existing, will merge the range
+    /// Add range which may be crossed section or larger with existing, will merge the range
+    #[inline]
     pub fn add_and_merge(&mut self, start: u64, size: u64) {
         assert!(size > 0, "range tree add size={} error", size);
         let mut new_start = start;
@@ -379,9 +409,9 @@ impl<T: RangeTreeOps> RangeTree<T> {
         }
     }
 
-    // Ensure remove all overlapping range
-    //
-    // Returns true if removal happens
+    /// Ensure remove all overlapping range
+    ///
+    /// Returns true if removal happens
     #[inline(always)]
     pub fn remove_and_split(&mut self, start: u64, size: u64) -> bool {
         let mut removed = false;
@@ -394,10 +424,11 @@ impl<T: RangeTreeOps> RangeTree<T> {
         return removed;
     }
 
-    // Only used when remove range overlap one segment,
-    //
-    // NOTE: If not the case (start, size) might overlaps with multiple segment,  use remove_and_split() instead.
-    // return true when one segment is removed.
+    /// Only used when remove range overlap one segment,
+    ///
+    /// NOTE: If not the case (start, size) might overlaps with multiple segment,  use remove_and_split() instead.
+    /// return true when one segment is removed.
+    #[inline]
     pub fn remove(&mut self, start: u64, size: u64) -> bool {
         let end = start + size;
         let search_rs =
@@ -500,7 +531,8 @@ impl<T: RangeTreeOps> RangeTree<T> {
         return true;
     }
 
-    // return only when segment overlaps with [start, start+size]
+    /// return only when segment overlaps with [start, start+size]
+    #[inline]
     pub fn find(&self, start: u64, size: u64) -> Option<Arc<RangeSeg>> {
         if self.root.get_count() == 0 {
             return None;
@@ -512,8 +544,9 @@ impl<T: RangeTreeOps> RangeTree<T> {
         return result.get_exact();
     }
 
-    // return only when segment contains [start, size], if multiple segment exists, return the
-    // smallest start
+    /// return only when segment contains [start, size], if multiple segment exists, return the
+    /// smallest start
+    #[inline]
     pub fn find_contained(&self, start: u64, size: u64) -> Option<&RangeSeg> {
         assert!(size > 0, "range tree find size={} error", size);
         if self.root.get_count() == 0 {
@@ -525,6 +558,12 @@ impl<T: RangeTreeOps> RangeTree<T> {
         self.root.find_contained(&rs_search, range_tree_segment_cmp)
     }
 
+    #[inline]
+    pub fn iter(&self) -> RangeTreeIter<'_, T> {
+        RangeTreeIter { tree: self, current: self.root.first() }
+    }
+
+    #[inline]
     pub fn walk<F: FnMut(&RangeSeg)>(&self, mut cb: F) {
         let mut node = self.root.first();
         loop {
@@ -537,7 +576,8 @@ impl<T: RangeTreeOps> RangeTree<T> {
         }
     }
 
-    // If cb returns false, break
+    /// If cb returns false, break
+    #[inline]
     pub fn walk_conditioned<F: FnMut(&RangeSeg) -> bool>(&self, mut cb: F) {
         let mut node = self.root.first();
         loop {
@@ -819,6 +859,38 @@ mod tests {
         }
 
         rt.walk(cb_print);
+    }
+
+    #[test]
+    fn range_tree_iter() {
+        let mut rt = RangeTreeSimple::new();
+        rt.add(0, 2);
+        rt.add(4, 4);
+        rt.add(12, 8);
+        rt.add(32, 16);
+
+        let mut count = 0;
+        let mut total_space = 0;
+        for rs in rt.iter() {
+            count += 1;
+            total_space += rs.end.get() - rs.start.get();
+        }
+        assert_eq!(count, rt.get_count() as usize);
+        assert_eq!(total_space, rt.get_space());
+        assert_eq!(4, count);
+        assert_eq!(30, total_space);
+
+        // Test IntoIterator
+        let ranges_from_into_iter: Vec<(u64, u64)> =
+            (&rt).into_iter().map(|rs| rs.get_range()).collect();
+        assert_eq!(ranges_from_into_iter, vec![(0, 2), (4, 8), (12, 20), (32, 48)]);
+
+        // Test for loop on reference
+        let mut ranges_from_for: Vec<(u64, u64)> = Vec::new();
+        for rs in &rt {
+            ranges_from_for.push(rs.get_range());
+        }
+        assert_eq!(ranges_from_for, vec![(0, 2), (4, 8), (12, 20), (32, 48)]);
     }
 
     #[test]
