@@ -20,6 +20,8 @@ pub struct RangeSeg {
     pub end: Cell<u64>,
 }
 
+unsafe impl Send for RangeSeg {}
+
 unsafe impl AvlItem<AddressTag> for RangeSeg {
     fn get_node(&self) -> &mut AvlNode<Self, AddressTag> {
         unsafe { &mut *self.node.get() }
@@ -109,6 +111,8 @@ pub struct RangeTreeIter<'a, T: RangeTreeOps> {
     tree: &'a RangeTree<T>,
     current: Option<&'a RangeSeg>,
 }
+
+unsafe impl<'a, T: RangeTreeOps> Send for RangeTreeIter<'a, T> {}
 
 impl<'a, T: RangeTreeOps> Iterator for RangeTreeIter<'a, T> {
     type Item = &'a RangeSeg;
