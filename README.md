@@ -38,8 +38,9 @@ for temporary usage. You must ensure the list item not dropped be other refcount
 
 ## Modules
 
-- [`dlist`]: Intrusive Doubly Linked List.
-- [`slist`]: Intrusive Singly Linked List (FIFO Queue).
+- [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
+- [`slist`]: Intrusive Singly Linked List ( Queue / stack).
+- [`slist_owned`]: An intrusive slist but with safe and more compact interface
 - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), and RangeTree based on AVL tree, port to rust from ZFS
 
 ## Feature Flags
@@ -49,7 +50,7 @@ the compilation of certain functionalities:
 
 *   **`default`**: Enabled by default. Includes the `std` and `full` features.
 *   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
-*   **`slist`**: Enables the singly linked list (`slist`) module.
+*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
 *   **`dlist`**: Enables the doubly linked list (`dlist`) module.
 *   **`avl`**: Enables the `avl` and `range_tree` module.
 *   **`full`**: Enabled by default. Includes `slist`, `dlist`, and `avl`.

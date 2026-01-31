@@ -124,3 +124,5 @@ pub mod dlist;
 pub mod range_tree;
 #[cfg(feature = "slist")]
 pub mod slist;
+#[cfg(feature = "slist")]
+pub mod slist_owned;
