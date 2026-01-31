@@ -21,6 +21,8 @@
 //!     description: String,
 //!     next: Option<NonNull<MyTask>>, // `next` pointer embedded directly
 //! }
+//! // because MyTask has a raw pointer
+//! unsafe impl Send for MyTask {}
 //!
 //! impl MyTask {
 //!     fn new(priority: u8, desc: &str) -> Self {
@@ -72,6 +74,9 @@
 //!     description: String,
 //!     next: Option<NonNull<MyTask>>,
 //! }
+//!
+//! // because MyTask has a raw pointer
+//! unsafe impl Send for MyTask {}
 //!
 //! impl MyTask {
 //!     fn new(desc: &str) -> Self {
