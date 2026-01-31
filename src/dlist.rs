@@ -173,13 +173,13 @@ where
         DLinkedList { length: 0, head: null(), tail: null(), _phan: Default::default() }
     }
 
-    /// Clears the list pointers. Note: This does NOT drop the elements.
-    /// Use `drain` or `drop` if you need to release owned resources.
+    /// Clears the list, dropping all of its elements if the pointer type `P` owns them.
     #[inline]
     pub fn clear(&mut self) {
-        self.length = 0;
-        self.head = null();
-        self.tail = null();
+        // By repeatedly popping from the front, we drop each element.
+        // If P is an owned pointer (like Box), the element is dropped.
+        // If P is a raw pointer, it's a no-op, but the list is still emptied.
+        while self.pop_front().is_some() {}
     }
 
     /// Returns the length of the list.
@@ -937,5 +937,29 @@ mod tests {
         }
 
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_clear() {
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+        let mut l = DLinkedList::<Box<TestNode>, TestTag>::new();
+
+        l.push_back(Box::new(new_node(1)));
+        l.push_back(Box::new(new_node(2)));
+        assert_eq!(l.len(), 2);
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
+
+        l.clear();
+
+        assert!(l.is_empty());
+        assert_eq!(l.len(), 0);
+        assert!(l.get_front().is_none());
+        assert!(l.get_back().is_none());
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+
+        // Can still push to the list
+        l.push_back(Box::new(new_node(3)));
+        assert_eq!(l.len(), 1);
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 1);
     }
 }
