@@ -188,9 +188,7 @@ where
     pub fn push_back(&mut self, item: P) {
         let node = item.as_ref().get_node();
         node.next = null();
-
         let ptr = item.into_raw();
-
         if self.tail.is_null() {
             // List is empty
             self.head = ptr;
@@ -201,6 +199,20 @@ where
             }
         }
         self.tail = ptr;
+        self.length += 1;
+    }
+
+    /// Pushes an element to the front of the list.
+    #[inline]
+    pub fn push_front(&mut self, item: P) {
+        let ptr = item.into_raw();
+        let node = unsafe { (*ptr).get_node() };
+        node.next = self.head;
+        if self.head.is_null() {
+            // List was empty
+            self.tail = ptr;
+        }
+        self.head = ptr;
         self.length += 1;
     }
 
@@ -425,6 +437,50 @@ mod tests {
         let n3 = l.pop_front();
         assert!(n3.is_some());
         assert_eq!(n3.unwrap().value, 3);
+        assert_eq!(l.get_length(), 0);
+
+        assert!(l.pop_front().is_none());
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_push_front_box() {
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+        let mut l = SLinkedList::<Box<TestNode>, TestTag>::new();
+
+        let node1 = Box::new(new_node(1));
+        l.push_front(node1); // List: [1]
+
+        let node2 = Box::new(new_node(2));
+        l.push_front(node2); // List: [2, 1]
+
+        let node3 = Box::new(new_node(3));
+        l.push_front(node3); // List: [3, 2, 1]
+
+        assert_eq!(3, l.get_length());
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
+
+        // Test iterator (should be 3, 2, 1)
+        let mut iter = l.iter();
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert!(iter.next().is_none());
+
+        // Test pop_front (FIFO)
+        let n1 = l.pop_front();
+        assert!(n1.is_some());
+        assert_eq!(n1.unwrap().value, 3);
+        assert_eq!(l.get_length(), 2);
+
+        let n2 = l.pop_front();
+        assert!(n2.is_some());
+        assert_eq!(n2.unwrap().value, 2);
+        assert_eq!(l.get_length(), 1);
+
+        let n3 = l.pop_front();
+        assert!(n3.is_some());
+        assert_eq!(n3.unwrap().value, 1);
         assert_eq!(l.get_length(), 0);
 
         assert!(l.pop_front().is_none());
