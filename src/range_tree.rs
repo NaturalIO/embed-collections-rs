@@ -4,11 +4,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     cmp::Ordering,
     fmt,
-    mem::transmute,
 };
-
-const MIDDLE_SIZE_LOW_BOUND: u64 = 16 * 1024;
-const MIDDLE_SIZE_UP_BOUND: u64 = 64 * 1024;
 
 pub struct AddressTag;
 pub struct SizeTag;
@@ -36,11 +32,7 @@ where
 {
     root: AvlTree<Arc<RangeSeg<T>>, AddressTag>,
     space: u64,
-    small_count: usize,
-    middle_count: usize,
-    large_count: usize,
-    ops: Option<T>,
-    enable_stats: bool,
+    ops: T,
 }
 
 unsafe impl<T: RangeTreeOps> Send for RangeTree<T> {}
@@ -49,6 +41,12 @@ pub trait RangeTreeOps: Sized + Default {
     type ExtNode: Default;
     fn op_add(&mut self, rs: Arc<RangeSeg<Self>>);
     fn op_remove(&mut self, rs: &RangeSeg<Self>);
+
+    #[inline]
+    fn stat_decrease(&mut self, _start: u64, _end: u64) {}
+
+    #[inline]
+    fn stat_increase(&mut self, _start: u64, _end: u64) {}
 }
 
 pub type RangeTreeSimple = RangeTree<DummyAllocator>;
@@ -149,25 +147,13 @@ impl<T: RangeTreeOps> RangeTree<T> {
         RangeTree {
             root: AvlTree::<Arc<RangeSeg<T>>, AddressTag>::new(),
             space: 0,
-            small_count: 0,
-            middle_count: 0,
-            large_count: 0,
-            ops: None,
-            enable_stats: false,
+            ops: T::default(),
         }
     }
 
-    pub fn enable_stats(&mut self) {
-        self.enable_stats = true;
-    }
-
-    pub fn set_ops(&mut self, ops: T) {
-        self.ops.replace(ops);
-    }
-
     #[inline]
-    pub fn get_ops(&mut self) -> Option<&mut T> {
-        self.ops.as_mut()
+    pub fn get_ops(&mut self) -> &mut T {
+        &mut self.ops
     }
 
     pub fn is_empty(&self) -> bool {
@@ -185,47 +171,6 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline(always)]
     pub fn get_count(&self) -> i64 {
         return self.root.get_count();
-    }
-
-    #[inline(always)]
-    pub fn get_small_count(&self) -> usize {
-        return self.small_count;
-    }
-
-    #[inline(always)]
-    pub fn get_middle_count(&self) -> usize {
-        return self.middle_count;
-    }
-
-    #[inline(always)]
-    pub fn get_large_count(&self) -> usize {
-        return self.large_count;
-    }
-
-    #[inline]
-    fn stat_decrease(&mut self, start: u64, end: u64) {
-        assert!(end > start, "range tree stat_decrease start={} end={} error", start, end);
-        let size = end - start;
-        if size < MIDDLE_SIZE_LOW_BOUND {
-            self.small_count -= 1;
-        } else if size >= MIDDLE_SIZE_UP_BOUND {
-            self.large_count -= 1;
-        } else {
-            self.middle_count -= 1;
-        }
-    }
-
-    #[inline]
-    fn stat_increase(&mut self, start: u64, end: u64) {
-        assert!(end > start, "range tree stat_increase start={} end={} error", start, end);
-        let size = end - start;
-        if size < MIDDLE_SIZE_LOW_BOUND {
-            self.small_count += 1;
-        } else if size >= MIDDLE_SIZE_UP_BOUND {
-            self.large_count += 1;
-        } else {
-            self.middle_count += 1;
-        }
     }
 
     #[inline(always)]
@@ -362,61 +307,40 @@ impl<T: RangeTreeOps> RangeTree<T> {
             let before_node = self.root.remove_with(before_res).unwrap();
             let after_node_ref = after_res.get_node_ref().unwrap();
 
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(&before_node);
-                ops.op_remove(after_node_ref); // Remove old 'after' from ops
-            }
+            self.ops.op_remove(&before_node);
+            self.ops.op_remove(after_node_ref); // Remove old 'after' from ops
             // modify after node start range after remove
             after_node_ref.start.set(before_start);
-            if let Some(ref mut ops) = self.ops {
-                ops.op_add(after_res.get_exact().unwrap());
-            }
-            if self.enable_stats {
-                self.stat_decrease(before_start, before_end);
-                self.stat_decrease(after_start, after_end);
-                self.stat_increase(before_start, after_end);
-            }
+            self.ops.op_add(after_res.get_exact().unwrap());
+            self.ops.stat_decrease(before_start, before_end);
+            self.ops.stat_decrease(after_start, after_end);
+            self.ops.stat_increase(before_start, after_end);
         } else if merge_before {
             // Merge Before Only: Extend `before.end`
 
             let before_node_ref = before_res.get_node_ref().unwrap();
             before_node_ref.end.set(end);
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(before_node_ref);
-                ops.op_add(before_res.get_exact().unwrap());
-            }
+            self.ops.op_remove(before_node_ref);
+            self.ops.op_add(before_res.get_exact().unwrap());
 
-            if self.enable_stats {
-                self.stat_decrease(before_start, before_end);
-                self.stat_increase(before_start, end);
-            }
+            self.ops.stat_decrease(before_start, before_end);
+            self.ops.stat_increase(before_start, end);
         } else if merge_after {
             let after_node_ref = after_res.get_node_ref().unwrap();
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(after_node_ref);
-            }
+            self.ops.op_remove(after_node_ref);
             // Merge After Only: Extend `after.start`
             after_node_ref.start.set(start);
 
-            if let Some(ref mut ops) = self.ops {
-                ops.op_add(after_res.get_exact().unwrap());
-            }
-            if self.enable_stats {
-                self.stat_decrease(after_start, after_end);
-                self.stat_increase(start, after_end);
-            }
+            self.ops.op_add(after_res.get_exact().unwrap());
+            self.ops.stat_decrease(after_start, after_end);
+            self.ops.stat_increase(start, after_end);
         } else {
             // No Merge. Insert new.
             let new_node = RangeSeg::new(start, end);
-            if let Some(ref mut ops) = self.ops {
-                ops.op_add(new_node.clone());
-            }
+            self.ops.op_add(new_node.clone());
 
             self.root.insert(new_node, result);
-
-            if self.enable_stats {
-                self.stat_increase(start, end);
-            }
+            self.ops.stat_increase(start, end);
         }
     }
 
@@ -476,19 +400,15 @@ impl<T: RangeTreeOps> RangeTree<T> {
             // New node [end, rs_end]
             let new_rs = RangeSeg::new(end, rs_end);
 
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(&rs_node);
-                ops.op_add(result.get_exact().unwrap());
-                ops.op_add(new_rs.clone());
-            }
+            self.ops.op_remove(&rs_node);
+            self.ops.op_add(result.get_exact().unwrap());
+            self.ops.op_add(new_rs.clone());
             let result = unsafe { result.detach() };
             let _ = rs_node;
 
-            if self.enable_stats {
-                self.stat_decrease(rs_start, rs_end);
-                self.stat_increase(rs_start, start);
-                self.stat_increase(end, rs_end);
-            }
+            self.ops.stat_decrease(rs_start, rs_end);
+            self.ops.stat_increase(rs_start, start);
+            self.ops.stat_increase(end, rs_end);
             // Insert new right part using insert_here optimization
             // We construct an AvlSearchResult pointing to the current node (rs_node)
             unsafe { self.root.insert_here(new_rs, result, AvlDirection::Right) };
@@ -497,45 +417,33 @@ impl<T: RangeTreeOps> RangeTree<T> {
             size_deduce = rs_end - start;
             // In-Place Update
             rs_node.end.set(start);
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(&rs_node);
-                ops.op_add(result.get_exact().unwrap());
-            }
+            self.ops.op_remove(&rs_node);
+            self.ops.op_add(result.get_exact().unwrap());
             let _ = rs_node;
 
-            if self.enable_stats {
-                self.stat_decrease(rs_start, rs_end);
-                self.stat_increase(rs_start, start);
-            }
+            self.ops.stat_decrease(rs_start, rs_end);
+            self.ops.stat_increase(rs_start, start);
         } else if right_over {
             // Remove Left end
             size_deduce = end - rs_start;
             // In-Place Update: Update start.
             rs_node.start.set(end);
 
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(&rs_node);
-                ops.op_add(result.get_exact().unwrap());
-            }
+            self.ops.op_remove(&rs_node);
+            self.ops.op_add(result.get_exact().unwrap());
             let _ = rs_node;
 
-            if self.enable_stats {
-                self.stat_decrease(rs_start, rs_end);
-                self.stat_increase(end, rs_end);
-            }
+            self.ops.stat_decrease(rs_start, rs_end);
+            self.ops.stat_increase(end, rs_end);
         } else {
             // Remove Exact / Total
             size_deduce = rs_end - rs_start;
 
-            if let Some(ref mut ops) = self.ops {
-                ops.op_remove(&rs_node);
-            }
+            self.ops.op_remove(&rs_node);
             let _ = rs_node;
 
             self.root.remove_ref(&result.get_exact().unwrap());
-            if self.enable_stats {
-                self.stat_decrease(rs_start, rs_end);
-            }
+            self.ops.stat_decrease(rs_start, rs_end);
         }
 
         self.space -= size_deduce;
@@ -1177,68 +1085,6 @@ mod tests {
         rt.validate();
     }
 
-    #[test]
-    fn range_tree_stats() {
-        let mut rt = RangeTreeSimple::new();
-        rt.enable_stats();
-
-        rt.add(0, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(4 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(8 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(12 * 1024, 4 * 1024);
-
-        assert_eq!(0, rt.small_count);
-        assert_eq!(1, rt.middle_count);
-        rt.add(16 * 1024, 8 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(24 * 1024, 8 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(32 * 1024, 16 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(48 * 1024, 16 * 1024);
-
-        assert_eq!(0, rt.middle_count);
-        assert_eq!(1, rt.large_count);
-
-        rt.add(1048 * 1024, 16 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(1032 * 1024, 16 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(1024 * 1024, 8 * 1024);
-        assert_eq!(1, rt.middle_count);
-        rt.add(1016 * 1024, 8 * 1024);
-        assert_eq!(1, rt.middle_count);
-
-        rt.add(1000 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(1004 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(1008 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        rt.add(1012 * 1024, 4 * 1024);
-        assert_eq!(0, rt.small_count);
-        assert_eq!(0, rt.middle_count);
-        assert_eq!(2, rt.large_count);
-
-        rt.remove(16 * 1024, 4 * 1024);
-        assert_eq!(2, rt.middle_count);
-        assert_eq!(1, rt.large_count);
-
-        rt.remove(32 * 1024, 4 * 1024);
-        assert_eq!(1, rt.small_count);
-        assert_eq!(2, rt.middle_count);
-
-        rt.remove(1060 * 1024, 4 * 1024);
-        assert_eq!(3, rt.middle_count);
-        assert_eq!(0, rt.large_count);
-
-        rt.remove(1000 * 1024, 4 * 1024);
-        assert_eq!(3, rt.middle_count);
-    }
-
     // Test RangeTreeOps
     pub struct TestAllocator {
         size_tree: AvlTree<Arc<RangeSeg<TestAllocator>>, SizeTag>,
@@ -1294,31 +1140,27 @@ mod tests {
     #[test]
     fn range_tree_ops() {
         // TODO test allocator size tree
-        let a = TestAllocator::new();
-        {
-            let mut ms_tree = RangeTree::<TestAllocator>::new();
-            ms_tree.set_ops(a);
+        let mut ms_tree = RangeTree::<TestAllocator>::new();
 
-            assert!(ms_tree.find(0, 10).is_none());
-            assert_eq!(0, ms_tree.get_space());
+        assert!(ms_tree.find(0, 10).is_none());
+        assert_eq!(0, ms_tree.get_space());
 
-            ms_tree.add(0, 100);
-            assert_eq!(100, ms_tree.get_space());
-            assert_eq!(1, ms_tree.get_count());
+        ms_tree.add(0, 100);
+        assert_eq!(100, ms_tree.get_space());
+        assert_eq!(1, ms_tree.get_count());
 
-            let rs = ms_tree.find(0, 1).unwrap();
-            assert_eq!((0, 100), rs.get_range());
+        let rs = ms_tree.find(0, 1).unwrap();
+        assert_eq!((0, 100), rs.get_range());
 
-            assert_eq!(3, Arc::strong_count(&rs));
+        assert_eq!(3, Arc::strong_count(&rs));
 
-            ms_tree.remove(0, 100);
-            assert_eq!(0, ms_tree.get_space());
-            assert_eq!(0, ms_tree.get_count());
+        ms_tree.remove(0, 100);
+        assert_eq!(0, ms_tree.get_space());
+        assert_eq!(0, ms_tree.get_count());
 
-            // After removal from ms_tree, the ops tree should also have removed it.
-            // but the original arc `rs` still exists.
-            assert_eq!(1, Arc::strong_count(&rs));
-        }
+        // After removal from ms_tree, the ops tree should also have removed it.
+        // but the original arc `rs` still exists.
+        assert_eq!(1, Arc::strong_count(&rs));
         println!("out")
     }
 }
