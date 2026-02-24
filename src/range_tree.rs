@@ -4,6 +4,7 @@ use core::{
     cell::{Cell, UnsafeCell},
     cmp::Ordering,
     fmt,
+    mem::transmute,
 };
 
 const MIDDLE_SIZE_LOW_BOUND: u64 = 16 * 1024;
@@ -13,24 +14,19 @@ pub struct AddressTag;
 pub struct SizeTag;
 
 #[derive(Default)]
-pub struct RangeSeg {
+#[repr(C)]
+pub struct RangeSeg<T: RangeTreeOps> {
     node: UnsafeCell<AvlNode<Self, AddressTag>>,
-    pub ext_node: UnsafeCell<AvlNode<Self, SizeTag>>,
     pub start: Cell<u64>,
     pub end: Cell<u64>,
+    ext_node: UnsafeCell<T::ExtNode>,
 }
 
-unsafe impl Send for RangeSeg {}
+unsafe impl<T: RangeTreeOps> Send for RangeSeg<T> {}
 
-unsafe impl AvlItem<AddressTag> for RangeSeg {
+unsafe impl<T: RangeTreeOps> AvlItem<AddressTag> for RangeSeg<T> {
     fn get_node(&self) -> &mut AvlNode<Self, AddressTag> {
         unsafe { &mut *self.node.get() }
-    }
-}
-
-unsafe impl AvlItem<SizeTag> for RangeSeg {
-    fn get_node(&self) -> &mut AvlNode<Self, SizeTag> {
-        unsafe { &mut *self.ext_node.get() }
     }
 }
 
@@ -38,7 +34,7 @@ pub struct RangeTree<T>
 where
     T: RangeTreeOps,
 {
-    root: AvlTree<Arc<RangeSeg>, AddressTag>,
+    root: AvlTree<Arc<RangeSeg<T>>, AddressTag>,
     space: u64,
     small_count: usize,
     middle_count: usize,
@@ -49,23 +45,40 @@ where
 
 unsafe impl<T: RangeTreeOps> Send for RangeTree<T> {}
 
-pub trait RangeTreeOps {
-    fn op_add(&mut self, rs: Arc<RangeSeg>);
-    fn op_remove(&mut self, rs: &RangeSeg);
+pub trait RangeTreeOps: Sized + Default {
+    type ExtNode: Default;
+    fn op_add(&mut self, rs: Arc<RangeSeg<Self>>);
+    fn op_remove(&mut self, rs: &RangeSeg<Self>);
 }
 
 pub type RangeTreeSimple = RangeTree<DummyAllocator>;
 
+#[derive(Default)]
+#[repr(C)]
 pub struct DummyAllocator();
 
-impl RangeSeg {
+impl RangeTreeOps for DummyAllocator {
+    type ExtNode = ();
+    #[inline]
+    fn op_add(&mut self, _rs: Arc<RangeSeg<Self>>) {}
+
+    #[inline]
+    fn op_remove(&mut self, _rs: &RangeSeg<Self>) {}
+}
+
+impl<T: RangeTreeOps> RangeSeg<T> {
+    #[inline]
+    pub fn get_ext_node(&self) -> &mut T::ExtNode {
+        unsafe { &mut *self.ext_node.get() }
+    }
+
     #[inline]
     pub fn valid(&self) {
         assert!(self.start.get() <= self.end.get(), "RangeSeg:{:?} invalid", self);
     }
 
     #[inline]
-    pub fn new(s: u64, e: u64) -> Arc<RangeSeg> {
+    pub fn new(s: u64, e: u64) -> Arc<RangeSeg<T>> {
         Arc::new(RangeSeg { start: Cell::new(s), end: Cell::new(e), ..Default::default() })
     }
 
@@ -75,31 +88,23 @@ impl RangeSeg {
     }
 }
 
-impl fmt::Display for RangeSeg {
+impl<T: RangeTreeOps> fmt::Display for RangeSeg<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "RangeSeg({}-{})", self.start.get(), self.end.get())
     }
 }
 
-impl fmt::Debug for RangeSeg {
+impl<T: RangeTreeOps> fmt::Debug for RangeSeg<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let _ = write!(f, "( start: {}, end:{}, ", self.start.get(), self.end.get());
         let _ = write!(f, "node: {:?}, ", unsafe { &*self.node.get() });
-        let _ = write!(f, "ext_node: {:?} ", unsafe { &*self.ext_node.get() });
+        //        let _ = write!(f, "ext_node: {:?} ", unsafe { &*self.ext_node.get() });
         write!(f, ")")
     }
 }
 
-impl RangeTreeOps for DummyAllocator {
-    #[inline]
-    fn op_add(&mut self, _rs: Arc<RangeSeg>) {}
-
-    #[inline]
-    fn op_remove(&mut self, _rs: &RangeSeg) {}
-}
-
 // when return is overlapping, return equal
-fn range_tree_segment_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
+fn range_tree_segment_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
     if a.end.get() <= b.start.get() {
         return Ordering::Less;
     } else if a.start.get() >= b.end.get() {
@@ -111,13 +116,13 @@ fn range_tree_segment_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
 
 pub struct RangeTreeIter<'a, T: RangeTreeOps> {
     tree: &'a RangeTree<T>,
-    current: Option<&'a RangeSeg>,
+    current: Option<&'a RangeSeg<T>>,
 }
 
 unsafe impl<'a, T: RangeTreeOps> Send for RangeTreeIter<'a, T> {}
 
 impl<'a, T: RangeTreeOps> Iterator for RangeTreeIter<'a, T> {
-    type Item = &'a RangeSeg;
+    type Item = &'a RangeSeg<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.current.take();
@@ -129,7 +134,7 @@ impl<'a, T: RangeTreeOps> Iterator for RangeTreeIter<'a, T> {
 }
 
 impl<'a, T: RangeTreeOps> IntoIterator for &'a RangeTree<T> {
-    type Item = &'a RangeSeg;
+    type Item = &'a RangeSeg<T>;
     type IntoIter = RangeTreeIter<'a, T>;
 
     #[inline]
@@ -142,7 +147,7 @@ impl<'a, T: RangeTreeOps> IntoIterator for &'a RangeTree<T> {
 impl<T: RangeTreeOps> RangeTree<T> {
     pub fn new() -> Self {
         RangeTree {
-            root: AvlTree::<Arc<RangeSeg>, AddressTag>::new(),
+            root: AvlTree::<Arc<RangeSeg<T>>, AddressTag>::new(),
             space: 0,
             small_count: 0,
             middle_count: 0,
@@ -329,7 +334,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
     }
 
     #[inline(always)]
-    fn merge_seg(&mut self, start: u64, end: u64, result: AvlSearchResult<Arc<RangeSeg>>) {
+    fn merge_seg(&mut self, start: u64, end: u64, result: AvlSearchResult<Arc<RangeSeg<T>>>) {
         // Detach early to get insertion point / parent check for nearest.
 
         let before_res = unsafe { self.root.nearest(&result, AvlDirection::Left).detach() };
@@ -539,7 +544,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     /// return only when segment overlaps with [start, start+size]
     #[inline]
-    pub fn find(&self, start: u64, size: u64) -> Option<Arc<RangeSeg>> {
+    pub fn find(&self, start: u64, size: u64) -> Option<Arc<RangeSeg<T>>> {
         if self.root.get_count() == 0 {
             return None;
         }
@@ -553,7 +558,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
     /// return only when segment contains [start, size], if multiple segment exists, return the
     /// smallest start
     #[inline]
-    pub fn find_contained(&self, start: u64, size: u64) -> Option<&RangeSeg> {
+    pub fn find_contained(&self, start: u64, size: u64) -> Option<&RangeSeg<T>> {
         assert!(size > 0, "range tree find size={} error", size);
         if self.root.get_count() == 0 {
             return None;
@@ -570,7 +575,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
     }
 
     #[inline]
-    pub fn walk<F: FnMut(&RangeSeg)>(&self, mut cb: F) {
+    pub fn walk<F: FnMut(&RangeSeg<T>)>(&self, mut cb: F) {
         let mut node = self.root.first();
         loop {
             if let Some(_node) = node {
@@ -584,7 +589,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     /// If cb returns false, break
     #[inline]
-    pub fn walk_conditioned<F: FnMut(&RangeSeg) -> bool>(&self, mut cb: F) {
+    pub fn walk_conditioned<F: FnMut(&RangeSeg<T>) -> bool>(&self, mut cb: F) {
         let mut node = self.root.first();
         loop {
             if let Some(_node) = node {
@@ -598,7 +603,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
         }
     }
 
-    pub fn get_root(&self) -> &AvlTree<Arc<RangeSeg>, AddressTag> {
+    pub fn get_root(&self) -> &AvlTree<Arc<RangeSeg<T>>, AddressTag> {
         return &self.root;
     }
 
@@ -607,7 +612,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
     }
 }
 
-pub fn size_tree_insert_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
+pub fn size_tree_insert_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
     let size_a = a.end.get() - a.start.get();
     let size_b = b.end.get() - b.start.get();
     if size_a < size_b {
@@ -625,7 +630,7 @@ pub fn size_tree_insert_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
     }
 }
 
-pub fn size_tree_find_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
+pub fn size_tree_find_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
     let size_a = a.end.get() - a.start.get();
     let size_b = b.end.get() - b.start.get();
     return size_a.cmp(&size_b);
@@ -649,8 +654,14 @@ mod tests {
     #[test]
     fn range_tree_sizeof() {
         println!("range tree sizeof {}", std::mem::size_of::<RangeTreeSimple>());
-        println!("RangeSeg<DummyAllocator>  sizeof {}", std::mem::size_of::<RangeSeg>());
-        println!("avl node sizeof {}", std::mem::size_of::<AvlNode<RangeSeg, AddressTag>>());
+        println!(
+            "RangeSeg<DummyAllocator>  sizeof {}",
+            std::mem::size_of::<RangeSeg<DummyAllocator>>()
+        );
+        println!(
+            "avl node sizeof {}",
+            std::mem::size_of::<AvlNode<RangeSeg<DummyAllocator>, AddressTag>>()
+        );
         println!("UnsafeCell<()> sizeof {}", std::mem::size_of::<UnsafeCell<()>>());
     }
 
@@ -868,7 +879,7 @@ mod tests {
         assert_eq!(30, rt.get_space());
         assert_eq!(4, rt.root.get_count());
 
-        fn cb_print(rs: &RangeSeg) {
+        fn cb_print(rs: &RangeSeg<DummyAllocator>) {
             println!("walk callback cb_print range_seg:{:?}", rs);
         }
 
@@ -1230,12 +1241,18 @@ mod tests {
 
     // Test RangeTreeOps
     pub struct TestAllocator {
-        size_tree: AvlTree<Arc<RangeSeg>, SizeTag>,
+        size_tree: AvlTree<Arc<RangeSeg<TestAllocator>>, SizeTag>,
+    }
+
+    impl Default for TestAllocator {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl TestAllocator {
         pub fn new() -> Self {
-            TestAllocator { size_tree: AvlTree::<Arc<RangeSeg>, SizeTag>::new() }
+            TestAllocator { size_tree: AvlTree::<Arc<RangeSeg<TestAllocator>>, SizeTag>::new() }
         }
     }
 
@@ -1245,12 +1262,20 @@ mod tests {
         }
     }
 
+    unsafe impl AvlItem<SizeTag> for RangeSeg<TestAllocator> {
+        fn get_node(&self) -> &mut AvlNode<RangeSeg<TestAllocator>, SizeTag> {
+            self.get_ext_node()
+        }
+    }
+
     impl RangeTreeOps for TestAllocator {
-        fn op_add(&mut self, rs: Arc<RangeSeg>) {
+        type ExtNode = AvlNode<RangeSeg<Self>, SizeTag>;
+
+        fn op_add(&mut self, rs: Arc<RangeSeg<Self>>) {
             self.size_tree.add(rs, |a, b| size_tree_insert_cmp(a, b));
         }
 
-        fn op_remove(&mut self, rs: &RangeSeg) {
+        fn op_remove(&mut self, rs: &RangeSeg<Self>) {
             let search_key = RangeSeg {
                 start: Cell::new(rs.start.get()),
                 end: Cell::new(rs.end.get()),
