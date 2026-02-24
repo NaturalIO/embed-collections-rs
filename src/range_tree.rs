@@ -647,6 +647,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn range_tree_sizeof() {
+        println!("range tree sizeof {}", std::mem::size_of::<RangeTreeSimple>());
+        println!("RangeSeg<DummyAllocator>  sizeof {}", std::mem::size_of::<RangeSeg>());
+        println!("avl node sizeof {}", std::mem::size_of::<AvlNode<RangeSeg, AddressTag>>());
+        println!("UnsafeCell<()> sizeof {}", std::mem::size_of::<UnsafeCell<()>>());
+    }
+
+    #[test]
     fn range_tree_add() {
         let mut rt = RangeTreeSimple::new();
         assert!(rt.find(0, 10).is_none());
