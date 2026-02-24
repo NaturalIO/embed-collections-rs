@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.4.0] - 2026-02-24
+
+### Changed
+
+- range_tree: Reduce RangeTreeSimple size, remove unused stats fields
+
+- range_tree: Remove explicit set_ops(), ops should be init with Default
+
+- range_tree: Reduce RangeSeg size for RangeTreeSimple
+
 ## [0.3.0] - 2026-01-31
 
 ### Fixed
