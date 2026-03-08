@@ -124,6 +124,7 @@ pub mod const_vec;
 pub mod dlist;
 #[cfg(feature = "avl")]
 pub mod range_tree;
+pub mod seg_list;
 #[cfg(feature = "slist")]
 pub mod slist;
 #[cfg(feature = "slist")]
