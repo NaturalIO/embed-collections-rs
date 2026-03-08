@@ -188,7 +188,7 @@ pub struct SLinkedListOwned<T, Tag>
 where
     T: SListItemOwned<Tag>,
 {
-    length: u64,
+    length: usize,
     head: Option<NonNull<T>>,
     tail: Option<NonNull<T>>,
     _phan: PhantomData<fn(&Tag)>,
@@ -211,16 +211,10 @@ where
         while self.pop_front().is_some() {}
     }
 
-    /// Returns the length of the list.
-    #[inline(always)]
-    pub fn get_length(&self) -> u64 {
-        self.length
-    }
-
     /// Returns the length of the list as `usize`.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     /// Returns `true` if the list contains no elements.
@@ -439,7 +433,7 @@ mod tests {
         l.push_back(Box::new(new_node(2)));
         l.push_back(Box::new(new_node(3)));
 
-        assert_eq!(3, l.get_length());
+        assert_eq!(3, l.len());
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
         assert!(!l.is_empty());
 
@@ -449,17 +443,17 @@ mod tests {
         let n1 = l.pop_front();
         assert!(n1.is_some());
         assert_eq!(n1.unwrap().value, 1);
-        assert_eq!(l.get_length(), 2);
+        assert_eq!(l.len(), 2);
 
         let n2 = l.pop_front();
         assert!(n2.is_some());
         assert_eq!(n2.unwrap().value, 2);
-        assert_eq!(l.get_length(), 1);
+        assert_eq!(l.len(), 1);
 
         let n3 = l.pop_front();
         assert!(n3.is_some());
         assert_eq!(n3.unwrap().value, 3);
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
 
         assert!(l.pop_front().is_none());
         assert!(l.is_empty());
@@ -503,7 +497,7 @@ mod tests {
         l.push_back(Box::new(new_node(20)));
         l.push_back(Box::new(new_node(30)));
 
-        assert_eq!(l.get_length(), 3);
+        assert_eq!(l.len(), 3);
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
 
         {
@@ -514,7 +508,7 @@ mod tests {
             assert!(drain.next().is_none());
         }
 
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
         assert!(l.is_empty());
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
     }

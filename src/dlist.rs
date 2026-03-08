@@ -128,7 +128,7 @@ where
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
-    length: u64,
+    length: usize,
     head: *const P::Target,
     tail: *const P::Target,
     _phan: PhantomData<fn(&Tag)>,
@@ -182,16 +182,10 @@ where
         while self.pop_front().is_some() {}
     }
 
-    /// Returns the length of the list.
-    #[inline(always)]
-    pub fn get_length(&self) -> u64 {
-        return self.length;
-    }
-
     /// Returns the length of the list as `usize`.
     #[inline(always)]
     pub fn len(&self) -> usize {
-        return self.length as usize;
+        self.length
     }
 
     /// Returns `true` if the list contains no elements.
@@ -513,7 +507,7 @@ mod tests {
         let node3 = Box::new(new_node(3));
         l.push_back(node3);
 
-        assert_eq!(3, l.get_length());
+        assert_eq!(3, l.len());
 
         let mut iter = l.iter();
         assert_eq!(iter.next().unwrap().value, 1);
@@ -528,7 +522,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -544,7 +538,7 @@ mod tests {
         let node3 = Arc::new(new_node(3));
         l.push_back(node3);
 
-        assert_eq!(3, l.get_length());
+        assert_eq!(3, l.len());
 
         let mut iter = l.iter();
         assert_eq!(iter.next().unwrap().value, 1);
@@ -559,7 +553,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -575,7 +569,7 @@ mod tests {
         let node1 = Box::new(new_node(1));
         l.push_front(node1);
 
-        assert_eq!(3, l.get_length());
+        assert_eq!(3, l.len());
 
         let mut iter = l.iter();
         assert_eq!(iter.next().unwrap().value, 1);
@@ -590,7 +584,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -606,7 +600,7 @@ mod tests {
         let node1 = Arc::new(new_node(1));
         l.push_front(node1);
 
-        assert_eq!(3, l.get_length());
+        assert_eq!(3, l.len());
 
         let mut iter = l.iter();
         assert_eq!(iter.next().unwrap().value, 1);
@@ -621,7 +615,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -644,7 +638,7 @@ mod tests {
         assert!(iter.next().is_none());
 
         let del_node = l.pop_back();
-        assert_eq!(2, l.get_length());
+        assert_eq!(2, l.len());
         assert!(del_node.is_some());
         assert_eq!(del_node.unwrap().value, 3);
 
@@ -659,7 +653,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 2);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -682,7 +676,7 @@ mod tests {
         assert!(iter.next().is_none());
 
         let del_node = l.pop_back();
-        assert_eq!(2, l.get_length());
+        assert_eq!(2, l.len());
         assert!(del_node.is_some());
         // Note: The value returned by Arc::from_raw must still be used.
         assert!(del_node.is_some());
@@ -699,7 +693,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 2);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -735,7 +729,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -771,7 +765,7 @@ mod tests {
             assert_eq!(drain.next().unwrap().value, 3);
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
     }
 
     #[test]
@@ -782,7 +776,7 @@ mod tests {
         let del_node = l.pop_back();
         assert!(del_node.is_some());
         assert_eq!(del_node.unwrap().value, 1);
-        assert_eq!(0, l.get_length());
+        assert_eq!(0, l.len());
         assert!(l.pop_back().is_none());
 
         let mut l2 = DLinkedList::<Box<TestNode>, TestTag>::new();
@@ -791,20 +785,20 @@ mod tests {
         let del_node2 = l2.pop_back();
         assert!(del_node2.is_some());
         assert_eq!(del_node2.unwrap().value, 2);
-        assert_eq!(0, l2.get_length());
+        assert_eq!(0, l2.len());
         assert!(l2.pop_back().is_none());
 
         {
             let mut drain = l.drain();
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
 
         {
             let mut drain = l2.drain();
             assert!(drain.next().is_none());
         }
-        assert_eq!(l2.get_length(), 0);
+        assert_eq!(l2.len(), 0);
     }
 
     #[test]
@@ -814,7 +808,7 @@ mod tests {
         l.push_front(node1);
         let del_node = l.pop_back();
         assert!(del_node.is_some());
-        assert_eq!(0, l.get_length());
+        assert_eq!(0, l.len());
         assert!(l.pop_back().is_none());
 
         let mut l2 = DLinkedList::<Arc<TestNode>, TestTag>::new();
@@ -822,20 +816,20 @@ mod tests {
         l2.push_back(node2);
         let del_node2 = l2.pop_back();
         assert!(del_node2.is_some());
-        assert_eq!(0, l2.get_length());
+        assert_eq!(0, l2.len());
         assert!(l2.pop_back().is_none());
 
         {
             let mut drain = l.drain();
             assert!(drain.next().is_none());
         }
-        assert_eq!(l.get_length(), 0);
+        assert_eq!(l.len(), 0);
 
         {
             let mut drain = l2.drain();
             assert!(drain.next().is_none());
         }
-        assert_eq!(l2.get_length(), 0);
+        assert_eq!(l2.len(), 0);
     }
 
     #[test]
@@ -855,7 +849,7 @@ mod tests {
             let node3 = Box::new(new_node(3));
             l.push_back(node3);
 
-            assert_eq!(l.get_length(), 3);
+            assert_eq!(l.len(), 3);
             assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
         } // `l` goes out of scope here, triggering DLinkedList's Drop, which drains and drops nodes.
 
