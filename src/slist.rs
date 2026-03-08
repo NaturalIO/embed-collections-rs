@@ -250,7 +250,7 @@ where
     /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &P::Target) -> bool {
-        if self.head.is_null() { false } else { self.head == node as *const P::Target }
+        if self.head.is_null() { false } else { std::ptr::eq(self.head, node) }
     }
 
     /// Returns an iterator over the list (borrowed).

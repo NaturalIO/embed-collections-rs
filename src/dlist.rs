@@ -223,7 +223,7 @@ where
         let item = unsafe { &(*ptr) };
         if !self.head.is_null() {
             let head_node = unsafe { (*self.head).get_node() } as *const DListNode<P::Target, Tag>;
-            if head_node == item.get_node() as *const DListNode<P::Target, Tag> {
+            if std::ptr::eq(head_node, item.get_node()) {
                 return;
             }
         }
@@ -323,7 +323,7 @@ where
             // and node is &mut DListNode<T>.
             // We need to compare the node address or the wrapper address.
             // Converting head -> node and comparing addresses of DListNode is safer.
-            self.head == node as *const P::Target
+            std::ptr::eq(self.head, node)
         }
     }
 

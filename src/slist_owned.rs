@@ -311,7 +311,7 @@ where
     /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &T) -> bool {
-        self.head.map_or(false, |head| head.as_ptr() == node as *const T as *mut T)
+        self.head.is_some_and(|head| std::ptr::eq(head.as_ptr(), node))
     }
 
     /// Returns a draining iterator that removes items from the list.

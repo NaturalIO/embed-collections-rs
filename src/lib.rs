@@ -10,7 +10,6 @@ extern crate std;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::sync::Arc;
-use core::mem;
 use core::ptr::NonNull;
 
 /// Abstract pointer trait to support various pointer types in collections.
@@ -26,17 +25,19 @@ pub trait Pointer: Sized {
 
     fn as_ref(&self) -> &Self::Target;
 
+    #[allow(clippy::missing_safety_doc)]
     unsafe fn from_raw(p: *const Self::Target) -> Self;
 
     fn into_raw(self) -> *const Self::Target;
 }
 
+#[allow(clippy::unnecessary_cast)]
 impl<T> Pointer for *const T {
     type Target = T;
 
     #[inline]
     fn as_ref(&self) -> &Self::Target {
-        unsafe { mem::transmute(*self) }
+        unsafe { &**self }
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
@@ -70,7 +71,7 @@ impl<T> Pointer for Box<T> {
 
     #[inline]
     fn as_ref(&self) -> &Self::Target {
-        &**self
+        self
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
@@ -87,7 +88,7 @@ impl<T> Pointer for Rc<T> {
 
     #[inline]
     fn as_ref(&self) -> &Self::Target {
-        &**self
+        self
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
@@ -104,7 +105,7 @@ impl<T> Pointer for Arc<T> {
 
     #[inline]
     fn as_ref(&self) -> &Self::Target {
-        &**self
+        self
     }
 
     unsafe fn from_raw(p: *const Self::Target) -> Self {
