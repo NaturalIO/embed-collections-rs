@@ -14,7 +14,8 @@ std = []
 slist = []
 dlist = []
 avl = []
-full = ["slist", "dlist", "avl"]
+seglist = []
+full = ["slist", "dlist", "avl", "seglist"]
 
 [dependencies]
 
