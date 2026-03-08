@@ -21,8 +21,8 @@ This crate choose to use DListItem::get_node() instead of c like `offset_of!`, m
 - You don't have to understand some complex macro style.
 
 - It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
-and using memtion to return the node ref is more safer approach.
- For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
+  and using memtion to return the node ref is more safer approach.
+  For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
 
 There're three usage scenarios:
 
@@ -33,8 +33,8 @@ There're three usage scenarios:
    LinkedList because no additional allocation is needed.
 
 3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
-for temporary usage. You must ensure the list item not dropped be other refcount
-(for example, the item is holding by Arc in other structure).
+   for temporary usage. You must ensure the list item not dropped be other refcount
+   (for example, the item is holding by Arc in other structure).
 
 ## Modules
 

@@ -13,7 +13,7 @@
 //! # Example
 //! ```rust
 //! use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
-//! use std::cell::UnsafeCell;
+//! use core::cell::UnsafeCell;
 //!
 //! struct MyItem {
 //!     id: u32,
@@ -56,7 +56,10 @@
 
 use crate::Pointer;
 use core::marker::PhantomData;
-use core::{fmt, mem, ptr::null};
+use core::{
+    fmt, mem,
+    ptr::{self, null},
+};
 
 /// A trait to return internal mutable DListNode for specified list.
 ///
@@ -223,7 +226,7 @@ where
         let item = unsafe { &(*ptr) };
         if !self.head.is_null() {
             let head_node = unsafe { (*self.head).get_node() } as *const DListNode<P::Target, Tag>;
-            if head_node == item.get_node() as *const DListNode<P::Target, Tag> {
+            if ptr::eq(head_node, item.get_node()) {
                 return;
             }
         }
@@ -323,7 +326,7 @@ where
             // and node is &mut DListNode<T>.
             // We need to compare the node address or the wrapper address.
             // Converting head -> node and comparing addresses of DListNode is safer.
-            self.head == node as *const P::Target
+            ptr::eq(self.head, node)
         }
     }
 

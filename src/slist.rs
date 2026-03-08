@@ -11,7 +11,7 @@
 //! # Example
 //! ```rust
 //! use embed_collections::{slist::{SLinkedList, SListItem, SListNode}, Pointer};
-//! use std::cell::UnsafeCell;
+//! use core::cell::UnsafeCell;
 //!
 //! struct MyTask {
 //!     priority: u8,
@@ -56,7 +56,7 @@ use crate::Pointer;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
-use core::ptr::null;
+use core::ptr::{self, null};
 
 /// A trait to return internal mutable SListNode for specified list.
 ///
@@ -250,7 +250,7 @@ where
     /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &P::Target) -> bool {
-        if self.head.is_null() { false } else { self.head == node as *const P::Target }
+        if self.head.is_null() { false } else { ptr::eq(self.head, node) }
     }
 
     /// Returns an iterator over the list (borrowed).

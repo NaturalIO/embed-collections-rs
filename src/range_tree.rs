@@ -104,11 +104,11 @@ impl<T: RangeTreeOps> fmt::Debug for RangeSeg<T> {
 // when return is overlapping, return equal
 fn range_tree_segment_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
     if a.end.get() <= b.start.get() {
-        return Ordering::Less;
+        Ordering::Less
     } else if a.start.get() >= b.end.get() {
-        return Ordering::Greater;
+        Ordering::Greater
     } else {
-        return Ordering::Equal;
+        Ordering::Equal
     }
 }
 
@@ -142,6 +142,12 @@ impl<'a, T: RangeTreeOps> IntoIterator for &'a RangeTree<T> {
 }
 
 #[allow(dead_code)]
+impl<T: RangeTreeOps> Default for RangeTree<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: RangeTreeOps> RangeTree<T> {
     pub fn new() -> Self {
         RangeTree {
@@ -165,12 +171,12 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     #[inline(always)]
     pub fn get_space(&self) -> u64 {
-        return self.space;
+        self.space
     }
 
     #[inline(always)]
     pub fn get_count(&self) -> i64 {
-        return self.root.get_count();
+        self.root.get_count()
     }
 
     #[inline(always)]
@@ -232,7 +238,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
         let detached_result = unsafe { result.detach() };
         self.space += size;
         self.merge_seg(start, start + size, detached_result);
-        return Ok(());
+        Ok(())
     }
 
     /// Add range which may be crossed section or larger with existing, will merge the range
@@ -356,7 +362,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
             }
             removed = true;
         }
-        return removed;
+        removed
     }
 
     /// Only used when remove range overlap one segment,
@@ -400,7 +406,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
             // New node [end, rs_end]
             let new_rs = RangeSeg::new(end, rs_end);
 
-            self.ops.op_remove(&rs_node);
+            self.ops.op_remove(rs_node);
             self.ops.op_add(result.get_exact().unwrap());
             self.ops.op_add(new_rs.clone());
             let result = unsafe { result.detach() };
@@ -417,7 +423,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
             size_deduce = rs_end - start;
             // In-Place Update
             rs_node.end.set(start);
-            self.ops.op_remove(&rs_node);
+            self.ops.op_remove(rs_node);
             self.ops.op_add(result.get_exact().unwrap());
             let _ = rs_node;
 
@@ -429,7 +435,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
             // In-Place Update: Update start.
             rs_node.start.set(end);
 
-            self.ops.op_remove(&rs_node);
+            self.ops.op_remove(rs_node);
             self.ops.op_add(result.get_exact().unwrap());
             let _ = rs_node;
 
@@ -439,7 +445,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
             // Remove Exact / Total
             size_deduce = rs_end - rs_start;
 
-            self.ops.op_remove(&rs_node);
+            self.ops.op_remove(rs_node);
             let _ = rs_node;
 
             self.root.remove_ref(&result.get_exact().unwrap());
@@ -447,7 +453,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
         }
 
         self.space -= size_deduce;
-        return true;
+        true
     }
 
     /// return only when segment overlaps with [start, start+size]
@@ -460,7 +466,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
         let end = start + size;
         let rs = RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
         let result = self.root.find(&rs, range_tree_segment_cmp);
-        return result.get_exact();
+        result.get_exact()
     }
 
     /// return only when segment contains [start, size], if multiple segment exists, return the
@@ -485,13 +491,9 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline]
     pub fn walk<F: FnMut(&RangeSeg<T>)>(&self, mut cb: F) {
         let mut node = self.root.first();
-        loop {
-            if let Some(_node) = node {
-                cb(&_node);
-                node = self.root.next(&_node);
-            } else {
-                break;
-            }
+        while let Some(_node) = node {
+            cb(_node);
+            node = self.root.next(_node);
         }
     }
 
@@ -499,20 +501,16 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline]
     pub fn walk_conditioned<F: FnMut(&RangeSeg<T>) -> bool>(&self, mut cb: F) {
         let mut node = self.root.first();
-        loop {
-            if let Some(_node) = node {
-                if !cb(&_node) {
-                    break;
-                }
-                node = self.root.next(&_node);
-            } else {
+        while let Some(_node) = node {
+            if !cb(_node) {
                 break;
             }
+            node = self.root.next(_node);
         }
     }
 
     pub fn get_root(&self) -> &AvlTree<Arc<RangeSeg<T>>, AddressTag> {
-        return &self.root;
+        &self.root
     }
 
     pub fn validate(&self) {
@@ -524,24 +522,22 @@ pub fn size_tree_insert_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -
     let size_a = a.end.get() - a.start.get();
     let size_b = b.end.get() - b.start.get();
     if size_a < size_b {
-        return Ordering::Less;
+        Ordering::Less
     } else if size_a > size_b {
-        return Ordering::Greater;
+        Ordering::Greater
+    } else if a.start.get() < b.start.get() {
+        Ordering::Less
+    } else if a.start.get() > b.start.get() {
+        Ordering::Greater
     } else {
-        if a.start.get() < b.start.get() {
-            return Ordering::Less;
-        } else if a.start.get() > b.start.get() {
-            return Ordering::Greater;
-        } else {
-            return Ordering::Equal;
-        }
+        Ordering::Equal
     }
 }
 
 pub fn size_tree_find_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
     let size_a = a.end.get() - a.start.get();
     let size_b = b.end.get() - b.start.get();
-    return size_a.cmp(&size_b);
+    size_a.cmp(&size_b)
 }
 
 #[cfg(feature = "std")]

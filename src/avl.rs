@@ -151,7 +151,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
 
     #[inline(always)]
     fn get_parent(&self) -> *const T {
-        return self.parent;
+        self.parent
     }
 
     // Swap two node but not there value
@@ -408,6 +408,7 @@ where
         self._insert(new_data, w.node, w.direction.unwrap());
     }
 
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn _insert(
         &mut self,
         new_data: P,
@@ -480,7 +481,7 @@ where
         &mut self, new_data: P, here: AvlSearchResult<P>, direction: AvlDirection,
     ) {
         let mut dir_child = direction;
-        assert_eq!(here.node.is_null(), false);
+        assert!(!here.node.is_null());
         let here_node = here.node;
         let child = unsafe { (*here_node).get_node().get_child(dir_child) };
         if !child.is_null() {
@@ -533,12 +534,7 @@ where
 
     #[inline]
     fn rotate(&mut self, data: *const P::Target, balance: i8) -> bool {
-        let dir: AvlDirection;
-        if balance < 0 {
-            dir = AvlDirection::Left;
-        } else {
-            dir = AvlDirection::Right;
-        }
+        let dir = if balance < 0 { AvlDirection::Left } else { AvlDirection::Right };
         let node = unsafe { (*data).get_node() };
 
         let parent = node.get_parent();
@@ -618,7 +614,7 @@ where
             g_child_node.parent = null();
             self.root = g_child;
         }
-        return true;
+        true
     }
 
     /*
@@ -678,41 +674,32 @@ where
             return;
         }
         let mut which_child: AvlDirection;
-        let imm_data: *const P::Target;
-        let parent: *const P::Target;
+
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
         let del_node = unsafe { (*del).get_node() };
 
         let node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
 
         if node_swap_flag {
-            let dir: AvlDirection;
-            let dir_child_temp: AvlDirection;
-            let dir_child_del: AvlDirection;
-            let dir_inverse: AvlDirection;
-            dir = balance_to_child!(del_node.balance + 1);
-
+            let dir: AvlDirection = balance_to_child!(del_node.balance + 1);
             let child_temp = del_node.get_child(dir);
 
-            dir_inverse = dir.reverse();
+            let dir_inverse: AvlDirection = dir.reverse();
             let child = self.bottom_child_ref(child_temp, dir_inverse);
 
             // Fix Miri UB: Avoid calling parent_direction2(child) if child's parent is del,
             // because that would create a aliasing &mut ref to del while we hold del_node.
-            if child == child_temp {
-                dir_child_temp = dir;
-            } else {
-                dir_child_temp = self.parent_direction2(child);
-            }
+            let dir_child_temp =
+                if child == child_temp { dir } else { self.parent_direction2(child) };
 
             // Fix Miri UB: Do not call parent_direction2(del) as it creates a new &mut AvlNode
             // alias while we hold del_node. Use del_node to find parent direction.
             let parent = del_node.get_parent();
-            if !parent.is_null() {
-                dir_child_del = self.parent_direction(del, parent);
+            let dir_child_del = if !parent.is_null() {
+                self.parent_direction(del, parent)
             } else {
-                dir_child_del = AvlDirection::Left;
-            }
+                AvlDirection::Left
+            };
 
             let child_node = unsafe { (*child).get_node() };
             child_node.swap(del_node);
@@ -770,13 +757,10 @@ where
 
         // Here we know "delete" is at least partially a leaf node. It can
         // be easily removed from the tree.
-        parent = del_node.get_parent();
+        let parent: *const P::Target = del_node.get_parent();
 
-        if !del_node.left.is_null() {
-            imm_data = del_node.left;
-        } else {
-            imm_data = del_node.right;
-        }
+        let imm_data: *const P::Target =
+            if !del_node.left.is_null() { del_node.left } else { del_node.right };
 
         // Connect parent directly to node (leaving out delete).
         if !imm_data.is_null() {
@@ -832,17 +816,13 @@ where
                 }
                 break;
             }
-        } else {
-            if !imm_data.is_null() {
-                assert!(self.count > 0);
-                self.count -= 1;
-                self.root = imm_data;
-            }
+        } else if !imm_data.is_null() {
+            assert!(self.count > 0);
+            self.count -= 1;
+            self.root = imm_data;
         }
-        if self.root.is_null() {
-            if self.count > 0 {
-                panic!("AvlTree {} nodes left after remove but tree.root == nil", self.count);
-            }
+        if self.root.is_null() && self.count > 0 {
+            panic!("AvlTree {} nodes left after remove but tree.root == nil", self.count);
         }
         del_node.detach();
     }
@@ -1055,7 +1035,7 @@ where
                 }
             }
         }
-        return AvlSearchResult { node: nearest_node, direction: None, _phan: PhantomData };
+        AvlSearchResult { node: nearest_node, direction: None, _phan: PhantomData }
     }
 
     #[inline(always)]
@@ -1159,7 +1139,7 @@ where
                 };
             }
         }
-        return AvlSearchResult::default();
+        AvlSearchResult::default()
     }
 
     pub fn validate(&self, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
@@ -1194,7 +1174,7 @@ where
                 visited += 1;
                 self.validate_node(data, cmp_func);
                 data = unsafe { (*data).get_node() }.get_child(AvlDirection::Right);
-            } else if stack.len() > 0 {
+            } else if !stack.is_empty() {
                 let _data = stack.pop().unwrap();
                 self.validate_node(_data, cmp_func);
                 visited += 1;
@@ -1232,13 +1212,11 @@ where
         // We extract the pointers and reconstruct the result.
         let w_node = w.node;
         let w_dir = w.direction;
-        // Drop w explicitly to release the borrow on self (though not strictly needed with NLL, being explicit helps)
-        drop(w);
 
         let w_detached = AvlSearchResult { node: w_node, direction: w_dir, _phan: PhantomData };
 
         self.insert(node, w_detached);
-        return true;
+        true
     }
 }
 
