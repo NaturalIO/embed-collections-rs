@@ -17,7 +17,7 @@ This crate provide two categories:
     - [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
     - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
     - [`slist_owned`]: An intrusive slist but with safe and more compact interface
-    - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), and RangeTree based on AVL tree, port to rust from ZFS
+    - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
 
 ## Intrusive Collections
 
