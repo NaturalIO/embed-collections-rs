@@ -157,87 +157,109 @@ impl<T: RangeTreeOps> RangeTree<T> {
             return;
         }
 
-        // Check for adjacent ranges and merge directly
-        let mut merge_before = false;
+        // Single range(..=end) lookup to find:
+        // 1. A range that ends at 'start' (merge before) - via next_back()
+        // 2. A range that starts at 'end' (merge after) - via checking last entry
+        let mut iter = self.map.range(..=end);
+
+        // Get the last range with start <= end
+        let last = iter.next_back();
+
+        // Check for forward merge: is there a range starting exactly at end?
         let mut merge_after = false;
-        let (mut before_start, mut before_end) = (0, 0);
         let mut after_end = 0;
 
-        // Check the range before (prev_end should equal start for adjacent)
-        let mut iter = self.map.range(..=start);
+        if let Some((&last_start, &last_end)) = last {
+            // Check if last range starts exactly at end (merge after)
+            if last_start == end {
+                merge_after = true;
+                after_end = last_end;
+            }
+
+            // Check for overlap with last range
+            // Last range [last_start, last_end) should not overlap with [start, end)
+            if last_start < end && last_end > start {
+                panic!(
+                    "allocating allocated {}-{} overlaps with {}-{}",
+                    start, end, last_start, last_end
+                );
+            }
+        }
+
+        // Now check for backward merge by looking at the previous range
+        // We need a range that ends exactly at start
+        let mut merge_before = false;
+        let mut before_start = 0;
+
         if let Some((&prev_start, &prev_end)) = iter.next_back() {
+            // Check if previous range ends exactly at start (merge before)
+            if prev_end == start {
+                merge_before = true;
+                before_start = prev_start;
+            }
+
+            // Also check for overlap with previous range
             if prev_end > start {
-                // Overlaps with previous range - panic
                 panic!(
                     "allocating allocated {}-{} overlaps with {}-{}",
                     start, end, prev_start, prev_end
                 );
-            } else if prev_end == start {
-                merge_before = true;
-                before_start = prev_start;
-                before_end = prev_end;
             }
-        }
-
-        // Check the range after (next_start should equal end for adjacent)
-        // Use get() instead of range() for O(log n) lookup
-        if let Some(&next_end) = self.map.get(&end) {
-            merge_after = true;
-            after_end = next_end;
-        }
-
-        // Also need to check if there's a range that starts after start but before end
-        // (this would be an overlap not caught by the above checks)
-        if !merge_after {
-            let mut iter = self.map.range(start..end);
-            if let Some((&overlap_start, &overlap_end)) = iter.next() {
-                panic!(
-                    "allocating allocated {}-{} overlaps with {}-{}",
-                    start, end, overlap_start, overlap_end
-                );
+        } else if last.is_some() {
+            // No previous range in iterator, but we have last
+            // Check if last range (which has start <= end) could be before start
+            let (last_start, last_end) = last.unwrap();
+            if *last_start < start && *last_end == start {
+                merge_before = true;
+                before_start = *last_start;
             }
         }
 
         self.space += size;
 
-        if merge_before && merge_after {
-            // Merge Both: [before] + [new] + [after]
-            self.ops.op_remove(before_start, before_end);
-            self.ops.op_remove(end, after_end);
-            self.map.remove(&before_start);
-            self.map.remove(&end);
+        match (merge_before, merge_after) {
+            (true, true) => {
+                // Merge both sides: [before] + [new] + [after]
+                self.ops.op_remove(before_start, start);
+                self.ops.op_remove(end, after_end);
+                self.map.remove(&before_start);
+                self.map.remove(&end);
 
-            self.map.insert(before_start, after_end);
-            self.ops.op_add(before_start, after_end);
+                self.map.insert(before_start, after_end);
+                self.ops.op_add(before_start, after_end);
 
-            self.ops.stat_decrease(before_start, before_end);
-            self.ops.stat_decrease(end, after_end);
-            self.ops.stat_increase(before_start, after_end);
-        } else if merge_before {
-            // Merge Before Only: Extend `before.end`
-            self.ops.op_remove(before_start, before_end);
-            self.map.remove(&before_start);
+                self.ops.stat_decrease(before_start, start);
+                self.ops.stat_decrease(end, after_end);
+                self.ops.stat_increase(before_start, after_end);
+            }
+            (true, false) => {
+                // Merge before only
+                self.ops.op_remove(before_start, start);
+                self.map.remove(&before_start);
 
-            self.map.insert(before_start, end);
-            self.ops.op_add(before_start, end);
+                self.map.insert(before_start, end);
+                self.ops.op_add(before_start, end);
 
-            self.ops.stat_decrease(before_start, before_end);
-            self.ops.stat_increase(before_start, end);
-        } else if merge_after {
-            // Merge After Only: Extend `after.start`
-            self.ops.op_remove(end, after_end);
-            self.map.remove(&end);
+                self.ops.stat_decrease(before_start, start);
+                self.ops.stat_increase(before_start, end);
+            }
+            (false, true) => {
+                // Merge after only
+                self.ops.op_remove(end, after_end);
+                self.map.remove(&end);
 
-            self.map.insert(start, after_end);
-            self.ops.op_add(start, after_end);
+                self.map.insert(start, after_end);
+                self.ops.op_add(start, after_end);
 
-            self.ops.stat_decrease(end, after_end);
-            self.ops.stat_increase(start, after_end);
-        } else {
-            // No Merge. Insert new.
-            self.map.insert(start, end);
-            self.ops.op_add(start, end);
-            self.ops.stat_increase(start, end);
+                self.ops.stat_decrease(end, after_end);
+                self.ops.stat_increase(start, after_end);
+            }
+            (false, false) => {
+                // No merge, just insert
+                self.map.insert(start, end);
+                self.ops.op_add(start, end);
+                self.ops.stat_increase(start, end);
+            }
         }
     }
 
