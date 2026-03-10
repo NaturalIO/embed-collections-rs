@@ -120,13 +120,16 @@ impl<T> Pointer for Arc<T> {
 #[cfg(feature = "avl")]
 pub mod avl;
 pub mod const_vec;
+pub use const_vec::ConstVec;
 #[cfg(feature = "dlist")]
 pub mod dlist;
 #[cfg(feature = "avl")]
 pub mod range_tree;
 pub mod seg_list;
+pub use seg_list::SegList;
 #[cfg(feature = "slist")]
 pub mod slist;
 #[cfg(feature = "slist")]
 pub mod slist_owned;
 pub mod various;
+pub use various::Various;
