@@ -2,27 +2,27 @@
 
 docs.rs: <https://docs.rs/embed-collections/latest/embed_collections/>
 
-`embed-collections` provides intrusive data structures for Rust. Unlike standard collections,
-intrusive collections require the elements to store the node data (links) themselves.
-This allows for:
+`embed-collections` provides memory efficient data structures for Rust.
+For embedding environment and server applications that need tight memory management.
 
-- **Memory Efficiency**: No extra allocation for nodes.
-- **Deterministic Memory Management**: You control where the node lives.
-- **Flexibility**: Works with various pointer types (`Box`, `Arc`, `Rc`, `NonNull`, raw pointers).
-- **Multiple ownership**: The trait and collection come with Tag to distinguish from each other,
-  allow compiler checks.
+This crate provide two categories:
 
-Difference to crate `intrusive-collections`:
+- Cache efficient collections:
+    - [`ConstVec`]: Fixed capacity inline vec
+    - [`SegList`]:  A list to store elements with fixed size segments (the capacity of segment is calculated to fit a CPU cacheline)
+    - [`Various`]: For various count of elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
 
-This crate choose to use DListItem::get_node() instead of c like `offset_of!`, mainly because:
+- intrusiave collection
+    - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), unsafe (raw pointer)
+    - [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
+    - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
+    - [`slist_owned`]: An intrusive slist but with safe and more compact interface
+    - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), and RangeTree based on AVL tree, port to rust from ZFS
 
-- Mangling with offset conversion makes the code hard to read (for people not used to c style coding).
+## Intrusive Collections
 
-- You don't have to understand some complex macro style.
-
-- It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
-  and using memtion to return the node ref is more safer approach.
-  For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
+intrusive collection is often used in c/c++ code, they does not need extra allocation.
+But the disadvantages includes: complexity to write, bad for cache hit when the node is too small
 
 There're three usage scenarios:
 
@@ -36,29 +36,20 @@ There're three usage scenarios:
    for temporary usage. You must ensure the list item not dropped be other refcount
    (for example, the item is holding by Arc in other structure).
 
-## Modules
 
-- [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
-- [`slist`]: Intrusive Singly Linked List ( Queue / stack).
-- [`slist_owned`]: An intrusive slist but with safe and more compact interface
-- [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), and RangeTree based on AVL tree, port to rust from ZFS
+### Difference to `intrusive-collections` crate
 
-## Feature Flags
+This crate choose to use trait instead of c like `offset_of!`, mainly because:
 
-This crate uses [feature flags](https://doc.rust-lang.org/cargo/reference/features.html) to control
-the compilation of certain functionalities:
+- Mangling with offset conversion makes the code hard to read (for people not used to c style coding).
 
-*   **`default`**: Enabled by default. Includes the `std` and `full` features.
-*   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
-*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
-*   **`dlist`**: Enables the doubly linked list (`dlist`) module.
-*   **`avl`**: Enables the `avl` and `range_tree` module.
-*   **`full`**: Enabled by default. Includes `slist`, `dlist`, and `avl`.
+- You don't have to understand some complex macro style.
 
-To compile with `no_std` and only the `slist` module, you would use:
-`cargo build --no-default-features --features slist`
+- It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
+  and using memtion to return the node ref is more safer approach.
+  For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
 
-## Example
+### instrusive link list example
 
 ```rust
 use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
@@ -115,3 +106,18 @@ assert_eq!(io_list.pop_front().unwrap().val, 10);
 assert_eq!(cache_list.pop_front().unwrap().val, 20);
 assert_eq!(io_list.pop_front().unwrap().val, 20);
 ```
+
+## Feature Flags
+
+This crate uses [feature flags](https://doc.rust-lang.org/cargo/reference/features.html) to control
+the compilation of certain functionalities:
+
+*   **`default`**: Enabled by default. Includes the `std` and `full` features.
+*   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
+*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
+*   **`dlist`**: Enables the doubly linked list (`dlist`) module.
+*   **`avl`**: Enables the `avl` and `range_tree` module.
+*   **`full`**: Enabled by default. Includes `slist`, `dlist`, and `avl`.
+
+To compile with `no_std` and only the `slist` module, you would use:
+`cargo build --no-default-features --features slist`
