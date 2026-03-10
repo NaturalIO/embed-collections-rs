@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.0] - 2026-03-10
+
+### Added
+
+- Add ConstVec: Fixed capacity inline vec
+
+- Add SegList:  A list to store elements with fixed size segments (the capacity of segment is calculated to fit a CPU cacheline)
+
+- Add Various: For various count of elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
+
+### Removed
+
+- RangeTree is removed and moved to crate range-tree-rs
+
 ## [0.4.1] - 2026-03-09
 
 ### Changed
