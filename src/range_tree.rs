@@ -75,8 +75,8 @@ impl<T: RangeTreeOps> fmt::Debug for RangeSeg<T> {
 }
 
 pub struct RangeTreeIter<'a, T: RangeTreeOps> {
-    tree: &'a RangeTree<T>,
     current: Option<alloc::collections::btree_map::Iter<'a, u64, u64>>,
+    _phantom: core::marker::PhantomData<&'a T>,
 }
 
 unsafe impl<'a, T: RangeTreeOps> Send for RangeTreeIter<'a, T> {}
@@ -148,16 +148,97 @@ impl<T: RangeTreeOps> RangeTree<T> {
         assert!(size > 0, "range tree add size={} error", size);
         let end = start + size;
 
-        // Check for overlapping range
-        if let Some((existing_start, existing_end)) = self.find_overlapping(start, end) {
-            panic!(
-                "allocating allocated {}-{} overlaps with {}-{}",
-                start, end, existing_start, existing_end
-            );
+        // Fast path: empty tree
+        if self.map.is_empty() {
+            self.map.insert(start, end);
+            self.ops.op_add(start, end);
+            self.ops.stat_increase(start, end);
+            self.space += size;
+            return;
+        }
+
+        // Check for adjacent ranges and merge directly
+        let mut merge_before = false;
+        let mut merge_after = false;
+        let (mut before_start, mut before_end) = (0, 0);
+        let mut after_end = 0;
+
+        // Check the range before (prev_end should equal start for adjacent)
+        let mut iter = self.map.range(..=start);
+        if let Some((&prev_start, &prev_end)) = iter.next_back() {
+            if prev_end > start {
+                // Overlaps with previous range - panic
+                panic!(
+                    "allocating allocated {}-{} overlaps with {}-{}",
+                    start, end, prev_start, prev_end
+                );
+            } else if prev_end == start {
+                merge_before = true;
+                before_start = prev_start;
+                before_end = prev_end;
+            }
+        }
+
+        // Check the range after (next_start should equal end for adjacent)
+        // Use get() instead of range() for O(log n) lookup
+        if let Some(&next_end) = self.map.get(&end) {
+            merge_after = true;
+            after_end = next_end;
+        }
+
+        // Also need to check if there's a range that starts after start but before end
+        // (this would be an overlap not caught by the above checks)
+        if !merge_after {
+            let mut iter = self.map.range(start..end);
+            if let Some((&overlap_start, &overlap_end)) = iter.next() {
+                panic!(
+                    "allocating allocated {}-{} overlaps with {}-{}",
+                    start, end, overlap_start, overlap_end
+                );
+            }
         }
 
         self.space += size;
-        self.merge_seg(start, end);
+
+        if merge_before && merge_after {
+            // Merge Both: [before] + [new] + [after]
+            self.ops.op_remove(before_start, before_end);
+            self.ops.op_remove(end, after_end);
+            self.map.remove(&before_start);
+            self.map.remove(&end);
+
+            self.map.insert(before_start, after_end);
+            self.ops.op_add(before_start, after_end);
+
+            self.ops.stat_decrease(before_start, before_end);
+            self.ops.stat_decrease(end, after_end);
+            self.ops.stat_increase(before_start, after_end);
+        } else if merge_before {
+            // Merge Before Only: Extend `before.end`
+            self.ops.op_remove(before_start, before_end);
+            self.map.remove(&before_start);
+
+            self.map.insert(before_start, end);
+            self.ops.op_add(before_start, end);
+
+            self.ops.stat_decrease(before_start, before_end);
+            self.ops.stat_increase(before_start, end);
+        } else if merge_after {
+            // Merge After Only: Extend `after.start`
+            self.ops.op_remove(end, after_end);
+            self.map.remove(&end);
+
+            self.map.insert(start, after_end);
+            self.ops.op_add(start, after_end);
+
+            self.ops.stat_decrease(end, after_end);
+            self.ops.stat_increase(start, after_end);
+        } else {
+            // No Merge. Insert new.
+            self.map.insert(start, end);
+            self.ops.op_add(start, end);
+            self.ops.stat_increase(start, end);
+        }
     }
 
     /// Find a range that overlaps with [start, end)
@@ -450,7 +531,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     #[inline]
     pub fn iter(&self) -> RangeTreeIter<'_, T> {
-        RangeTreeIter { tree: self, current: Some(self.map.iter()) }
+        RangeTreeIter { current: Some(self.map.iter()), _phantom: core::marker::PhantomData }
     }
 
     #[inline]
