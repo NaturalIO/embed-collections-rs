@@ -1,36 +1,14 @@
-use crate::avl::{AvlDirection, AvlItem, AvlNode, AvlSearchResult, AvlTree};
-use alloc::sync::Arc;
-use core::{
-    cell::{Cell, UnsafeCell},
-    cmp::Ordering,
-    fmt,
-};
+use alloc::collections::BTreeMap;
+use core::fmt;
 
 pub struct AddressTag;
 pub struct SizeTag;
-
-#[derive(Default)]
-#[repr(C)]
-pub struct RangeSeg<T: RangeTreeOps> {
-    node: UnsafeCell<AvlNode<Self, AddressTag>>,
-    pub start: Cell<u64>,
-    pub end: Cell<u64>,
-    ext_node: UnsafeCell<T::ExtNode>,
-}
-
-unsafe impl<T: RangeTreeOps> Send for RangeSeg<T> {}
-
-unsafe impl<T: RangeTreeOps> AvlItem<AddressTag> for RangeSeg<T> {
-    fn get_node(&self) -> &mut AvlNode<Self, AddressTag> {
-        unsafe { &mut *self.node.get() }
-    }
-}
 
 pub struct RangeTree<T>
 where
     T: RangeTreeOps,
 {
-    root: AvlTree<Arc<RangeSeg<T>>, AddressTag>,
+    map: BTreeMap<u64, u64>,
     space: u64,
     ops: T,
 }
@@ -39,8 +17,8 @@ unsafe impl<T: RangeTreeOps> Send for RangeTree<T> {}
 
 pub trait RangeTreeOps: Sized + Default {
     type ExtNode: Default;
-    fn op_add(&mut self, rs: Arc<RangeSeg<Self>>);
-    fn op_remove(&mut self, rs: &RangeSeg<Self>);
+    fn op_add(&mut self, start: u64, end: u64);
+    fn op_remove(&mut self, start: u64, end: u64);
 
     #[inline]
     fn stat_decrease(&mut self, _start: u64, _end: u64) {}
@@ -58,81 +36,63 @@ pub struct DummyAllocator();
 impl RangeTreeOps for DummyAllocator {
     type ExtNode = ();
     #[inline]
-    fn op_add(&mut self, _rs: Arc<RangeSeg<Self>>) {}
+    fn op_add(&mut self, _start: u64, _end: u64) {}
 
     #[inline]
-    fn op_remove(&mut self, _rs: &RangeSeg<Self>) {}
+    fn op_remove(&mut self, _start: u64, _end: u64) {}
+}
+
+/// A range segment representation for iteration and find results
+#[derive(Clone, Copy)]
+pub struct RangeSeg<T: RangeTreeOps> {
+    pub start: u64,
+    pub end: u64,
+    _phantom: core::marker::PhantomData<T>,
 }
 
 impl<T: RangeTreeOps> RangeSeg<T> {
     #[inline]
-    pub fn get_ext_node(&self) -> &mut T::ExtNode {
-        unsafe { &mut *self.ext_node.get() }
-    }
-
-    #[inline]
     pub fn valid(&self) {
-        assert!(self.start.get() <= self.end.get(), "RangeSeg:{:?} invalid", self);
-    }
-
-    #[inline]
-    pub fn new(s: u64, e: u64) -> Arc<RangeSeg<T>> {
-        Arc::new(RangeSeg { start: Cell::new(s), end: Cell::new(e), ..Default::default() })
+        assert!(self.start <= self.end, "RangeSeg:{:?} invalid", self);
     }
 
     #[inline]
     pub fn get_range(&self) -> (u64, u64) {
-        (self.start.get(), self.end.get())
+        (self.start, self.end)
     }
 }
 
 impl<T: RangeTreeOps> fmt::Display for RangeSeg<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "RangeSeg({}-{})", self.start.get(), self.end.get())
+        write!(f, "RangeSeg({}-{})", self.start, self.end)
     }
 }
 
 impl<T: RangeTreeOps> fmt::Debug for RangeSeg<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let _ = write!(f, "( start: {}, end:{}, ", self.start.get(), self.end.get());
-        let _ = write!(f, "node: {:?}, ", unsafe { &*self.node.get() });
-        //        let _ = write!(f, "ext_node: {:?} ", unsafe { &*self.ext_node.get() });
-        write!(f, ")")
-    }
-}
-
-// when return is overlapping, return equal
-fn range_tree_segment_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
-    if a.end.get() <= b.start.get() {
-        Ordering::Less
-    } else if a.start.get() >= b.end.get() {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
+        write!(f, "( start: {}, end:{} )", self.start, self.end)
     }
 }
 
 pub struct RangeTreeIter<'a, T: RangeTreeOps> {
     tree: &'a RangeTree<T>,
-    current: Option<&'a RangeSeg<T>>,
+    current: Option<alloc::collections::btree_map::Iter<'a, u64, u64>>,
 }
 
 unsafe impl<'a, T: RangeTreeOps> Send for RangeTreeIter<'a, T> {}
 
 impl<'a, T: RangeTreeOps> Iterator for RangeTreeIter<'a, T> {
-    type Item = &'a RangeSeg<T>;
+    type Item = RangeSeg<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current = self.current.take();
-        if let Some(seg) = current {
-            self.current = self.tree.root.next(seg);
-        }
-        current
+        let iter = self.current.as_mut()?;
+        let (&start, &end) = iter.next()?;
+        Some(RangeSeg { start, end, _phantom: core::marker::PhantomData })
     }
 }
 
 impl<'a, T: RangeTreeOps> IntoIterator for &'a RangeTree<T> {
-    type Item = &'a RangeSeg<T>;
+    type Item = RangeSeg<T>;
     type IntoIter = RangeTreeIter<'a, T>;
 
     #[inline]
@@ -150,11 +110,7 @@ impl<T: RangeTreeOps> Default for RangeTree<T> {
 
 impl<T: RangeTreeOps> RangeTree<T> {
     pub fn new() -> Self {
-        RangeTree {
-            root: AvlTree::<Arc<RangeSeg<T>>, AddressTag>::new(),
-            space: 0,
-            ops: T::default(),
-        }
+        RangeTree { map: BTreeMap::new(), space: 0, ops: T::default() }
     }
 
     #[inline]
@@ -163,10 +119,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
     }
 
     pub fn is_empty(&self) -> bool {
-        if 0 == self.root.get_count() {
-            return true;
-        }
-        false
+        self.map.is_empty()
     }
 
     #[inline(always)]
@@ -176,7 +129,7 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     #[inline(always)]
     pub fn get_count(&self) -> i64 {
-        self.root.get_count()
+        self.map.len() as i64
     }
 
     #[inline(always)]
@@ -193,19 +146,41 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline]
     pub fn add(&mut self, start: u64, size: u64) {
         assert!(size > 0, "range tree add size={} error", size);
-        let rs_key = RangeSeg {
-            start: Cell::new(start),
-            end: Cell::new(start + size),
-            ..Default::default()
-        };
-        let result = self.root.find(&rs_key, range_tree_segment_cmp);
-        if result.direction.is_none() {
-            panic!("allocating allocated {} of {:?}", &rs_key, result.get_exact().unwrap());
+        let end = start + size;
+
+        // Check for overlapping range
+        if let Some((existing_start, existing_end)) = self.find_overlapping(start, end) {
+            panic!(
+                "allocating allocated {}-{} overlaps with {}-{}",
+                start, end, existing_start, existing_end
+            );
         }
 
-        let detached_result = unsafe { result.detach() };
         self.space += size;
-        self.merge_seg(start, start + size, detached_result);
+        self.merge_seg(start, end);
+    }
+
+    /// Find a range that overlaps with [start, end)
+    fn find_overlapping(&self, start: u64, end: u64) -> Option<(u64, u64)> {
+        // Find the first range with start >= start, or the range before it
+        let mut iter = self.map.range(..=start);
+        if let Some((&prev_start, &prev_end)) = iter.next_back() {
+            if prev_end > start {
+                // Overlaps with previous range
+                return Some((prev_start, prev_end));
+            }
+        }
+
+        // Check the next range
+        let mut iter = self.map.range(start..);
+        if let Some((&next_start, &next_end)) = iter.next() {
+            if next_start < end {
+                // Overlaps with next range
+                return Some((next_start, next_end));
+            }
+        }
+
+        None
     }
 
     /// Add range segment, possible adjacent, and check overlapping.
@@ -214,30 +189,17 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline]
     pub fn add_find_overlap(&mut self, start: u64, size: u64) -> Result<(), (u64, u64)> {
         assert!(size > 0, "range tree add size={} error", size);
-        let rs_key = RangeSeg {
-            start: Cell::new(start),
-            end: Cell::new(start + size),
-            ..Default::default()
-        };
-        let result = self.root.find(&rs_key, range_tree_segment_cmp);
-        if result.direction.is_none() {
-            let ol_node = result.get_exact().unwrap();
-            let max_start = if rs_key.start.get() > ol_node.start.get() {
-                rs_key.start.get()
-            } else {
-                ol_node.start.get()
-            };
-            let min_end = if rs_key.end.get() > ol_node.end.get() {
-                ol_node.end.get()
-            } else {
-                rs_key.end.get()
-            };
+        let end = start + size;
+
+        // Check for overlapping range
+        if let Some((existing_start, existing_end)) = self.find_overlapping(start, end) {
+            let max_start = if start > existing_start { start } else { existing_start };
+            let min_end = if end < existing_end { end } else { existing_end };
             return Err((max_start, min_end));
         }
 
-        let detached_result = unsafe { result.detach() };
         self.space += size;
-        self.merge_seg(start, start + size, detached_result);
+        self.merge_seg(start, end);
         Ok(())
     }
 
@@ -248,104 +210,104 @@ impl<T: RangeTreeOps> RangeTree<T> {
         let mut new_start = start;
         let mut new_end = start + size;
 
+        // Find and merge all overlapping ranges
         loop {
-            let search_key = RangeSeg {
-                start: Cell::new(new_start),
-                end: Cell::new(new_end),
-                ..Default::default()
-            };
-            let result = self.root.find(&search_key, range_tree_segment_cmp);
+            let mut found_overlap = false;
 
-            if result.direction.is_some() {
-                // No more overlapping nodes
+            // Check for overlapping range
+            if let Some((existing_start, existing_end)) = self.find_overlapping(new_start, new_end)
+            {
+                // Expand the new range to include the overlapping range
+                if existing_start < new_start {
+                    new_start = existing_start;
+                }
+                if existing_end > new_end {
+                    new_end = existing_end;
+                }
+
+                // Remove the overlapping range
+                self.ops.op_remove(existing_start, existing_end);
+                self.ops.stat_decrease(existing_start, existing_end);
+                self.map.remove(&existing_start);
+                self.space -= existing_end - existing_start;
+                found_overlap = true;
+            }
+
+            if !found_overlap {
                 break;
             }
-
-            let node = result.get_exact().unwrap();
-            if node.start.get() < new_start {
-                new_start = node.start.get();
-            }
-            if node.end.get() > new_end {
-                new_end = node.end.get();
-            }
-            let node_start = node.start.get();
-            let node_size = node.end.get() - node.start.get();
-
-            if !self.remove(node_start, node_size) {
-                panic!("rs[{}:{}] NOT existed", node_start, node_size);
-            }
         }
-        let search_key =
-            RangeSeg { start: Cell::new(new_start), end: Cell::new(new_end), ..Default::default() };
-        let result = self.root.find(&search_key, range_tree_segment_cmp);
 
-        let detached_result = unsafe { result.detach() };
         self.space += new_end - new_start;
-        self.merge_seg(new_start, new_end, detached_result);
+        self.merge_seg(new_start, new_end);
     }
 
     #[inline(always)]
-    fn merge_seg(&mut self, start: u64, end: u64, result: AvlSearchResult<Arc<RangeSeg<T>>>) {
-        // Detach early to get insertion point / parent check for nearest.
-
-        let before_res = unsafe { self.root.nearest(&result, AvlDirection::Left).detach() };
-        let after_res = unsafe { self.root.nearest(&result, AvlDirection::Right).detach() };
-        // Detach results to allow mutable access to self
+    fn merge_seg(&mut self, start: u64, end: u64) {
+        // Check for adjacent ranges to merge
         let mut merge_before = false;
         let mut merge_after = false;
-        let (mut before_start, mut before_end, mut after_start, mut after_end) = (0, 0, 0, 0);
-        if let Some(before_node) = before_res.get_nearest() {
-            (before_start, before_end) = before_node.get_range();
-            merge_before = before_end == start;
+        let (mut before_start, mut before_end) = (0, 0);
+        let (mut after_start, mut after_end) = (0, 0);
+
+        // Check the range before
+        let mut iter = self.map.range(..start);
+        if let Some((&prev_start, &prev_end)) = iter.next_back() {
+            if prev_end == start {
+                merge_before = true;
+                before_start = prev_start;
+                before_end = prev_end;
+            }
         }
 
-        if let Some(after_node) = after_res.get_nearest() {
-            (after_start, after_end) = after_node.get_range();
-            merge_after = after_start == end;
+        // Check the range after
+        let mut iter = self.map.range(end..);
+        if let Some((&next_start, &next_end)) = iter.next() {
+            if next_start == end {
+                merge_after = true;
+                after_start = next_start;
+                after_end = next_end;
+            }
         }
-
-        // Use unsafe pointer access for mutations/Arc recovery
-        // We know these pointers are valid because we are in a mutable method and haven't removed them yet.
 
         if merge_before && merge_after {
             // Merge Both: [before] + [new] + [after]
+            self.ops.op_remove(before_start, before_end);
+            self.ops.op_remove(after_start, after_end);
+            self.map.remove(&before_start);
+            self.map.remove(&after_start);
 
-            let before_node = self.root.remove_with(before_res).unwrap();
-            let after_node_ref = after_res.get_node_ref().unwrap();
+            // Insert merged range
+            self.map.insert(before_start, after_end);
+            self.ops.op_add(before_start, after_end);
 
-            self.ops.op_remove(&before_node);
-            self.ops.op_remove(after_node_ref); // Remove old 'after' from ops
-            // modify after node start range after remove
-            after_node_ref.start.set(before_start);
-            self.ops.op_add(after_res.get_exact().unwrap());
             self.ops.stat_decrease(before_start, before_end);
             self.ops.stat_decrease(after_start, after_end);
             self.ops.stat_increase(before_start, after_end);
         } else if merge_before {
             // Merge Before Only: Extend `before.end`
+            self.ops.op_remove(before_start, before_end);
+            self.map.remove(&before_start);
 
-            let before_node_ref = before_res.get_node_ref().unwrap();
-            before_node_ref.end.set(end);
-            self.ops.op_remove(before_node_ref);
-            self.ops.op_add(before_res.get_exact().unwrap());
+            self.map.insert(before_start, end);
+            self.ops.op_add(before_start, end);
 
             self.ops.stat_decrease(before_start, before_end);
             self.ops.stat_increase(before_start, end);
         } else if merge_after {
-            let after_node_ref = after_res.get_node_ref().unwrap();
-            self.ops.op_remove(after_node_ref);
             // Merge After Only: Extend `after.start`
-            after_node_ref.start.set(start);
+            self.ops.op_remove(after_start, after_end);
+            self.map.remove(&after_start);
 
-            self.ops.op_add(after_res.get_exact().unwrap());
+            self.map.insert(start, after_end);
+            self.ops.op_add(start, after_end);
+
             self.ops.stat_decrease(after_start, after_end);
             self.ops.stat_increase(start, after_end);
         } else {
             // No Merge. Insert new.
-            let new_node = RangeSeg::new(start, end);
-            self.ops.op_add(new_node.clone());
-
-            self.root.insert(new_node, result);
+            self.map.insert(start, end);
+            self.ops.op_add(start, end);
             self.ops.stat_increase(start, end);
         }
     }
@@ -372,18 +334,16 @@ impl<T: RangeTreeOps> RangeTree<T> {
     #[inline]
     pub fn remove(&mut self, start: u64, size: u64) -> bool {
         let end = start + size;
-        let search_rs =
-            RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        let result = self.root.find(&search_rs, range_tree_segment_cmp);
-        if !result.is_exact() {
+
+        // Find the overlapping range
+        let overlapping = self.find_overlapping(start, end);
+        if overlapping.is_none() {
             return false;
         }
+
+        let (rs_start, rs_end) = overlapping.unwrap();
+
         assert!(size > 0, "range tree remove size={} error", size);
-
-        let rs_node = result.get_node_ref().unwrap();
-        let rs_start = rs_node.start.get();
-        let rs_end = rs_node.end.get();
-
         assert!(
             rs_start <= end && rs_end >= start,
             "range tree remove error, rs_start={} rs_end={} start={} end={}",
@@ -397,58 +357,43 @@ impl<T: RangeTreeOps> RangeTree<T> {
         let right_over = rs_end > end;
         let size_deduce: u64;
 
+        self.ops.op_remove(rs_start, rs_end);
+        self.map.remove(&rs_start);
+
         if left_over && right_over {
             // Remove the middle of segment larger than requested range
             size_deduce = size;
-            // Update Left in-place
-            rs_node.end.set(start);
-            // Insert Right
-            // New node [end, rs_end]
-            let new_rs = RangeSeg::new(end, rs_end);
-
-            self.ops.op_remove(rs_node);
-            self.ops.op_add(result.get_exact().unwrap());
-            self.ops.op_add(new_rs.clone());
-            let result = unsafe { result.detach() };
-            let _ = rs_node;
+            // Insert Left part [rs_start, start)
+            self.map.insert(rs_start, start);
+            self.ops.op_add(rs_start, start);
+            // Insert Right part [end, rs_end)
+            self.map.insert(end, rs_end);
+            self.ops.op_add(end, rs_end);
 
             self.ops.stat_decrease(rs_start, rs_end);
             self.ops.stat_increase(rs_start, start);
             self.ops.stat_increase(end, rs_end);
-            // Insert new right part using insert_here optimization
-            // We construct an AvlSearchResult pointing to the current node (rs_node)
-            unsafe { self.root.insert_here(new_rs, result, AvlDirection::Right) };
         } else if left_over {
             // Remove Right end
             size_deduce = rs_end - start;
-            // In-Place Update
-            rs_node.end.set(start);
-            self.ops.op_remove(rs_node);
-            self.ops.op_add(result.get_exact().unwrap());
-            let _ = rs_node;
+            // Insert Left part [rs_start, start)
+            self.map.insert(rs_start, start);
+            self.ops.op_add(rs_start, start);
 
             self.ops.stat_decrease(rs_start, rs_end);
             self.ops.stat_increase(rs_start, start);
         } else if right_over {
             // Remove Left end
             size_deduce = end - rs_start;
-            // In-Place Update: Update start.
-            rs_node.start.set(end);
-
-            self.ops.op_remove(rs_node);
-            self.ops.op_add(result.get_exact().unwrap());
-            let _ = rs_node;
+            // Insert Right part [end, rs_end)
+            self.map.insert(end, rs_end);
+            self.ops.op_add(end, rs_end);
 
             self.ops.stat_decrease(rs_start, rs_end);
             self.ops.stat_increase(end, rs_end);
         } else {
             // Remove Exact / Total
             size_deduce = rs_end - rs_start;
-
-            self.ops.op_remove(rs_node);
-            let _ = rs_node;
-
-            self.root.remove_ref(&result.get_exact().unwrap());
             self.ops.stat_decrease(rs_start, rs_end);
         }
 
@@ -458,86 +403,105 @@ impl<T: RangeTreeOps> RangeTree<T> {
 
     /// return only when segment overlaps with [start, start+size]
     #[inline]
-    pub fn find(&self, start: u64, size: u64) -> Option<Arc<RangeSeg<T>>> {
-        if self.root.get_count() == 0 {
+    pub fn find(&self, start: u64, size: u64) -> Option<RangeSeg<T>> {
+        if self.map.is_empty() {
             return None;
         }
         assert!(size > 0, "range tree find size={} error", size);
         let end = start + size;
-        let rs = RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        let result = self.root.find(&rs, range_tree_segment_cmp);
-        result.get_exact()
+
+        self.find_overlapping(start, end).map(|(s, e)| RangeSeg {
+            start: s,
+            end: e,
+            _phantom: core::marker::PhantomData,
+        })
     }
 
-    /// return only when segment contains [start, size], if multiple segment exists, return the
-    /// smallest start
+    /// return only when segment overlaps with [start, start+size), if multiple segment exists,
+    /// return the smallest start
     #[inline]
-    pub fn find_contained(&self, start: u64, size: u64) -> Option<&RangeSeg<T>> {
+    pub fn find_contained(&self, start: u64, size: u64) -> Option<RangeSeg<T>> {
         assert!(size > 0, "range tree find size={} error", size);
-        if self.root.get_count() == 0 {
+        if self.map.is_empty() {
             return None;
         }
         let end = start + size;
-        let rs_search =
-            RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        self.root.find_contained(&rs_search, range_tree_segment_cmp)
+
+        // Find overlapping range with the smallest start
+        // First check if there's a range starting before or at 'start' that overlaps
+        if let Some((&prev_start, &prev_end)) = self.map.range(..=start).next_back() {
+            if prev_end > start {
+                // Overlapping: [prev_start, prev_end) overlaps with [start, end)
+                return Some(RangeSeg {
+                    start: prev_start,
+                    end: prev_end,
+                    _phantom: core::marker::PhantomData,
+                });
+            }
+        }
+
+        // Then check if there's a range starting within [start, end)
+        if let Some((&s, &e)) = self.map.range(start..end).next() {
+            return Some(RangeSeg { start: s, end: e, _phantom: core::marker::PhantomData });
+        }
+
+        None
     }
 
     #[inline]
     pub fn iter(&self) -> RangeTreeIter<'_, T> {
-        RangeTreeIter { tree: self, current: self.root.first() }
+        RangeTreeIter { tree: self, current: Some(self.map.iter()) }
     }
 
     #[inline]
     pub fn walk<F: FnMut(&RangeSeg<T>)>(&self, mut cb: F) {
-        let mut node = self.root.first();
-        while let Some(_node) = node {
-            cb(_node);
-            node = self.root.next(_node);
+        for (&start, &end) in &self.map {
+            let seg = RangeSeg { start, end, _phantom: core::marker::PhantomData };
+            cb(&seg);
         }
     }
 
     /// If cb returns false, break
     #[inline]
     pub fn walk_conditioned<F: FnMut(&RangeSeg<T>) -> bool>(&self, mut cb: F) {
-        let mut node = self.root.first();
-        while let Some(_node) = node {
-            if !cb(_node) {
+        for (&start, &end) in &self.map {
+            let seg = RangeSeg { start, end, _phantom: core::marker::PhantomData };
+            if !cb(&seg) {
                 break;
             }
-            node = self.root.next(_node);
         }
     }
 
-    pub fn get_root(&self) -> &AvlTree<Arc<RangeSeg<T>>, AddressTag> {
-        &self.root
-    }
-
+    /// Validate the BTreeMap structure
     pub fn validate(&self) {
-        self.root.validate(|a, b| a.start.get().cmp(&b.start.get()));
-    }
-}
+        let mut prev_end: Option<u64> = None;
+        for (&start, &end) in &self.map {
+            assert!(start < end, "Invalid range: start {} >= end {}", start, end);
+            if let Some(pe) = prev_end {
+                assert!(
+                    start > pe,
+                    "Overlapping or adjacent ranges detected: previous end {} >= current start {}",
+                    pe,
+                    start
+                );
+            }
+            prev_end = Some(end);
+        }
 
-pub fn size_tree_insert_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
-    let size_a = a.end.get() - a.start.get();
-    let size_b = b.end.get() - b.start.get();
-    if size_a < size_b {
-        Ordering::Less
-    } else if size_a > size_b {
-        Ordering::Greater
-    } else if a.start.get() < b.start.get() {
-        Ordering::Less
-    } else if a.start.get() > b.start.get() {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
+        // Verify space calculation
+        let calculated_space: u64 = self
+            .map
+            .values()
+            .map(|&end| end)
+            .zip(self.map.keys().map(|&start| start))
+            .map(|(end, start)| end - start)
+            .sum();
+        assert_eq!(
+            self.space, calculated_space,
+            "Space mismatch: stored {} != calculated {}",
+            self.space, calculated_space
+        );
     }
-}
-
-pub fn size_tree_find_cmp<T: RangeTreeOps>(a: &RangeSeg<T>, b: &RangeSeg<T>) -> Ordering {
-    let size_a = a.end.get() - a.start.get();
-    let size_b = b.end.get() - b.start.get();
-    size_a.cmp(&size_b)
 }
 
 #[cfg(feature = "std")]
@@ -546,7 +510,7 @@ pub fn range_tree_print(tree: &RangeTreeSimple) {
         println!("tree is empty");
     } else {
         tree.walk(|rs| {
-            println!("\t{}-{}", rs.start.get(), rs.end.get());
+            println!("\t{}-{}", rs.start, rs.end);
         });
     }
 }
@@ -562,11 +526,6 @@ mod tests {
             "RangeSeg<DummyAllocator>  sizeof {}",
             std::mem::size_of::<RangeSeg<DummyAllocator>>()
         );
-        println!(
-            "avl node sizeof {}",
-            std::mem::size_of::<AvlNode<RangeSeg<DummyAllocator>, AddressTag>>()
-        );
-        println!("UnsafeCell<()> sizeof {}", std::mem::size_of::<UnsafeCell<()>>());
     }
 
     #[test]
@@ -577,7 +536,7 @@ mod tests {
 
         rt.add(0, 2);
         assert_eq!(2, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -588,7 +547,7 @@ mod tests {
         // left join
         rt.add_and_merge(2, 5);
         assert_eq!(7, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -597,7 +556,7 @@ mod tests {
         // without join
         rt.add_and_merge(10, 5);
         assert_eq!(12, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -606,7 +565,7 @@ mod tests {
         // right join
         rt.add_and_merge(8, 2);
         assert_eq!(14, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -615,7 +574,7 @@ mod tests {
         // left and right join
         rt.add_and_merge(7, 1);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -632,7 +591,7 @@ mod tests {
 
         rt.add_and_merge(0, 2);
         assert_eq!(2, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -643,7 +602,7 @@ mod tests {
         // left join
         rt.add_and_merge(2, 5);
         assert_eq!(7, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -652,7 +611,7 @@ mod tests {
         // without join
         rt.add_and_merge(15, 5);
         assert_eq!(12, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(16, 1);
         assert!(rs.is_some());
@@ -661,7 +620,7 @@ mod tests {
         // right join
         rt.add_and_merge(13, 2);
         assert_eq!(14, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(16, 1);
         assert!(rs.is_some());
@@ -670,7 +629,7 @@ mod tests {
         // duplicate
         rt.add_and_merge(14, 8);
         assert_eq!(16, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -683,7 +642,7 @@ mod tests {
         // without join
         rt.add_and_merge(25, 5);
         assert_eq!(21, rt.get_space());
-        assert_eq!(3, rt.root.get_count());
+        assert_eq!(3, rt.get_count());
 
         let rs = rt.find_contained(26, 1);
         assert!(rs.is_some());
@@ -692,7 +651,7 @@ mod tests {
         // duplicate
         rt.add_and_merge(12, 20);
         assert_eq!(27, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(0, 1);
         assert!(rs.is_some());
@@ -705,7 +664,7 @@ mod tests {
         // left and right join
         rt.add_and_merge(7, 5);
         assert_eq!(32, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -720,12 +679,12 @@ mod tests {
         // add [0, 15]
         rt.add(0, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         // remove [7, 8] expect [0, 7] [8, 15]
         rt.remove(7, 1);
         assert_eq!(14, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -735,7 +694,7 @@ mod tests {
         // remove [12, 15] expect [0, 7] [8, 12]
         rt.remove(12, 3);
         assert_eq!(11, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -745,7 +704,7 @@ mod tests {
         // remove [2, 5] expect [0, 2] [5, 7] [8, 12]
         rt.remove(2, 3);
         assert_eq!(8, rt.get_space());
-        assert_eq!(3, rt.root.get_count());
+        assert_eq!(3, rt.get_count());
 
         let rs = rt.find_contained(5, 1);
         assert!(rs.is_some());
@@ -755,7 +714,7 @@ mod tests {
         // remove [8, 10] expect [0, 2] [5, 7] [10, 12]
         rt.remove(8, 2);
         assert_eq!(6, rt.get_space());
-        assert_eq!(3, rt.root.get_count());
+        assert_eq!(3, rt.get_count());
 
         let rs = rt.find_contained(10, 1);
         assert!(rs.is_some());
@@ -765,7 +724,7 @@ mod tests {
         // remove [0, 2] expect [5, 7] [10, 12]
         rt.remove(0, 2);
         assert_eq!(4, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(5, 1);
         assert!(rs.is_some());
@@ -781,7 +740,7 @@ mod tests {
         rt.add(12, 8);
         rt.add(32, 16);
         assert_eq!(30, rt.get_space());
-        assert_eq!(4, rt.root.get_count());
+        assert_eq!(4, rt.get_count());
 
         fn cb_print(rs: &RangeSeg<DummyAllocator>) {
             println!("walk callback cb_print range_seg:{:?}", rs);
@@ -802,7 +761,7 @@ mod tests {
         let mut total_space = 0;
         for rs in rt.iter() {
             count += 1;
-            total_space += rs.end.get() - rs.start.get();
+            total_space += rs.end - rs.start;
         }
         assert_eq!(count, rt.get_count() as usize);
         assert_eq!(total_space, rt.get_space());
@@ -836,11 +795,11 @@ mod tests {
         rt.add_abs(66062332, 66062340);
         rt.add_abs(66064380, 66064384);
         let result = rt.find_contained(0, 4096).unwrap();
-        assert_eq!(result.start.get(), 2044);
-        assert_eq!(result.end.get(), 2052);
+        assert_eq!(result.start, 2044);
+        assert_eq!(result.end, 2052);
         for i in &[4096, 516098, 518148, 520194, 522244, 524288, 66060290, 66062340, 66064384] {
             let result = rt.find_contained(4000, *i).unwrap();
-            assert_eq!(result.start.get(), 4092);
+            assert_eq!(result.start, 4092);
         }
         range_tree_print(&rt);
         let _space1 = rt.get_space();
@@ -863,8 +822,8 @@ mod tests {
         rt.add_abs(620, 680);
         range_tree_print(&rt);
         let result = rt.find_contained(240, 340).unwrap();
-        assert_eq!(result.start.get(), 220);
-        assert_eq!(result.end.get(), 280);
+        assert_eq!(result.start, 220);
+        assert_eq!(result.end, 280);
     }
 
     #[test]
@@ -874,12 +833,12 @@ mod tests {
         // add [0, 15]
         rt.add(0, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         // remove [7, 10] expect [0, 7] [10, 15]
         rt.remove_and_split(7, 3);
         assert_eq!(12, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -889,7 +848,7 @@ mod tests {
         // remove right over [13, 18] expect [0, 7] [10, 13]
         rt.remove_and_split(13, 5);
         assert_eq!(10, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -899,7 +858,7 @@ mod tests {
         // remove nothing [9, 10] expect [0, 7] [10, 13]
         assert!(!rt.remove_and_split(9, 1));
         assert_eq!(10, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -909,7 +868,7 @@ mod tests {
         // remove left over [9, 11] expect [0, 7] [11, 13]
         rt.remove_and_split(9, 2);
         assert_eq!(9, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -919,7 +878,7 @@ mod tests {
         // remove [6, 12] expect [0, 6] [12, 13]
         rt.remove_and_split(6, 6);
         assert_eq!(7, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(0, 5);
         assert!(rs.is_some());
@@ -931,20 +890,20 @@ mod tests {
     fn range_tree_remove2() {
         let mut rt = RangeTreeSimple::new();
 
-        // add [1, 16]
-        rt.add(1, 15);
+        // add [0, 15]
+        rt.add(0, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
-        assert_eq!((1, 16), rs.unwrap().get_range());
+        assert_eq!((0, 15), rs.unwrap().get_range());
         rt.validate();
 
         // remove left over and right over [0, 20] expect []
         rt.remove_and_split(0, 20);
         assert_eq!(0, rt.get_space());
-        assert_eq!(0, rt.root.get_count());
+        assert_eq!(0, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_none());
@@ -953,7 +912,7 @@ mod tests {
         // add [1, 16]
         rt.add(1, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -968,7 +927,7 @@ mod tests {
         // add [1, 16]
         rt.add(1, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -978,7 +937,7 @@ mod tests {
         // add [33, 48]
         rt.add(33, 15);
         assert_eq!(30, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(40, 1);
         assert!(rs.is_some());
@@ -988,7 +947,7 @@ mod tests {
         // add [49, 64]
         rt.add(49, 15);
         assert_eq!(45, rt.get_space());
-        assert_eq!(3, rt.root.get_count());
+        assert_eq!(3, rt.get_count());
 
         let rs = rt.find_contained(50, 1);
         assert!(rs.is_some());
@@ -998,7 +957,7 @@ mod tests {
         // remove left over and right over [6, 56] expect [1, 6] [56, 64]
         rt.remove_and_split(6, 50);
         assert_eq!(13, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(58, 1);
         assert!(rs.is_some());
@@ -1018,7 +977,7 @@ mod tests {
         // add [1, 16]
         rt.add(1, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -1028,7 +987,7 @@ mod tests {
         // add [33, 48]
         rt.add(33, 15);
         assert_eq!(30, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(40, 1);
         assert!(rs.is_some());
@@ -1038,7 +997,7 @@ mod tests {
         // remove right over [6, 56] expect [1, 6]
         rt.remove_and_split(6, 50);
         assert_eq!(5, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(3, 1);
         assert!(rs.is_some());
@@ -1053,7 +1012,7 @@ mod tests {
         // add [1, 16]
         rt.add(1, 15);
         assert_eq!(15, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(11, 1);
         assert!(rs.is_some());
@@ -1063,7 +1022,7 @@ mod tests {
         // add [33, 48]
         rt.add(33, 15);
         assert_eq!(30, rt.get_space());
-        assert_eq!(2, rt.root.get_count());
+        assert_eq!(2, rt.get_count());
 
         let rs = rt.find_contained(40, 1);
         assert!(rs.is_some());
@@ -1073,7 +1032,7 @@ mod tests {
         // remove left over [0, 40] expect [40, 48]
         rt.remove_and_split(0, 40);
         assert_eq!(8, rt.get_space());
-        assert_eq!(1, rt.root.get_count());
+        assert_eq!(1, rt.get_count());
 
         let rs = rt.find_contained(42, 1);
         assert!(rs.is_some());
@@ -1083,7 +1042,7 @@ mod tests {
 
     // Test RangeTreeOps
     pub struct TestAllocator {
-        size_tree: AvlTree<Arc<RangeSeg<TestAllocator>>, SizeTag>,
+        size_tree: BTreeMap<u64, u64>, // start -> end mapping for tracking sizes
     }
 
     impl Default for TestAllocator {
@@ -1094,7 +1053,7 @@ mod tests {
 
     impl TestAllocator {
         pub fn new() -> Self {
-            TestAllocator { size_tree: AvlTree::<Arc<RangeSeg<TestAllocator>>, SizeTag>::new() }
+            TestAllocator { size_tree: BTreeMap::new() }
         }
     }
 
@@ -1104,32 +1063,15 @@ mod tests {
         }
     }
 
-    unsafe impl AvlItem<SizeTag> for RangeSeg<TestAllocator> {
-        fn get_node(&self) -> &mut AvlNode<RangeSeg<TestAllocator>, SizeTag> {
-            self.get_ext_node()
-        }
-    }
-
     impl RangeTreeOps for TestAllocator {
-        type ExtNode = AvlNode<RangeSeg<Self>, SizeTag>;
+        type ExtNode = ();
 
-        fn op_add(&mut self, rs: Arc<RangeSeg<Self>>) {
-            self.size_tree.add(rs, |a, b| size_tree_insert_cmp(a, b));
+        fn op_add(&mut self, start: u64, end: u64) {
+            self.size_tree.insert(start, end);
         }
 
-        fn op_remove(&mut self, rs: &RangeSeg<Self>) {
-            let search_key = RangeSeg {
-                start: Cell::new(rs.start.get()),
-                end: Cell::new(rs.end.get()),
-                ..Default::default()
-            };
-            let result = self.size_tree.find(&search_key, size_tree_insert_cmp);
-            if let Some(removed_arc) = result.get_exact() {
-                // Use get_exact to get the Arc
-                self.size_tree.remove_ref(&removed_arc);
-            } else {
-                panic!("Attempted to remove non-existent RangeSeg from size_tree: {:?}", rs);
-            }
+        fn op_remove(&mut self, start: u64, _end: u64) {
+            self.size_tree.remove(&start);
         }
     }
 
@@ -1148,15 +1090,10 @@ mod tests {
         let rs = ms_tree.find(0, 1).unwrap();
         assert_eq!((0, 100), rs.get_range());
 
-        assert_eq!(3, Arc::strong_count(&rs));
-
         ms_tree.remove(0, 100);
         assert_eq!(0, ms_tree.get_space());
         assert_eq!(0, ms_tree.get_count());
 
-        // After removal from ms_tree, the ops tree should also have removed it.
-        // but the original arc `rs` still exists.
-        assert_eq!(1, Arc::strong_count(&rs));
         println!("out")
     }
 }
