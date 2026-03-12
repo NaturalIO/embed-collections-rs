@@ -29,6 +29,9 @@ pub const CACHE_LINE_SIZE: usize = 64;
 /// Each segment's capacity is calculated at runtime based on T's size
 /// to fit within a cache line.
 ///
+/// NOTE: T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
+/// items in one segment. But when T larger than 128B, you should consider put T into Box.
+///
 pub struct SegList<T> {
     /// Pointer to the last segment (tail.get_header().next points to first element), to reduce the main struct size
     tail: NonNull<SegHeader<T>>,
@@ -263,24 +266,27 @@ struct Segment<T> {
 impl<T> Segment<T> {
     // cap, data_offset, mem layout
     const LAYOUT_INFO: (usize, usize, Layout) = {
-        let header_size = size_of::<SegHeader<T>>();
+        let mut data_offset = size_of::<SegHeader<T>>();
         let t_size = size_of::<T>();
         let t_align = align_of::<MaybeUninit<T>>();
-
-        // Calculate first element's offset (considering T's alignment)
-        let data_offset = (header_size + t_align - 1) & !(t_align - 1);
-        let min_total_size = data_offset + if t_size == 0 { 1 } else { t_size };
-        let alloc_size = (min_total_size + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1);
-
-        let capacity = if t_size == 0 {
-            64 // zero size obj
+        let (capacity, final_alloc_size, final_align);
+        if t_size == 0 {
+            // 0-size does not actually take place, but storing them does not make sense
+            (final_alloc_size, final_align) = (CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+            capacity = 1024;
         } else {
-            (alloc_size - data_offset) / t_size
-        };
-        // rust 1.57 support assert in const fn
-        assert!(capacity >= 1);
-        let final_align = if CACHE_LINE_SIZE > t_align { CACHE_LINE_SIZE } else { t_align };
-        match Layout::from_size_align(alloc_size, final_align) {
+            // Calculate first element's offset (considering T's alignment)
+            data_offset = (data_offset + t_align - 1) & !(t_align - 1);
+            let min_elements = 2;
+            let min_required_size = data_offset + (t_size * min_elements);
+            let alloc_size = (min_required_size + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1);
+            final_align = if CACHE_LINE_SIZE > t_align { CACHE_LINE_SIZE } else { t_align };
+            final_alloc_size = (alloc_size + final_align - 1) & !(final_align - 1);
+            capacity = (final_alloc_size - data_offset) / t_size;
+            // rust 1.57 support assert in const fn
+            assert!(capacity >= min_elements);
+        }
+        match Layout::from_size_align(final_alloc_size, final_align) {
             Ok(l) => (capacity, data_offset, l),
             Err(_) => panic!("Invalid layout"),
         }
@@ -762,11 +768,10 @@ mod tests {
         assert_eq!(list.pop(), None);
     }
 
-    /// Large struct that takes significant space (64 bytes)
-    /// This forces each segment to hold fewer elements, testing multi-segment behavior
+    /// Large struct that larger than cache line
     #[derive(Debug, Clone, Copy, PartialEq)]
     struct LargeStruct {
-        data: [u64; 16], // 64 bytes
+        data: [u64; 16], // 128 bytes
     }
 
     impl LargeStruct {
