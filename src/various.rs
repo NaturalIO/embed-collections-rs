@@ -58,9 +58,9 @@ impl<T> Various<T> {
         match &self.inner {
             VariousInner::One(i) => {
                 if i.is_none() {
-                    return 0;
+                    0
                 } else {
-                    return 1;
+                    1
                 }
             }
             VariousInner::More(i) => i.len(),
