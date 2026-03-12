@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.1] - 2026-03-11
+
+### Changed
+
+- SegList: Ensure at least 2 items when T is large.
+
 ## [0.5.0] - 2026-03-10
 
 ### Added
