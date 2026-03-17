@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.5.2] - 2026-03-17
+
+### Changed
+
+- Remove `full` feature flag from default
+
 ## [0.5.1] - 2026-03-11
 
 ### Changed
