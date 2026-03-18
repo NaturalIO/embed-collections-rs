@@ -4,6 +4,8 @@ permissions:
   pull-requests: read
 
 on:
+  push:
+    branches: [ master ]
   workflow_dispatch:
   schedule: [cron: "20 */8 * * *"]
 
