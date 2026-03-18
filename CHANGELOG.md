@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.6.0] - 2026-03-18
+
+### Added
+
+- Impl Pointer for `*mut T`
+
+- dlist: Expose remove_node() to remove node from the middle of the list.
+
+### Changed
+
+- dlist: change peak() signature to reference.
+
+### Fixed
+
+- ConstVec: Fix miri warning
+
 ## [0.5.2] - 2026-03-17
 
 ### Changed
