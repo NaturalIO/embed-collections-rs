@@ -49,6 +49,24 @@ impl<T> Pointer for *const T {
     }
 }
 
+#[allow(clippy::unnecessary_cast)]
+impl<T> Pointer for *mut T {
+    type Target = T;
+
+    #[inline]
+    fn as_ref(&self) -> &Self::Target {
+        unsafe { &**self }
+    }
+
+    unsafe fn from_raw(p: *const Self::Target) -> Self {
+        p as *mut T
+    }
+
+    fn into_raw(self) -> *const Self::Target {
+        self as *mut T
+    }
+}
+
 impl<T> Pointer for NonNull<T> {
     type Target = T;
 
