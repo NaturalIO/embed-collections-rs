@@ -197,8 +197,15 @@ where
         self.length == 0
     }
 
+    /// Remove a node from the middle of the list
+    ///
+    /// NOTE： Due to we need to support Arc, item should be immutable reference.
+    ///
+    /// # Safety
+    ///
+    /// The item must be already in the list, otherwise will lead to UB.
     #[inline(always)]
-    fn remove_node(&mut self, item: &P::Target) {
+    pub unsafe fn remove_node(&mut self, item: &P::Target) {
         let node = item.get_node();
         if let Some(prev) = node.get_prev() {
             prev.next = node.next;
@@ -217,21 +224,22 @@ where
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
     ///
+    /// NOTE： Due to we need to support Arc, item should be immutable reference.
+    ///
     /// # Safety
-    /// The pointer `ptr` must be valid and pointing to an element currently in the list
-    /// or a valid free element if properly managed (though typically used for re-ordering).
+    ///
+    /// The item must be in the list, otherwise will lead to UB.
     #[inline(always)]
-    pub unsafe fn peak(&mut self, ptr: *mut P::Target) {
+    pub unsafe fn peak(&mut self, item: &P::Target) {
         assert!(!self.head.is_null());
-        let item = unsafe { &(*ptr) };
         if !self.head.is_null() {
             let head_node = unsafe { (*self.head).get_node() } as *const DListNode<P::Target, Tag>;
             if ptr::eq(head_node, item.get_node()) {
                 return;
             }
         }
-        self.remove_node(item);
-        self.push_front_ptr(ptr);
+        unsafe { self.remove_node(item) };
+        self.push_front_ptr(item as *const P::Target);
     }
 
     /// Pushes an element to the front of the list.
@@ -285,9 +293,11 @@ where
             None
         } else {
             let head_ptr = self.head;
-            let item = unsafe { &(*head_ptr) };
-            self.remove_node(item);
-            Some(unsafe { P::from_raw(head_ptr) })
+            unsafe {
+                let item = &(*head_ptr);
+                self.remove_node(item);
+                Some(P::from_raw(head_ptr))
+            }
         }
     }
 
@@ -298,9 +308,11 @@ where
             None
         } else {
             let tail_ptr = self.tail;
-            let item = unsafe { &(*tail_ptr) };
-            self.remove_node(item);
-            Some(unsafe { P::from_raw(tail_ptr) })
+            unsafe {
+                let item = &(*tail_ptr);
+                self.remove_node(item);
+                Some(P::from_raw(tail_ptr))
+            }
         }
     }
 
@@ -894,7 +906,6 @@ mod tests {
             drop(Box::from_raw(node1));
             drop(Box::from_raw(node2));
         }
-
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
     }
 
