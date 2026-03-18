@@ -361,13 +361,13 @@ impl<T, const N: usize> Deref for ConstVec<T, N> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        unsafe { core::slice::from_raw_parts::<T>(self.data[0].as_ptr(), self.len) }
+        unsafe { core::slice::from_raw_parts::<T>(self.data.as_ptr() as *const T, self.len) }
     }
 }
 
 impl<T, const N: usize> DerefMut for ConstVec<T, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { core::slice::from_raw_parts_mut::<T>(self.data[0].as_mut_ptr(), self.len) }
+        unsafe { core::slice::from_raw_parts_mut::<T>(self.data.as_mut_ptr() as *mut T, self.len) }
     }
 }
 
