@@ -809,6 +809,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "index out of bounds")]
+    #[cfg_attr(miri, ignore)]
     fn test_index_out_of_bounds() {
         let mut vec: ConstVec<i32, 5> = ConstVec::new();
         vec.push(10).expect("push failed");
@@ -818,6 +819,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "index out of bounds")]
+    #[cfg_attr(miri, ignore)]
     fn test_index_mut_out_of_bounds() {
         let mut vec: ConstVec<i32, 5> = ConstVec::new();
         vec.push(10).expect("push failed");
