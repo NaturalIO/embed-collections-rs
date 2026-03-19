@@ -1,3 +1,54 @@
+//! Various - A small-list optimization container for efficient parameter passing.
+//!
+//! `Various<T>` optimizing for the common case of a single element (use Option initially).
+//! It's storage can be seamless grow when more elements pushed, using [SegList](crate::seg_list),
+//! more efficient for CPU cache-line (compared to LinkedList), and produce less memory fragment (compared to `Vec`).
+//!
+//! # NOTE:
+//!
+//! It does not support random access, only sequential read and write.
+//!
+//! # Example
+//!
+//! ```rust
+//! use embed_collections::various::Various;
+//!
+//! // Create an empty Various
+//! let mut values = Various::new();
+//!
+//! // Push a single element (no allocation)
+//! values.push(42);
+//! assert_eq!(values.len(), 1);
+//! assert_eq!(values.first(), Some(&42));
+//!
+//! // Push more elements (transitions to SegList internally)
+//! values.push(100);
+//! values.push(200);
+//! assert_eq!(values.len(), 3);
+//!
+//! // Iterate over elements
+//! let sum: i32 = values.iter().sum();
+//! assert_eq!(sum, 342);
+//!
+//! // Pop elements from the back
+//! assert_eq!(values.pop(), Some(200));
+//! assert_eq!(values.pop(), Some(100));
+//! assert_eq!(values.pop(), Some(42));
+//! assert_eq!(values.pop(), None);
+//!
+//! // Create from a single value
+//! let single = Various::from("hello");
+//! assert_eq!(single.first(), Some(&"hello"));
+//!
+//! // Efficient for function parameter passing
+//! fn process_items(items: &Various<i32>) -> i32 {
+//!     items.iter().sum()
+//! }
+//!
+//! let items = Various::from(10);
+//! assert_eq!(process_items(&items), 10);
+//! ```
+
 use crate::seg_list::SegList;
 use core::fmt;
 
