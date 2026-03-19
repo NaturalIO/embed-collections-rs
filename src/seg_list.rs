@@ -72,6 +72,7 @@ impl<T> SegList<T> {
     }
 
     /// Push an element to the back of the list
+    #[inline]
     pub fn push(&mut self, item: T) {
         unsafe {
             let mut tail_seg = Segment::from_raw(self.tail);
@@ -89,6 +90,7 @@ impl<T> SegList<T> {
     }
 
     /// Pop an element from the back of the list
+    #[inline]
     pub fn pop(&mut self) -> Option<T> {
         if self.count == 0 {
             return None;
@@ -114,7 +116,7 @@ impl<T> SegList<T> {
     }
 
     // Break the cycle and free all segments
-    #[inline]
+    #[inline(always)]
     fn break_first_node(&mut self) -> Segment<T> {
         let tail_header = unsafe { self.tail.as_mut() };
         let first = tail_header.next;
@@ -122,14 +124,21 @@ impl<T> SegList<T> {
         unsafe { Segment::from_raw(NonNull::new_unchecked(first)) }
     }
 
+    #[inline(always)]
+    fn first_ptr(&self) -> NonNull<SegHeader<T>> {
+        // SAFETY: tail always points to a valid segment with at least one element.
+        // get first segment through next ptr from the tail
+        unsafe {
+            let tail_header = self.tail.as_ref();
+            let first = tail_header.next;
+            NonNull::new_unchecked(first)
+        }
+    }
+
     /// Returns an iterator over the list
+    #[inline]
     pub fn iter(&self) -> SegListIter<'_, T> {
-        let head = unsafe { self.tail.as_ref().next };
-        let first_seg = if head.is_null() {
-            None
-        } else {
-            Some(unsafe { Segment::from_raw(NonNull::new_unchecked(head)) })
-        };
+        let first_seg = unsafe { Segment::from_raw(self.first_ptr()) };
         SegListIter {
             cur: first_seg,
             cur_idx: 0,
@@ -139,13 +148,9 @@ impl<T> SegList<T> {
     }
 
     /// Returns a mutable iterator over the list
+    #[inline]
     pub fn iter_mut(&mut self) -> SegListIterMut<'_, T> {
-        let head = unsafe { self.tail.as_ref().next };
-        let first_seg = if head.is_null() {
-            None
-        } else {
-            Some(unsafe { Segment::from_raw(NonNull::new_unchecked(head)) })
-        };
+        let first_seg = unsafe { Segment::from_raw(self.first_ptr()) };
         SegListIterMut {
             cur: first_seg,
             cur_idx: 0,
@@ -160,49 +165,69 @@ impl<T> SegList<T> {
         let first = self.break_first_node();
         // To prevent drop from being called
         core::mem::forget(self);
-
         SegListDrain { cur: Some(first), cur_idx: 0 }
     }
 
     /// Returns a reference to the first element in the list
     #[inline]
     pub fn first(&self) -> Option<&T> {
-        self.iter().next()
+        if self.count == 0 {
+            return None;
+        }
+        // SAFETY: tail always points to a valid segment with at least one element.
+        // get first segment through next ptr from the tail
+        unsafe {
+            let first_seg = Segment::from_raw(self.first_ptr());
+            Some((*first_seg.item_ptr(0)).assume_init_ref())
+        }
+    }
+
+    /// Returns a mut reference to the first element in the list
+    #[inline]
+    pub fn first_mut(&self) -> Option<&T> {
+        if self.count == 0 {
+            return None;
+        }
+        // SAFETY: tail always points to a valid segment with at least one element.
+        // get first segment through next ptr from the tail
+        unsafe {
+            let first_seg = Segment::from_raw(self.first_ptr());
+            Some((*first_seg.item_ptr(0)).assume_init_mut())
+        }
     }
 
     /// Returns a reference to the last element in the list
     #[inline]
     pub fn last(&self) -> Option<&T> {
-        if self.is_empty() {
-            return None;
-        }
         // SAFETY: tail always points to a valid segment with at least one element
         unsafe {
-            let header = self.tail.as_ref();
-            let count = header.count;
-            let items = (self.tail.as_ptr() as *mut u8).add(Segment::<T>::LAYOUT_INFO.1)
-                as *mut MaybeUninit<T>;
-            Some((*items.add(count - 1)).assume_init_ref())
+            let tail_seg = Segment::from_raw(self.tail);
+            let header = tail_seg.get_header();
+            if header.count == 0 {
+                return None;
+            }
+            let idx = header.count - 1;
+            Some((*tail_seg.item_ptr(idx)).assume_init_ref())
         }
     }
 
     /// Returns a mutable reference to the last element in the list
     #[inline]
     pub fn last_mut(&mut self) -> Option<&mut T> {
-        if self.is_empty() {
-            return None;
-        }
         // SAFETY: tail always points to a valid segment with at least one element
         unsafe {
-            let header = self.tail.as_mut();
-            let count = header.count;
-            let items = (self.tail.as_ptr() as *mut u8).add(Segment::<T>::LAYOUT_INFO.1)
-                as *mut MaybeUninit<T>;
-            Some((*items.add(count - 1)).assume_init_mut())
+            let tail_seg = Segment::from_raw(self.tail);
+            let header = tail_seg.get_header();
+            if header.count == 0 {
+                return None;
+            }
+            let idx = header.count - 1;
+            Some((*tail_seg.item_ptr(idx)).assume_init_mut())
         }
     }
 
     /// Clear all elements from the list
+    #[inline]
     pub fn clear(&mut self) {
         while self.pop().is_some() {}
     }
@@ -221,7 +246,7 @@ impl<T> Drop for SegList<T> {
         loop {
             // Save next pointer before dealloc
             let next = cur.get_header().next;
-            unsafe { cur.dealloc() };
+            unsafe { cur.dealloc_with_items() };
             if next.is_null() {
                 break;
             }
@@ -234,6 +259,7 @@ impl<T> IntoIterator for SegList<T> {
     type Item = T;
     type IntoIter = SegListDrain<T>;
 
+    #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
         self.drain()
     }
@@ -259,8 +285,6 @@ struct SegHeader<T> {
 struct Segment<T> {
     /// Pointer to the header
     header: NonNull<SegHeader<T>>,
-    /// Pointer to the element storage (right after header in memory)
-    items: *mut MaybeUninit<T>,
 }
 
 impl<T> Segment<T> {
@@ -297,6 +321,7 @@ impl<T> Segment<T> {
     }
 
     /// Create a new empty segment with calculated capacity
+    #[inline]
     unsafe fn alloc(prev: *mut SegHeader<T>, next: *mut SegHeader<T>) -> Self {
         let layout = Self::get_layout();
         let ptr: *mut u8 = unsafe { alloc(layout) };
@@ -314,14 +339,20 @@ impl<T> Segment<T> {
         }
     }
 
-    unsafe fn dealloc(&mut self) {
-        if core::mem::needs_drop::<T>() {
-            for i in 0..self.len() {
-                unsafe {
+    #[inline(always)]
+    unsafe fn dealloc_with_items(&mut self) {
+        unsafe {
+            if core::mem::needs_drop::<T>() {
+                for i in 0..self.len() {
                     (*self.item_ptr(i)).assume_init_drop();
                 }
             }
+            self.dealloc();
         }
+    }
+
+    #[inline(always)]
+    unsafe fn dealloc(&mut self) {
         // Deallocate the entire segment (header + items)
         unsafe {
             dealloc(self.header.as_ptr() as *mut u8, Self::LAYOUT_INFO.2);
@@ -330,9 +361,7 @@ impl<T> Segment<T> {
 
     #[inline(always)]
     unsafe fn from_raw(header: NonNull<SegHeader<T>>) -> Self {
-        let p = header.as_ptr() as *mut u8;
-        let items = unsafe { p.add(Self::LAYOUT_INFO.1) as *mut MaybeUninit<T> };
-        Self { header, items }
+        Self { header }
     }
 
     /// Get the count of valid elements in this segment
@@ -366,7 +395,11 @@ impl<T> Segment<T> {
     /// Get pointer to item at index
     #[inline]
     fn item_ptr(&self, index: usize) -> *mut MaybeUninit<T> {
-        unsafe { self.items.add(index) }
+        unsafe {
+            let items =
+                (self.header.as_ptr() as *mut u8).add(Self::LAYOUT_INFO.1) as *mut MaybeUninit<T>;
+            items.add(index)
+        }
     }
 
     /// Push an element to this segment (if not full)
@@ -385,7 +418,7 @@ impl<T> Segment<T> {
     fn pop(&mut self) -> (T, bool) {
         debug_assert!(!self.is_empty());
         let idx = self.get_header().count - 1;
-        let item = unsafe { self.item_ptr(idx).read().assume_init() };
+        let item = unsafe { (*self.item_ptr(idx)).assume_init_read() };
         self.get_header_mut().count = idx;
         (item, idx == 0)
     }
@@ -393,7 +426,7 @@ impl<T> Segment<T> {
 
 /// Immutable iterator over SegList
 pub struct SegListIter<'a, T> {
-    cur: Option<Segment<T>>,
+    cur: Segment<T>,
     cur_idx: usize,
     remaining: usize,
     _marker: core::marker::PhantomData<&'a T>,
@@ -402,31 +435,31 @@ pub struct SegListIter<'a, T> {
 impl<'a, T> Iterator for SegListIter<'a, T> {
     type Item = &'a T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
             return None;
         }
-        let cur = self.cur.as_ref()?;
-        let cur_header = cur.get_header();
-        unsafe {
-            if self.cur_idx >= cur_header.count {
-                let next = cur_header.next;
-                // In circular list, next is never null, but we use remaining to limit iteration
-                self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
-                self.cur_idx = 0;
-                return self.next();
-            }
-            let item = (*cur.item_ptr(self.cur_idx)).assume_init_ref();
-            self.cur_idx += 1;
-            self.remaining -= 1;
-            Some(item)
-        }
+        let cur_header = self.cur.get_header();
+        self.remaining -= 1;
+        let idx = if self.cur_idx >= cur_header.count {
+            let next = cur_header.next;
+            // In circular list, next is never null, but we use remaining to limit iteration
+            self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
+            self.cur_idx = 1;
+            0
+        } else {
+            let _idx = self.cur_idx;
+            self.cur_idx = _idx + 1;
+            _idx
+        };
+        return Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_ref() });
     }
 }
 
 /// Mutable iterator over SegList
 pub struct SegListIterMut<'a, T> {
-    cur: Option<Segment<T>>,
+    cur: Segment<T>,
     cur_idx: usize,
     remaining: usize,
     _marker: core::marker::PhantomData<&'a mut T>,
@@ -435,25 +468,25 @@ pub struct SegListIterMut<'a, T> {
 impl<'a, T> Iterator for SegListIterMut<'a, T> {
     type Item = &'a mut T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
             return None;
         }
-        let cur = self.cur.as_mut()?;
-        let cur_header = cur.get_header();
-        unsafe {
-            if self.cur_idx >= cur_header.count {
-                let next = cur_header.next;
-                // In circular list, next is never null, but we use remaining to limit iteration
-                self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
-                self.cur_idx = 0;
-                return self.next();
-            }
-            let item = (*cur.item_ptr(self.cur_idx)).assume_init_mut();
+        let cur_header = self.cur.get_header();
+        self.remaining -= 1;
+        let idx = if self.cur_idx >= cur_header.count {
+            let next = cur_header.next;
+            // In circular list, next is never null, but we use remaining to limit iteration
+            self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
+            self.cur_idx = 1;
+            0
+        } else {
+            let _idx = self.cur_idx;
             self.cur_idx += 1;
-            self.remaining -= 1;
-            Some(item)
-        }
+            _idx
+        };
+        return Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_mut() });
     }
 }
 
@@ -467,38 +500,25 @@ pub struct SegListDrain<T> {
 impl<T> Iterator for SegListDrain<T> {
     type Item = T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let cur = self.cur.as_mut()?;
+        let cur_seg = self.cur.as_mut()?;
         unsafe {
-            let cur_header = cur.get_header();
-            // Skip empty segments
-            if self.cur_idx >= cur_header.count {
-                // Save next pointer before dealloc
-                let next = cur_header.next;
-                // Don't call Segment::dealloc because we have already yield item outside
-                dealloc(cur.header.as_ptr() as *mut u8, Segment::<T>::LAYOUT_INFO.2);
-                if next.is_null() {
-                    self.cur = None;
-                    return None;
-                } else {
-                    self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
-                    self.cur_idx = 0;
-                    return self.next();
-                }
-            }
-            let item = cur.item_ptr(self.cur_idx).read().assume_init();
-            self.cur_idx += 1;
-            if self.cur_idx >= cur_header.count {
-                // Save next pointer before dealloc
-                let next = cur_header.next;
-                // Don't call Segment::dealloc because we have already yield item outside
-                dealloc(cur.header.as_ptr() as *mut u8, Segment::<T>::LAYOUT_INFO.2);
+            let item = (*cur_seg.item_ptr(self.cur_idx)).assume_init_read();
+            let next_idx = self.cur_idx + 1;
+            let header = cur_seg.get_header();
+            // Check if we've exhausted this segment
+            if next_idx >= header.count {
+                let next = header.next;
+                cur_seg.dealloc();
                 if next.is_null() {
                     self.cur = None;
                 } else {
                     self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
                     self.cur_idx = 0;
                 }
+            } else {
+                self.cur_idx = next_idx;
             }
             Some(item)
         }
@@ -519,12 +539,12 @@ impl<T> Drop for SegListDrain<T> {
                         (*cur.item_ptr(i)).assume_init_drop();
                     }
                 }
-                dealloc(cur.header.as_ptr() as *mut u8, Segment::<T>::LAYOUT_INFO.2);
+                cur.dealloc();
                 while !next.is_null() {
                     cur = Segment::from_raw(NonNull::new_unchecked(next));
                     let header = cur.get_header();
                     next = header.next;
-                    cur.dealloc();
+                    cur.dealloc_with_items();
                 }
             }
         }
