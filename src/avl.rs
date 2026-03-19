@@ -653,6 +653,8 @@ where
     /// It does not drop the node data, only unlinks it.
     /// Caller is responsible for re-taking ownership (e.g. via from_raw) and dropping if needed.
     ///
+    /// For Arc/Rc, use [Self::remove_ref()] instead.
+    ///
     pub unsafe fn remove(&mut self, del: *const P::Target) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
