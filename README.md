@@ -9,7 +9,7 @@ This crate provide two categories:
 
 - Cache efficient collections:
     - [`ConstVec`]: Fixed capacity inline vec
-    - [`SegList`]:  A list to store elements with fixed size segments (the capacity of segment is calculated to fit a CPU cacheline)
+    - [`SegList`]:  A list to store elements with adaptive size segments (the capacity of segment is calculated to fit a CPU cacheline). More efficient when vec when the number of items is small (< 100).
     - [`Various`]: For various count of elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
 
 - intrusiave collection

@@ -1,7 +1,14 @@
 //! Segmented List - A segmented list with cache-friendly node sizes.
 //!
-//! Each segment is a singly linked list node containing dynamically calculated
-//! number of elements based on cache line size and element size.
+//! Support push() / pop() from the tail, and one-time consume all elements.
+//! It does not support random access.
+//!
+//! Each segment's capacity is calculated at runtime based on T's size
+//! to fit within a cache line. (The first segment is CACHE_LINE_SIZE, the subsequent allocation
+//! use CACHE_LINE_SIZE * 2)
+//!
+//! It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
+//! during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
 
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
@@ -24,10 +31,17 @@ pub const CACHE_LINE_SIZE: usize = 128;
 )))]
 pub const CACHE_LINE_SIZE: usize = 64;
 
-/// Segmented list with cache-friendly segment sizes
+/// Segmented list with cache-friendly segment sizes.
+///
+/// Support push() / pop() from the tail, and one-time consume all elements.
+/// It does not support random access.
 ///
 /// Each segment's capacity is calculated at runtime based on T's size
-/// to fit within a cache line.
+/// to fit within a cache line. (The first segment is CACHE_LINE_SIZE, the subsequent allocation
+/// use CACHE_LINE_SIZE * 2)
+///
+/// It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
+/// during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
 ///
 /// NOTE: T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
 /// items in one segment. But when T larger than 128B, you should consider put T into Box.
@@ -45,7 +59,7 @@ unsafe impl<T: Send> Sync for SegList<T> {}
 impl<T> SegList<T> {
     /// Create a new empty SegList with one allocated segment
     pub fn new() -> Self {
-        let mut seg = unsafe { Segment::<T>::alloc(null_mut(), null_mut()) };
+        let mut seg = unsafe { Segment::<T>::alloc(null_mut(), null_mut(), true) };
         let header_ptr = seg.header.as_ptr();
         let header = seg.get_header_mut();
         // Make it circular: tail.next points to head (itself for now)
@@ -59,10 +73,10 @@ impl<T> SegList<T> {
         self.count == 0
     }
 
-    /// Get the capacity of each segment
+    /// Get the base capacity of the first segment
     #[inline(always)]
     pub const fn segment_cap() -> usize {
-        Segment::<T>::LAYOUT_INFO.0
+        Segment::<T>::base_cap()
     }
 
     /// Returns the total number of elements in the list
@@ -79,7 +93,8 @@ impl<T> SegList<T> {
             if tail_seg.is_full() {
                 let tail_ptr = tail_seg.header.as_ptr();
                 let cur = tail_seg.get_header_mut();
-                let new_seg = Segment::alloc(tail_ptr, cur.next);
+                // Subsequent segments use LARGE_LAYOUT (cacheline * 2)
+                let new_seg = Segment::alloc(tail_ptr, cur.next, false);
                 cur.next = new_seg.header.as_ptr();
                 self.tail = new_seg.header;
                 tail_seg = new_seg;
@@ -206,7 +221,7 @@ impl<T> SegList<T> {
             if header.count == 0 {
                 return None;
             }
-            let idx = header.count - 1;
+            let idx = (header.count - 1) as usize;
             Some((*tail_seg.item_ptr(idx)).assume_init_ref())
         }
     }
@@ -221,7 +236,7 @@ impl<T> SegList<T> {
             if header.count == 0 {
                 return None;
             }
-            let idx = header.count - 1;
+            let idx = (header.count - 1) as usize;
             Some((*tail_seg.item_ptr(idx)).assume_init_mut())
         }
     }
@@ -275,10 +290,13 @@ impl<T: core::fmt::Debug> core::fmt::Debug for SegList<T> {
 #[repr(C)]
 struct SegHeader<T> {
     /// Count of valid elements in this segment
-    count: usize,
+    count: u32,
+    /// Capacity of this segment (may vary for different segments)
+    cap: u32,
     prev: *mut SegHeader<T>,
     /// Next segment in the list
     next: *mut SegHeader<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 /// A segment containing header and element storage
@@ -288,42 +306,90 @@ struct Segment<T> {
 }
 
 impl<T> Segment<T> {
-    // cap, data_offset, mem layout
-    const LAYOUT_INFO: (usize, usize, Layout) = {
+    // data_offset is the same for both base and large layouts
+    const DATA_OFFSET: usize = Self::calc_data_offset();
+
+    // Pre-calculate layout for cacheline-sized segment (first segment)
+    // (cap, layout)
+    const BASE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE);
+
+    // Pre-calculate layout for cacheline*2-sized segment (subsequent segments)
+    // (cap, layout)
+    const LARGE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE * 2);
+
+    /// Const fn to calculate data offset (same for all segments)
+    const fn calc_data_offset() -> usize {
         let mut data_offset = size_of::<SegHeader<T>>();
         let t_size = size_of::<T>();
         let t_align = align_of::<MaybeUninit<T>>();
-        let (capacity, final_alloc_size, final_align);
-        if t_size == 0 {
-            // 0-size does not actually take place, but storing them does not make sense
-            (final_alloc_size, final_align) = (CACHE_LINE_SIZE, CACHE_LINE_SIZE);
-            capacity = 1024;
-        } else {
-            // Calculate first element's offset (considering T's alignment)
+
+        if t_size != 0 {
             data_offset = (data_offset + t_align - 1) & !(t_align - 1);
+        }
+        data_offset
+    }
+
+    /// Const fn to calculate layout for a given cache line size
+    const fn calc_layout_const(cache_line: usize) -> (usize, Layout) {
+        let t_size = size_of::<T>();
+        let data_offset = Self::DATA_OFFSET;
+        let capacity;
+        let final_alloc_size;
+        let final_align;
+
+        if t_size == 0 {
+            // 0-size does not actually take place
+            capacity = 1024;
+            final_alloc_size = cache_line;
+            final_align = cache_line;
+        } else {
             let min_elements = 2;
             let min_required_size = data_offset + (t_size * min_elements);
-            let alloc_size = (min_required_size + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1);
-            final_align = if CACHE_LINE_SIZE > t_align { CACHE_LINE_SIZE } else { t_align };
+            let alloc_size = (min_required_size + cache_line - 1) & !(cache_line - 1);
+            final_align = if cache_line > align_of::<MaybeUninit<T>>() {
+                cache_line
+            } else {
+                align_of::<MaybeUninit<T>>()
+            };
             final_alloc_size = (alloc_size + final_align - 1) & !(final_align - 1);
             capacity = (final_alloc_size - data_offset) / t_size;
             // rust 1.57 support assert in const fn
             assert!(capacity >= min_elements);
         }
+
         match Layout::from_size_align(final_alloc_size, final_align) {
-            Ok(l) => (capacity, data_offset, l),
+            Ok(l) => (capacity, l),
             Err(_) => panic!("Invalid layout"),
         }
-    };
-
-    const fn get_layout() -> Layout {
-        Self::LAYOUT_INFO.2
     }
 
-    /// Create a new empty segment with calculated capacity
+    /// Get the base capacity (first segment's capacity)
+    #[inline(always)]
+    const fn base_cap() -> usize {
+        Self::BASE_LAYOUT.0
+    }
+
+    /// Get the large capacity (subsequent segments' capacity)
+    #[inline(always)]
+    const fn large_cap() -> usize {
+        Self::LARGE_LAYOUT.0
+    }
+
+    /// Get the data offset (offset of first element from header start)
+    #[inline(always)]
+    const fn data_offset() -> usize {
+        Self::DATA_OFFSET
+    }
+
+    /// Create a new empty segment
+    /// is_first: true for first segment (uses BASE_LAYOUT), false for subsequent (uses LARGE_LAYOUT)
     #[inline]
-    unsafe fn alloc(prev: *mut SegHeader<T>, next: *mut SegHeader<T>) -> Self {
-        let layout = Self::get_layout();
+    unsafe fn alloc(prev: *mut SegHeader<T>, next: *mut SegHeader<T>, is_first: bool) -> Self {
+        let (cap, layout) = if is_first {
+            (Self::base_cap() as u32, Self::BASE_LAYOUT.1)
+        } else {
+            (Self::large_cap() as u32, Self::LARGE_LAYOUT.1)
+        };
         let ptr: *mut u8 = unsafe { alloc(layout) };
         if ptr.is_null() {
             handle_alloc_error(layout);
@@ -333,6 +399,7 @@ impl<T> Segment<T> {
             let header = p.as_ptr();
             // Initialize header
             (*header).count = 0;
+            (*header).cap = cap;
             (*header).prev = prev;
             (*header).next = next;
             Self::from_raw(p)
@@ -355,7 +422,10 @@ impl<T> Segment<T> {
     unsafe fn dealloc(&mut self) {
         // Deallocate the entire segment (header + items)
         unsafe {
-            dealloc(self.header.as_ptr() as *mut u8, Self::LAYOUT_INFO.2);
+            let cap = (*self.header.as_ptr()).cap as usize;
+            let layout =
+                if cap == Self::base_cap() { Self::BASE_LAYOUT.1 } else { Self::LARGE_LAYOUT.1 };
+            dealloc(self.header.as_ptr() as *mut u8, layout);
         }
     }
 
@@ -367,7 +437,7 @@ impl<T> Segment<T> {
     /// Get the count of valid elements in this segment
     #[inline(always)]
     fn len(&self) -> usize {
-        unsafe { (*self.header.as_ptr()).count }
+        unsafe { (*self.header.as_ptr()).count as usize }
     }
 
     #[inline(always)]
@@ -389,7 +459,8 @@ impl<T> Segment<T> {
     /// Check if segment is full
     #[inline(always)]
     fn is_full(&self) -> bool {
-        self.len() >= Self::LAYOUT_INFO.0
+        let header = self.get_header();
+        header.count >= header.cap
     }
 
     /// Get pointer to item at index
@@ -397,7 +468,7 @@ impl<T> Segment<T> {
     fn item_ptr(&self, index: usize) -> *mut MaybeUninit<T> {
         unsafe {
             let items =
-                (self.header.as_ptr() as *mut u8).add(Self::LAYOUT_INFO.1) as *mut MaybeUninit<T>;
+                (self.header.as_ptr() as *mut u8).add(Self::data_offset()) as *mut MaybeUninit<T>;
             items.add(index)
         }
     }
@@ -406,11 +477,11 @@ impl<T> Segment<T> {
     #[inline]
     fn push(&mut self, item: T) {
         debug_assert!(!self.is_full());
-        let idx = self.get_header().count;
+        let idx = self.get_header().count as usize;
         unsafe {
             (*self.item_ptr(idx)).write(item);
         }
-        self.get_header_mut().count = idx + 1;
+        self.get_header_mut().count = (idx + 1) as u32;
     }
 
     /// return (item, is_empty_now)
@@ -418,7 +489,7 @@ impl<T> Segment<T> {
     fn pop(&mut self) -> (T, bool) {
         debug_assert!(!self.is_empty());
         let idx = self.get_header().count - 1;
-        let item = unsafe { (*self.item_ptr(idx)).assume_init_read() };
+        let item = unsafe { (*self.item_ptr(idx as usize)).assume_init_read() };
         self.get_header_mut().count = idx;
         (item, idx == 0)
     }
@@ -442,7 +513,7 @@ impl<'a, T> Iterator for SegListIter<'a, T> {
         }
         let cur_header = self.cur.get_header();
         self.remaining -= 1;
-        let idx = if self.cur_idx >= cur_header.count {
+        let idx = if self.cur_idx >= cur_header.count as usize {
             let next = cur_header.next;
             // In circular list, next is never null, but we use remaining to limit iteration
             self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
@@ -475,7 +546,7 @@ impl<'a, T> Iterator for SegListIterMut<'a, T> {
         }
         let cur_header = self.cur.get_header();
         self.remaining -= 1;
-        let idx = if self.cur_idx >= cur_header.count {
+        let idx = if self.cur_idx >= cur_header.count as usize {
             let next = cur_header.next;
             // In circular list, next is never null, but we use remaining to limit iteration
             self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
@@ -508,7 +579,7 @@ impl<T> Iterator for SegListDrain<T> {
             let next_idx = self.cur_idx + 1;
             let header = cur_seg.get_header();
             // Check if we've exhausted this segment
-            if next_idx >= header.count {
+            if next_idx >= header.count as usize {
                 let next = header.next;
                 cur_seg.dealloc();
                 if next.is_null() {
@@ -535,7 +606,7 @@ impl<T> Drop for SegListDrain<T> {
                 next = header.next;
                 // Drop remaining elements in this segment (from current index to end)
                 if core::mem::needs_drop::<T>() {
-                    for i in self.cur_idx..header.count {
+                    for i in self.cur_idx..header.count as usize {
                         (*cur.item_ptr(i)).assume_init_drop();
                     }
                 }
@@ -579,7 +650,7 @@ mod tests {
     fn test_multiple_segments() {
         let mut list: SegList<i32> = SegList::new();
         if CACHE_LINE_SIZE == 128 {
-            assert_eq!(Segment::<i32>::LAYOUT_INFO.0, 26);
+            assert_eq!(Segment::<i32>::base_cap(), 26);
         }
 
         for i in 0..100 {
@@ -668,7 +739,7 @@ mod tests {
     #[test]
     fn test_drain() {
         // Get capacity per segment for DropTracker (i32)
-        let cap = Segment::<DropTracker>::LAYOUT_INFO.0;
+        let cap = Segment::<DropTracker>::base_cap();
 
         // Scenario 1: Single segment, drain completely
         {
@@ -742,7 +813,7 @@ mod tests {
         reset_drop_count();
         {
             let mut list: SegList<DropTracker> = SegList::new();
-            let cap = Segment::<DropTracker>::LAYOUT_INFO.0;
+            let cap = Segment::<DropTracker>::base_cap();
 
             // Push fewer elements than one segment capacity
             for i in 0..5 {
@@ -758,7 +829,7 @@ mod tests {
 
     #[test]
     fn test_drop_multi_segment() {
-        let cap = Segment::<DropTracker>::LAYOUT_INFO.0;
+        let cap = Segment::<DropTracker>::base_cap();
         reset_drop_count();
         {
             let mut list: SegList<DropTracker> = SegList::new();
@@ -802,37 +873,66 @@ mod tests {
 
     #[test]
     fn test_size() {
-        let layout = Segment::<LargeStruct>::LAYOUT_INFO;
+        assert_eq!(size_of::<SegHeader::<LargeStruct>>(), 24);
+        let data_offset = Segment::<LargeStruct>::data_offset();
+        let base_cap = Segment::<LargeStruct>::base_cap();
+        let large_cap = Segment::<LargeStruct>::large_cap();
+        let base_layout = Segment::<LargeStruct>::BASE_LAYOUT.1;
+        let large_layout = Segment::<LargeStruct>::LARGE_LAYOUT.1;
         println!(
-            "LargeStruct: cap {} offset {}, size {}, align {}",
-            layout.0,
-            layout.1,
-            layout.2.size(),
-            layout.2.align()
+            "LargeStruct: offset={}, base(cap={} size={} align={}), large(cap={} size={} align={})",
+            data_offset,
+            base_cap,
+            base_layout.size(),
+            base_layout.align(),
+            large_cap,
+            large_layout.size(),
+            large_layout.align()
         );
-        let layout = Segment::<u64>::LAYOUT_INFO;
+        let data_offset = Segment::<u64>::data_offset();
+        let base_cap = Segment::<u64>::base_cap();
+        let large_cap = Segment::<u64>::large_cap();
+        let base_layout = Segment::<u64>::BASE_LAYOUT.1;
+        let large_layout = Segment::<u64>::LARGE_LAYOUT.1;
         println!(
-            "u64: cap {} offset {}, size {}, align {}",
-            layout.0,
-            layout.1,
-            layout.2.size(),
-            layout.2.align()
+            "u64: offset={}, base(cap={} size={} align={}), large(cap={} size={} align={})",
+            data_offset,
+            base_cap,
+            base_layout.size(),
+            base_layout.align(),
+            large_cap,
+            large_layout.size(),
+            large_layout.align()
         );
-        let layout = Segment::<u32>::LAYOUT_INFO;
+        let data_offset = Segment::<u32>::data_offset();
+        let base_cap = Segment::<u32>::base_cap();
+        let large_cap = Segment::<u32>::large_cap();
+        let base_layout = Segment::<u32>::BASE_LAYOUT.1;
+        let large_layout = Segment::<u32>::LARGE_LAYOUT.1;
         println!(
-            "u32: cap {} offset {}, size {}, align {}",
-            layout.0,
-            layout.1,
-            layout.2.size(),
-            layout.2.align()
+            "u32: offset={}, base(cap={} size={} align={}), large(cap={} size={} align={})",
+            data_offset,
+            base_cap,
+            base_layout.size(),
+            base_layout.align(),
+            large_cap,
+            large_layout.size(),
+            large_layout.align()
         );
-        let layout = Segment::<u16>::LAYOUT_INFO;
+        let data_offset = Segment::<u16>::data_offset();
+        let base_cap = Segment::<u16>::base_cap();
+        let large_cap = Segment::<u16>::large_cap();
+        let base_layout = Segment::<u16>::BASE_LAYOUT.1;
+        let large_layout = Segment::<u16>::LARGE_LAYOUT.1;
         println!(
-            "u16: cap {} offset {}, size {}, align {}",
-            layout.0,
-            layout.1,
-            layout.2.size(),
-            layout.2.align()
+            "u16: offset={}, base(cap={} size={} align={}), large(cap={} size={} align={})",
+            data_offset,
+            base_cap,
+            base_layout.size(),
+            base_layout.align(),
+            large_cap,
+            large_layout.size(),
+            large_layout.align()
         );
     }
 
