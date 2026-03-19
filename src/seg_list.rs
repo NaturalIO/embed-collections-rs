@@ -9,6 +9,53 @@
 //!
 //! It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
 //! during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
+//!
+//! # NOTE
+//!
+//! T is allow to larger than `CACHE_LINE_SIZE`, in this case `SegList` will ensure at least 2
+//! items in one segment. But it's not efficent when T larger than 128B, you should consider put T into Box.
+//!
+//! # Example
+//!
+//! ```rust
+//! use embed_collections::seg_list::SegList;
+//!
+//! // Create a new SegList
+//! let mut list: SegList<i32> = SegList::new();
+//!
+//! // Push elements to the back
+//! list.push(10);
+//! list.push(20);
+//! list.push(30);
+//!
+//! assert_eq!(list.len(), 3);
+//! assert_eq!(list.first(), Some(&10));
+//! assert_eq!(list.last(), Some(&30));
+//!
+//! // Pop elements from the back (LIFO order)
+//! assert_eq!(list.pop(), Some(30));
+//! assert_eq!(list.pop(), Some(20));
+//! assert_eq!(list.pop(), Some(10));
+//! assert_eq!(list.pop(), None);
+//! assert!(list.is_empty());
+//!
+//! // Iterate over elements
+//! list.push(1);
+//! list.push(2);
+//! list.push(3);
+//! let sum: i32 = list.iter().sum();
+//! assert_eq!(sum, 6);
+//!
+//! // Mutable iteration
+//! for item in list.iter_mut() {
+//!     *item *= 10;
+//! }
+//! assert_eq!(list.last(), Some(&30));
+//!
+//! // Drain all elements (consumes the list)
+//! let drained: Vec<i32> = list.drain().collect();
+//! assert_eq!(drained, vec![10, 20, 30]);
+//! ```
 
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
@@ -43,9 +90,12 @@ pub const CACHE_LINE_SIZE: usize = 64;
 /// It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
 /// during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
 ///
-/// NOTE: T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
-/// items in one segment. But when T larger than 128B, you should consider put T into Box.
+/// # NOTE
 ///
+/// T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
+/// items in one segment. But it's not efficent when T larger than 128B, you should consider put T into Box.
+///
+/// Refer to [module level](crate::seg_list) doc for examples.
 pub struct SegList<T> {
     /// Pointer to the last segment (tail.get_header().next points to first element), to reduce the main struct size
     tail: NonNull<SegHeader<T>>,
