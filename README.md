@@ -5,14 +5,14 @@ docs.rs: <https://docs.rs/embed-collections/latest/embed_collections/>
 `embed-collections` provides memory efficient data structures for Rust.
 For embedding environment and server applications that need tight memory management.
 
-This crate provide two categories:
+This crate provides two categories:
 
 - Cache efficient collections:
     - [`ConstVec`]: Fixed capacity inline vec
     - [`SegList`]:  A list to store elements with adaptive size segments
-    - [`Various`]: For various count of elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
+    - [`Various`]: For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
 
-- intrusiave collection
+- intrusive collection
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
     - [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
     - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
