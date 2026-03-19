@@ -21,12 +21,16 @@ full = ["slist", "dlist", "avl"]
 [dev-dependencies]
 rstest = "0"
 rand = "0.8.5"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion2 = { version="3.0.2"}
 
 [[bench]]
 name = "avl"
 harness = false
 required-features = ["avl"]
+
+[[bench]]
+name = "seg_list"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true
