@@ -11,14 +11,17 @@
 //! - Supports multiple lists for the same item via `Tag`.
 //!
 //! # Example
+//!
 //! ```rust
 //! use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
 //! use core::cell::UnsafeCell;
+//! use std::sync::Arc;
+//! use core::ptr::NonNull;
 //!
 //! struct MyItem {
 //!     id: u32,
 //!     data: String,
-//!     node: UnsafeCell<DListNode<MyItem, ()>>, // Node embedded directly
+//!     node: UnsafeCell<DListNode<MyItem, ()>>,
 //! }
 //!
 //! impl MyItem {
@@ -31,27 +34,53 @@
 //!     }
 //! }
 //!
-//! // Safety: Implementors must ensure `get_node` returns a valid reference
-//! // to the embedded `DListNode`. `UnsafeCell` is used for interior mutability.
 //! unsafe impl DListItem<()> for MyItem {
 //!     fn get_node(&self) -> &mut DListNode<Self, ()> {
 //!         unsafe { &mut *self.node.get() }
 //!     }
 //! }
 //!
-//! let mut list = DLinkedList::<Box<MyItem>, ()>::new();
+//! // Using Box<T> (owned pointers)
+//! {
+//!     let mut list = DLinkedList::<Box<MyItem>, ()>::new();
+//!     list.push_back(Box::new(MyItem::new(1, "First")));
+//!     list.push_front(Box::new(MyItem::new(2, "Second")));
+//!     list.push_back(Box::new(MyItem::new(3, "Third")));
+//!     assert_eq!(list.len(), 3);
+//!     assert_eq!(list.pop_front().unwrap().id, 2);
+//!     assert_eq!(list.pop_back().unwrap().id, 3);
+//!     assert_eq!(list.pop_front().unwrap().id, 1);
+//!     assert!(list.is_empty());
+//! }
 //!
-//! list.push_back(Box::new(MyItem::new(1, "First")));
-//! list.push_front(Box::new(MyItem::new(2, "Second")));
-//! list.push_back(Box::new(MyItem::new(3, "Third")));
+//! // Using Arc<T> (shared ownership)
+//! {
+//!     let mut list = DLinkedList::<Arc<MyItem>, ()>::new();
+//!     list.push_back(Arc::new(MyItem::new(1, "First")));
+//!     list.push_front(Arc::new(MyItem::new(2, "Second")));
+//!     list.push_back(Arc::new(MyItem::new(3, "Third")));
+//!     assert_eq!(list.len(), 3);
+//!     assert_eq!(list.pop_front().unwrap().id, 2);
+//!     assert_eq!(list.pop_back().unwrap().id, 3);
+//!     assert_eq!(list.pop_front().unwrap().id, 1);
+//!     assert!(list.is_empty());
+//! }
 //!
-//! assert_eq!(list.len(), 3);
-//!
-//! // List order: (2, "Second") <-> (1, "First") <-> (3, "Third")
-//! assert_eq!(list.pop_front().unwrap().id, 2);
-//! assert_eq!(list.pop_back().unwrap().id, 3);
-//! assert_eq!(list.pop_front().unwrap().id, 1);
-//! assert!(list.is_empty());
+//! // Using NonNull<T> (raw pointers without ownership)
+//! {
+//!     let mut list = DLinkedList::<NonNull<MyItem>, ()>::new();
+//!     let item1 = Box::leak(Box::new(MyItem::new(1, "First")));
+//!     let item2 = Box::leak(Box::new(MyItem::new(2, "Second")));
+//!     let item3 = Box::leak(Box::new(MyItem::new(3, "Third")));
+//!     list.push_back(NonNull::from(item1));
+//!     list.push_front(NonNull::from(item2));
+//!     list.push_back(NonNull::from(item3));
+//!     assert_eq!(list.len(), 3);
+//!     assert_eq!(unsafe { list.pop_front().unwrap().as_ref().id }, 2);
+//!     assert_eq!(unsafe { list.pop_back().unwrap().as_ref().id }, 3);
+//!     assert_eq!(unsafe { list.pop_front().unwrap().as_ref().id }, 1);
+//!     assert!(list.is_empty());
+//! }
 //! ```
 
 use crate::Pointer;

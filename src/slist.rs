@@ -9,14 +9,17 @@
 //! - Generic over pointer types (`Box`, `Arc`, `NonNull`, raw pointers).
 //!
 //! # Example
+//!
 //! ```rust
 //! use embed_collections::{slist::{SLinkedList, SListItem, SListNode}, Pointer};
 //! use core::cell::UnsafeCell;
+//! use std::sync::Arc;
+//! use core::ptr::NonNull;
 //!
 //! struct MyTask {
 //!     priority: u8,
 //!     description: String,
-//!     node: UnsafeCell<SListNode<MyTask, ()>>, // Node embedded directly
+//!     node: UnsafeCell<SListNode<MyTask, ()>>,
 //! }
 //!
 //! impl MyTask {
@@ -29,27 +32,53 @@
 //!     }
 //! }
 //!
-//! // Safety: Implementors must ensure `get_node` returns a valid reference
-//! // to the embedded `SListNode`. `UnsafeCell` is used for interior mutability.
 //! unsafe impl SListItem<()> for MyTask {
 //!     fn get_node(&self) -> &mut SListNode<Self, ()> {
 //!         unsafe { &mut *self.node.get() }
 //!     }
 //! }
 //!
-//! let mut task_queue = SLinkedList::<Box<MyTask>, ()>::new();
+//! // Using Box<T> (owned pointers)
+//! {
+//!     let mut task_queue = SLinkedList::<Box<MyTask>, ()>::new();
+//!     task_queue.push_back(Box::new(MyTask::new(1, "Handle user login")));
+//!     task_queue.push_back(Box::new(MyTask::new(2, "Process analytics data")));
+//!     task_queue.push_back(Box::new(MyTask::new(1, "Send welcome email")));
+//!     assert_eq!(task_queue.len(), 3);
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Handle user login");
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Process analytics data");
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Send welcome email");
+//!     assert!(task_queue.is_empty());
+//! }
 //!
-//! task_queue.push_back(Box::new(MyTask::new(1, "Handle user login")));
-//! task_queue.push_back(Box::new(MyTask::new(2, "Process analytics data")));
-//! task_queue.push_back(Box::new(MyTask::new(1, "Send welcome email")));
+//! // Using Arc<T> (shared ownership)
+//! {
+//!     let mut task_queue = SLinkedList::<Arc<MyTask>, ()>::new();
+//!     task_queue.push_back(Arc::new(MyTask::new(1, "Handle user login")));
+//!     task_queue.push_back(Arc::new(MyTask::new(2, "Process analytics data")));
+//!     task_queue.push_back(Arc::new(MyTask::new(1, "Send welcome email")));
+//!     assert_eq!(task_queue.len(), 3);
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Handle user login");
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Process analytics data");
+//!     assert_eq!(task_queue.pop_front().unwrap().description, "Send welcome email");
+//!     assert!(task_queue.is_empty());
+//! }
 //!
-//! assert_eq!(task_queue.len(), 3);
-//!
-//! // Process tasks in FIFO order
-//! assert_eq!(task_queue.pop_front().unwrap().description, "Handle user login");
-//! assert_eq!(task_queue.pop_front().unwrap().description, "Process analytics data");
-//! assert_eq!(task_queue.pop_front().unwrap().description, "Send welcome email");
-//! assert!(task_queue.is_empty());
+//! // Using NonNull<T> (raw pointers without ownership)
+//! {
+//!     let mut task_queue = SLinkedList::<NonNull<MyTask>, ()>::new();
+//!     let task1 = Box::leak(Box::new(MyTask::new(1, "Handle user login")));
+//!     let task2 = Box::leak(Box::new(MyTask::new(2, "Process analytics data")));
+//!     let task3 = Box::leak(Box::new(MyTask::new(1, "Send welcome email")));
+//!     task_queue.push_back(NonNull::from(task1));
+//!     task_queue.push_back(NonNull::from(task2));
+//!     task_queue.push_back(NonNull::from(task3));
+//!     assert_eq!(task_queue.len(), 3);
+//!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Handle user login");
+//!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Process analytics data");
+//!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Send welcome email");
+//!     assert!(task_queue.is_empty());
+//! }
 //! ```
 
 use crate::Pointer;
