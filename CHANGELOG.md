@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.7.0] - 2026-03-19
+
+### Changed
+
+- seg_list: Optimize drain operation and allocation strategy. Added benchmark result.
+
+- Add more example for dlist & slist using various type
+
 ## [0.6.0] - 2026-03-18
 
 ### Added
