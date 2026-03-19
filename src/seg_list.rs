@@ -13,7 +13,7 @@
 //! # NOTE
 //!
 //! T is allow to larger than `CACHE_LINE_SIZE`, in this case `SegList` will ensure at least 2
-//! items in one segment. But it's not efficent when T larger than 128B, you should consider put T into Box.
+//! items in one segment. But it's not efficient when T larger than 128B, you should consider put T into Box.
 //!
 //! # Example
 //!
@@ -93,7 +93,7 @@ pub const CACHE_LINE_SIZE: usize = 64;
 /// # NOTE
 ///
 /// T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
-/// items in one segment. But it's not efficent when T larger than 128B, you should consider put T into Box.
+/// items in one segment. But it's not efficient when T larger than 128B, you should consider put T into Box.
 ///
 /// Refer to [module level](crate::seg_list) doc for examples.
 pub struct SegList<T> {

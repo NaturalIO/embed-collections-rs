@@ -9,7 +9,7 @@ This crate provide two categories:
 
 - Cache efficient collections:
     - [`ConstVec`]: Fixed capacity inline vec
-    - [`SegList`]:  A list to store elements with adaptive size segments (the capacity of segment is calculated to fit a CPU cacheline). More efficient when vec when the number of items is small (< 100).
+    - [`SegList`]:  A list to store elements with adaptive size segments
     - [`Various`]: For various count of elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
 
 - intrusiave collection
@@ -18,6 +18,23 @@ This crate provide two categories:
     - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
     - [`slist_owned`]: An intrusive slist but with safe and more compact interface
     - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+
+## SegList & Various
+
+`SegList` and `Various` is designed for parameter passing.
+
+More CPU-cache friendly compared to `LinkedList`. And because it does not re-allocate, it's faster than `Vec::push()` when the number of elements is small.
+It's nice to the memory allocator (always allocate with fixed size segment).
+
+Benchmark: append + drain (x86_64, cache line 128 bytes):
+
+| Elements | SegList | Vec | SegList vs Vec |
+|----------|---------|-----|----------------|
+| 10 | 40.5 ns | 147.0 ns | **3.6x faster** |
+| 32 | 99.1 ns | 237.8 ns | **2.4x faster** |
+| 100 | 471.1 ns | 464.0 ns | ~1.0x |
+| 500 | 2.77 µs | 895.5 ns | 3.1x slower |
+
 
 ## Intrusive Collections
 
