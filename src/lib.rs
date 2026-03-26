@@ -149,3 +149,21 @@ pub mod slist;
 pub mod slist_owned;
 pub mod various;
 pub use various::Various;
+
+pub mod btree;
+
+/// Cache line size in bytes
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "powerpc64",
+))]
+pub const CACHE_LINE_SIZE: usize = 64;
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "arm64ec",
+    target_arch = "powerpc64",
+)))]
+pub const CACHE_LINE_SIZE: usize = 32;
