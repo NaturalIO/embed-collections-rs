@@ -194,28 +194,9 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
 
             // Check if leaf has space
             if count < LeafNode::<K, V>::cap() as u32 {
-                // Shift elements to make room
-                for i in (idx..count).rev() {
-                    let src_key = leaf.key_ptr(i);
-                    let dst_key = leaf.key_ptr(i + 1);
-                    let k = (*src_key).assume_init_read();
-                    (*dst_key).write(k);
-
-                    let src_val = leaf.value_ptr(i);
-                    let dst_val = leaf.value_ptr(i + 1);
-                    let v = (*src_val).assume_init_read();
-                    (*dst_val).write(v);
-                }
-
-                // Insert new key-value
-                let key_ptr = leaf.key_ptr(idx);
-                let val_ptr = leaf.value_ptr(idx);
-                (*key_ptr).write(key);
-                (*val_ptr).write(value);
-                leaf.get_header_mut().count += 1;
+                leaf.insert(idx, key, value);
                 map.len += 1;
-
-                return (*val_ptr).assume_init_mut();
+                return unsafe { (*leaf.value_ptr(idx)).assume_init_mut() };
             }
 
             // Leaf is full, need to split
