@@ -504,6 +504,39 @@ impl<K, V> LeafNode<K, V> {
         self.base.search::<K>(LEAF_HEAD_SIZE, key)
     }
 
+    /// Insert key-value at index (assuming there is space)
+    /// Uses copy_within pattern for efficient shifting
+    pub unsafe fn insert(&mut self, idx: u32, key: K, value: V) {
+        unsafe {
+            let count = self.count() as u32;
+
+            // Only shift if not inserting at the end
+            if idx < count {
+                // Shift keys: copy [idx..count] to [idx+1..count+1]
+                let keys_ptr = self.key_ptr(0) as *mut K;
+                core::ptr::copy(
+                    keys_ptr.add(idx as usize),
+                    keys_ptr.add(idx as usize + 1),
+                    (count - idx) as usize,
+                );
+
+                // Shift values: copy [idx..count] to [idx+1..count+1]
+                let vals_ptr = self.value_ptr(0) as *mut V;
+                core::ptr::copy(
+                    vals_ptr.add(idx as usize),
+                    vals_ptr.add(idx as usize + 1),
+                    (count - idx) as usize,
+                );
+            }
+
+            // Write new key-value
+            (*self.key_ptr(idx)).write(key);
+            (*self.value_ptr(idx)).write(value);
+
+            self.get_header_mut().count += 1;
+        }
+    }
+
     pub(crate) fn cap() -> usize {
         Self::LAYOUT.0
     }
