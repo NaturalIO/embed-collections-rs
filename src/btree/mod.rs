@@ -378,6 +378,292 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
         }
     }
 }
+
+// Merge and underflow handling
+impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
+    /// Find parent of a leaf node
+    pub(crate) fn find_parent_of_leaf(&self, leaf: &LeafNode<K, V>) -> Option<InterNode<K, V>> {
+        match &self.root {
+            None => None,
+            Some(Node::Leaf(_)) => None, // Leaf is root, no parent
+            Some(Node::Inter(root)) => {
+                let mut current = root.clone();
+                loop {
+                    // Check if any child is the target leaf
+                    let count = current.count() as u32;
+                    for i in 0..=count {
+                        let child_ptr = unsafe { *current.child_ptr(i) };
+                        if child_ptr == leaf.header().as_ptr() {
+                            return Some(current);
+                        }
+                    }
+                    // Not found, go deeper
+                    let mut found = false;
+                    for i in 0..=count {
+                        let child_ptr = unsafe { *current.child_ptr(i) };
+                        if !child_ptr.is_null() {
+                            let child_header = unsafe { &*child_ptr };
+                            if child_header.height > 0 {
+                                // This is an internal node, check if leaf is in its subtree
+                                current = unsafe {
+                                    InterNode::from_header(NonNull::new_unchecked(child_ptr))
+                                };
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle leaf node underflow by borrowing from or merging with sibling
+    pub(crate) unsafe fn handle_leaf_underflow(
+        &mut self, parent: InterNode<K, V>, leaf: &mut LeafNode<K, V>,
+    ) {
+        unsafe {
+            let leaf_count = leaf.count();
+            let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
+            if leaf_count >= min_count {
+                return; // No underflow
+            }
+
+            // Find leaf index in parent
+            let leaf_idx = self.find_child_index(&parent, leaf.header().as_ptr());
+
+            // Try left sibling first
+            if leaf_idx > 0 {
+                let left_sibling_ptr = *parent.child_ptr(leaf_idx - 1);
+                if !left_sibling_ptr.is_null() {
+                    let mut left_sibling =
+                        LeafNode::<K, V>::from_header(NonNull::new_unchecked(left_sibling_ptr));
+                    let sibling_count = left_sibling.count();
+
+                    if sibling_count > min_count {
+                        // Borrow from left sibling
+                        self.borrow_from_left_leaf(&mut left_sibling, leaf);
+                        return;
+                    } else {
+                        // Merge with left sibling
+                        let mut parent_mut = parent.clone();
+                        self.merge_leaf_with_left(
+                            &mut left_sibling,
+                            leaf,
+                            &mut parent_mut,
+                            leaf_idx - 1,
+                        );
+                        return;
+                    }
+                }
+            }
+
+            // Try right sibling
+            let parent_count = parent.count() as u32;
+            if leaf_idx < parent_count {
+                let right_sibling_ptr = *parent.child_ptr(leaf_idx + 1);
+                if !right_sibling_ptr.is_null() {
+                    let mut right_sibling =
+                        LeafNode::<K, V>::from_header(NonNull::new_unchecked(right_sibling_ptr));
+                    let sibling_count = right_sibling.count();
+                    let mut parent_mut = parent.clone();
+
+                    if sibling_count > min_count {
+                        // Borrow from right sibling
+                        self.borrow_from_right_leaf(leaf, &mut right_sibling);
+                    } else {
+                        // Merge with right sibling
+                        self.merge_leaf_with_right(
+                            leaf,
+                            &mut right_sibling,
+                            &mut parent_mut,
+                            leaf_idx,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Borrow one element from left sibling
+    unsafe fn borrow_from_left_leaf(
+        &mut self, left_sibling: &mut LeafNode<K, V>, leaf: &mut LeafNode<K, V>,
+    ) {
+        unsafe {
+            let sibling_count = left_sibling.count() as u32;
+
+            // Move last element from left sibling to front of leaf
+            let key_to_move = (*left_sibling.key_ptr(sibling_count - 1)).assume_init_read();
+            let val_to_move = (*left_sibling.value_ptr(sibling_count - 1)).assume_init_read();
+
+            // Shift leaf elements right
+            let leaf_count = leaf.count() as u32;
+            for i in (0..leaf_count).rev() {
+                let src_key = leaf.key_ptr(i);
+                let dst_key = leaf.key_ptr(i + 1);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
+
+                let src_val = leaf.value_ptr(i);
+                let dst_val = leaf.value_ptr(i + 1);
+                let v = (*src_val).assume_init_read();
+                (*dst_val).write(v);
+            }
+
+            // Insert borrowed element
+            (*leaf.key_ptr(0)).write(key_to_move);
+            (*leaf.value_ptr(0)).write(val_to_move);
+
+            // Update counts
+            left_sibling.get_header_mut().count -= 1;
+            leaf.get_header_mut().count += 1;
+        }
+    }
+
+    /// Borrow one element from right sibling
+    unsafe fn borrow_from_right_leaf(
+        &mut self, leaf: &mut LeafNode<K, V>, right_sibling: &mut LeafNode<K, V>,
+    ) {
+        unsafe {
+            // Move first element from right sibling to end of leaf
+            let key_to_move = (*right_sibling.key_ptr(0)).assume_init_read();
+            let val_to_move = (*right_sibling.value_ptr(0)).assume_init_read();
+
+            let leaf_count = leaf.count() as u32;
+            (*leaf.key_ptr(leaf_count)).write(key_to_move);
+            (*leaf.value_ptr(leaf_count)).write(val_to_move);
+
+            // Shift right sibling elements left
+            let sibling_count = right_sibling.count() as u32;
+            for i in 0..sibling_count - 1 {
+                let src_key = right_sibling.key_ptr(i + 1);
+                let dst_key = right_sibling.key_ptr(i);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
+
+                let src_val = right_sibling.value_ptr(i + 1);
+                let dst_val = right_sibling.value_ptr(i);
+                let v = (*src_val).assume_init_read();
+                (*dst_val).write(v);
+            }
+
+            // Update counts
+            leaf.get_header_mut().count += 1;
+            right_sibling.get_header_mut().count -= 1;
+        }
+    }
+
+    /// Merge leaf with left sibling
+    unsafe fn merge_leaf_with_left(
+        &mut self, left_sibling: &mut LeafNode<K, V>, leaf: &mut LeafNode<K, V>,
+        parent: &mut InterNode<K, V>, parent_key_idx: u32,
+    ) {
+        unsafe {
+            let left_count = left_sibling.count() as u32;
+            let leaf_count = leaf.count() as u32;
+
+            // Move all elements from leaf to left sibling
+            for i in 0..leaf_count {
+                let src_key = leaf.key_ptr(i);
+                let dst_key = left_sibling.key_ptr(left_count + i);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
+
+                let src_val = leaf.value_ptr(i);
+                let dst_val = left_sibling.value_ptr(left_count + i);
+                let v = (*src_val).assume_init_read();
+                (*dst_val).write(v);
+            }
+
+            // Update left sibling count
+            left_sibling.get_header_mut().count = (left_count + leaf_count) as u32;
+
+            // Update leaf links
+            let leaf_next = (*leaf.brothers()).next;
+            (*left_sibling.brothers()).next = leaf_next;
+            if !leaf_next.is_null() {
+                (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(leaf_next)).brothers())
+                    .prev = left_sibling.header().as_ptr();
+            }
+
+            // Remove leaf from parent
+            self.remove_child_from_parent(parent, parent_key_idx);
+
+            // Deallocate leaf
+            leaf.dealloc();
+        }
+    }
+
+    /// Merge leaf with right sibling
+    unsafe fn merge_leaf_with_right(
+        &mut self, leaf: &mut LeafNode<K, V>, right_sibling: &mut LeafNode<K, V>,
+        parent: &mut InterNode<K, V>, parent_key_idx: u32,
+    ) {
+        unsafe {
+            let leaf_count = leaf.count() as u32;
+            let right_count = right_sibling.count() as u32;
+
+            // Move all elements from right sibling to leaf
+            for i in 0..right_count {
+                let src_key = right_sibling.key_ptr(i);
+                let dst_key = leaf.key_ptr(leaf_count + i);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
+
+                let src_val = right_sibling.value_ptr(i);
+                let dst_val = leaf.value_ptr(leaf_count + i);
+                let v = (*src_val).assume_init_read();
+                (*dst_val).write(v);
+            }
+
+            // Update leaf count
+            leaf.get_header_mut().count = (leaf_count + right_count) as u32;
+
+            // Update leaf links
+            let right_next = (*right_sibling.brothers()).next;
+            (*leaf.brothers()).next = right_next;
+            if !right_next.is_null() {
+                (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(right_next)).brothers())
+                    .prev = leaf.header().as_ptr();
+            }
+
+            // Remove right sibling from parent
+            self.remove_child_from_parent(parent, parent_key_idx + 1);
+
+            // Deallocate right sibling
+            right_sibling.dealloc();
+        }
+    }
+
+    /// Remove a child from parent after merge
+    unsafe fn remove_child_from_parent(&mut self, parent: &mut InterNode<K, V>, key_idx: u32) {
+        unsafe {
+            let count = parent.count() as u32;
+
+            // Shift keys left
+            for i in key_idx..count - 1 {
+                let src_key = parent.key_ptr(i + 1);
+                let dst_key = parent.key_ptr(i);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
+            }
+
+            // Shift children left
+            for i in (key_idx + 1)..count {
+                let child = *parent.child_ptr(i + 1);
+                *parent.child_ptr(i) = child;
+            }
+
+            parent.get_header_mut().count -= 1;
+
+            // TODO: Handle parent underflow recursively
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

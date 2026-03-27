@@ -21,7 +21,7 @@ pub enum Entry<'a, K, V> {
     Vacant(VacantEntry<'a, K, V>),
 }
 
-impl<'a, K, V> Entry<'a, K, V> {
+impl<'a, K: Ord, V> Entry<'a, K, V> {
     /// Ensures a value is in the entry by inserting the default if empty,
     /// and returns a mutable reference to the value in the entry.
     pub fn or_insert(self, default: V) -> &'a mut V
@@ -71,7 +71,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 }
 
-impl<'a, K, V> OccupiedEntry<'a, K, V> {
+impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
     /// Get a reference to the key
     pub fn key(&self) -> &K {
         unsafe {

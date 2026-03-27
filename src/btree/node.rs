@@ -363,6 +363,12 @@ impl<K, V> InterNode<K, V> {
     pub(crate) fn cap() -> usize {
         Self::LAYOUT.0
     }
+
+    /// Create InterNode from header pointer
+    #[inline(always)]
+    pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
+        Self { base: NodeBase { header }, _phan: Default::default() }
+    }
 }
 
 /// Leaf node wrapper - wraps Node and provides leaf-specific operations
