@@ -175,35 +175,26 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
                 (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(old_next)).brothers())
                     .prev = new_leaf.header().as_ptr();
             }
-            // Now insert the new key-value into the appropriate leaf
-            let (target_leaf, target_idx) =
-                if insert_into_left { (&mut leaf, idx) } else { (&mut new_leaf, idx - split_idx) };
-            // Insert into target leaf
-            let target_count = target_leaf.count() as u32;
-            for i in (target_idx..target_count).rev() {
-                let src_key = target_leaf.key_ptr(i);
-                let dst_key = target_leaf.key_ptr(i + 1);
-                let k = (*src_key).assume_init_read();
-                (*dst_key).write(k);
-                let src_val = target_leaf.value_ptr(i);
-                let dst_val = target_leaf.value_ptr(i + 1);
-                let v = (*src_val).assume_init_read();
-                (*dst_val).write(v);
-            }
-            let key_ptr = target_leaf.key_ptr(target_idx);
-            let val_ptr = target_leaf.value_ptr(target_idx);
-            (*key_ptr).write(key);
-            (*val_ptr).write(value);
-            target_leaf.get_header_mut().count += 1;
-            // Get first key of new leaf for parent
+            // Get first key of new leaf for parent (before mutable borrow)
             let split_key_ptr = new_leaf.key_ptr(0);
             let split_key = (*split_key_ptr).assume_init_read();
+
+            // Now insert the new key-value into the appropriate leaf
+            let val_ref = if insert_into_left {
+                leaf.insert(idx, key, value);
+                (*leaf.value_ptr(idx)).assume_init_mut()
+            } else {
+                let right_idx = idx - split_idx;
+                new_leaf.insert(right_idx, key, value);
+                (*new_leaf.value_ptr(right_idx)).assume_init_mut()
+            };
+
             // Propagate split up the tree - need to clone cache first to avoid borrow issues
             let cache_clone: Vec<_> = cache.clone();
             self.propagate_split(&cache_clone, split_key, new_leaf, &leaf);
             self.len += 1;
             // Return reference to inserted value
-            (*val_ptr).assume_init_mut()
+            val_ref
         }
     }
     /// Propagate node split up the tree
