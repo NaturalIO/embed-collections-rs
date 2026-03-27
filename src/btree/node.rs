@@ -5,7 +5,7 @@ use core::alloc::Layout;
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
-use core::ptr::{NonNull, null_mut};
+use core::ptr::{self, NonNull, null_mut};
 
 /// Key area size: first 128 bytes (2 cache lines)
 const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
@@ -160,6 +160,45 @@ impl NodeBase {
             } else {
                 _search!(0, count);
             }
+        }
+    }
+
+    /// NOTE: it will require two calls to remove (k, v) pair, so the count is not decrease here
+    #[inline]
+    unsafe fn remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
+        debug_assert!(idx < left + 1);
+        unsafe {
+            let item_p = self.item_ptr::<T>(header_offset, idx);
+            let item = item_p.read();
+            left -= idx;
+            if left > 0 {
+                ptr::copy(item_p.add(1), item_p, left as usize);
+            }
+            item
+        }
+    }
+
+    /// Insert key value at position and return value pointer (entry insert needs to return reference)
+    ///
+    /// # Safety
+    /// it does not check is_full
+    unsafe fn insert<K, V>(
+        &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
+    ) -> *mut V {
+        let count = self.count() as u32;
+        unsafe {
+            let key_p = self.item_ptr::<K>(key_header_offset, idx);
+            if idx < count {
+                ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
+            }
+            key_p.write(key);
+            let value_p = self.item_ptr::<V>(value_header_offset, idx);
+            if idx < count {
+                ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
+            }
+            value_p.write(value);
+            self.get_header_mut().count = count + 1;
+            value_p
         }
     }
 }
@@ -327,7 +366,7 @@ impl<K, V> InterNode<K, V> {
 
     /// Get pointer to child at index
     #[inline(always)]
-    pub(crate) unsafe fn child_ptr(&self, idx: u32) -> *mut *mut NodeHeader {
+    pub unsafe fn child_ptr(&self, idx: u32) -> *mut *mut NodeHeader {
         unsafe { self.base.item_ptr::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
     }
 
@@ -368,6 +407,51 @@ impl<K, V> InterNode<K, V> {
     #[inline(always)]
     pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
         Self { base: NodeBase { header }, _phan: Default::default() }
+    }
+
+    /// Insert key-value at index (assuming there is space)
+    /// Uses copy_within pattern for efficient shifting
+    #[inline]
+    pub fn insert_no_split(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
+        debug_assert!(self.count() < Self::cap());
+        let _ = unsafe {
+            self.base.insert::<K, *mut NodeHeader>(
+                INTER_KEY_HEAD_SIZE,
+                AREA_SIZE + size_of::<*mut NodeHeader>(), // the left ptr should not be touch
+                idx,
+                key,
+                ptr,
+            )
+        };
+    }
+
+    #[inline]
+    pub fn remove_child(&mut self, key: &K)
+    where
+        K: Ord,
+    {
+        let (idx, is_equal) = self.search(key);
+        let count = self.count() as u32; // the count is equal to keys count, but value count should + 1
+        if !is_equal {
+            if idx != 0 {
+                panic!("imposible remove a child with key not in the node");
+            }
+            // remove the left child
+            unsafe {
+                self.base.remove_slot::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, 0, count)
+            };
+        } else {
+            unsafe {
+                let _key = self.base.remove_slot::<K>(INTER_KEY_HEAD_SIZE, idx, count);
+                // let the key drop
+                self.base.remove_slot::<*mut NodeHeader>(
+                    AREA_SIZE + INTER_PTR_HEAD_SIZE,
+                    idx + 1,
+                    count,
+                );
+            }
+        }
+        self.get_header_mut().count = count - 1;
     }
 }
 
@@ -506,34 +590,22 @@ impl<K, V> LeafNode<K, V> {
 
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
-    pub unsafe fn insert(&mut self, idx: u32, key: K, value: V) {
+    #[inline]
+    pub fn insert_no_split(&mut self, idx: u32, key: K, value: V) -> *mut V {
+        debug_assert!(self.count() < Self::cap());
         unsafe {
-            let count = self.count() as u32;
+            self.base.insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
+        }
+    }
 
-            // Only shift if not inserting at the end
-            if idx < count {
-                // Shift keys: copy [idx..count] to [idx+1..count+1]
-                let keys_ptr = self.key_ptr(0) as *mut K;
-                core::ptr::copy(
-                    keys_ptr.add(idx as usize),
-                    keys_ptr.add(idx as usize + 1),
-                    (count - idx) as usize,
-                );
-
-                // Shift values: copy [idx..count] to [idx+1..count+1]
-                let vals_ptr = self.value_ptr(0) as *mut V;
-                core::ptr::copy(
-                    vals_ptr.add(idx as usize),
-                    vals_ptr.add(idx as usize + 1),
-                    (count - idx) as usize,
-                );
-            }
-
-            // Write new key-value
-            (*self.key_ptr(idx)).write(key);
-            (*self.value_ptr(idx)).write(value);
-
-            self.get_header_mut().count += 1;
+    #[inline]
+    pub fn remove_no_borrow(&mut self, idx: u32) -> (K, V) {
+        let left = self.count() as u32 - 1;
+        unsafe {
+            let key = self.base.remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
+            let value = self.base.remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
+            self.get_header_mut().count = left;
+            (key, value)
         }
     }
 
@@ -644,7 +716,7 @@ mod tests {
             // Set up child pointers (just null for test)
             for i in 0..=3 {
                 let child_ptr = inter.child_ptr(i as u32);
-                *child_ptr = core::ptr::null_mut();
+                *child_ptr = ptr::null_mut();
             }
 
             inter.dealloc();
