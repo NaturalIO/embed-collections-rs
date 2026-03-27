@@ -74,11 +74,10 @@ impl<'a, K, V> Entry<'a, K, V> {
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// Get a reference to the key
     pub fn key(&self) -> &K {
-        todo!();
-        //unsafe {
-        //    let key_ptr = BTreeMap::<K, V>::leaf_key_ptr(self.node, self.idx);
-        //    (*key_ptr).assume_init_ref()
-        //}
+        unsafe {
+            let key_ptr = self.node.key_ptr(self.idx);
+            (*key_ptr).assume_init_ref()
+        }
     }
 
     /// Remove the key-value pair from the map and return the value
@@ -87,74 +86,69 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     }
 
     /// Remove the key-value pair from the map and return the key and value
-    pub fn remove_entry(self) -> (K, V) {
-        todo!();
-        //unsafe {
-        //    let key_ptr = BTreeMap::<K, V>::leaf_key_ptr(self.node, self.idx);
-        //    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(self.node, self.idx);
+    pub fn remove_entry(mut self) -> (K, V) {
+        unsafe {
+            let key_ptr = self.node.key_ptr(self.idx);
+            let val_ptr = self.node.value_ptr(self.idx);
 
-        //    let key = (*key_ptr).assume_init_read();
-        //    let val = (*val_ptr).assume_init_read();
+            let key = (*key_ptr).assume_init_read();
+            let val = (*val_ptr).assume_init_read();
 
-        //    // Shift remaining elements
-        //    let header = self.node.as_ref();
-        //    let count = header.count as usize;
-        //    for i in self.idx..count - 1 {
-        //        let src_key = BTreeMap::<K, V>::leaf_key_ptr(self.node, i + 1);
-        //        let dst_key = BTreeMap::<K, V>::leaf_key_ptr(self.node, i);
-        //        let k = (*src_key).assume_init_read();
-        //        (*dst_key).write(k);
+            // Shift remaining elements
+            let count = self.node.count() as u32;
+            for i in self.idx..count - 1 {
+                let src_key = self.node.key_ptr(i + 1);
+                let dst_key = self.node.key_ptr(i);
+                let k = (*src_key).assume_init_read();
+                (*dst_key).write(k);
 
-        //        let src_val = BTreeMap::<K, V>::leaf_value_ptr(self.node, i + 1);
-        //        let dst_val = BTreeMap::<K, V>::leaf_value_ptr(self.node, i);
-        //        let v = (*src_val).assume_init_read();
-        //        (*dst_val).write(v);
-        //    }
+                let src_val = self.node.value_ptr(i + 1);
+                let dst_val = self.node.value_ptr(i);
+                let v = (*src_val).assume_init_read();
+                (*dst_val).write(v);
+            }
 
-        //    (*self.node.as_ptr()).count -= 1;
-        //    self.map.len -= 1;
+            // Update count
+            self.node.get_header_mut().count -= 1;
+            self.map.len -= 1;
 
-        //    (key, val)
-        //}
+            (key, val)
+        }
     }
 
     /// Get a reference to the value
     pub fn get(&self) -> &V {
-        todo!();
-        //unsafe {
-        //    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(self.node, self.idx);
-        //    (*val_ptr).assume_init_ref()
-        //}
+        unsafe {
+            let val_ptr = self.node.value_ptr(self.idx);
+            (*val_ptr).assume_init_ref()
+        }
     }
 
     /// Get a mutable reference to the value
     pub fn get_mut(&mut self) -> &mut V {
-        todo!();
-        //unsafe {
-        //    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(self.node, self.idx);
-        //    (*val_ptr).assume_init_mut()
-        //}
+        unsafe {
+            let val_ptr = self.node.value_ptr(self.idx);
+            (*val_ptr).assume_init_mut()
+        }
     }
 
     /// Convert the OccupiedEntry into a mutable reference bounded by
     /// the map's lifetime
     pub fn into_mut(self) -> &'a mut V {
-        todo!();
-        //unsafe {
-        //    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(self.node, self.idx);
-        //    (*val_ptr).assume_init_mut()
-        //}
+        unsafe {
+            let val_ptr = self.node.value_ptr(self.idx);
+            (*val_ptr).assume_init_mut()
+        }
     }
 
     /// Insert a value into the map and return the old value
     pub fn insert(&mut self, value: V) -> V {
-        todo!();
-        //unsafe {
-        //    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(self.node, self.idx);
-        //    let old = (*val_ptr).assume_init_read();
-        //    (*val_ptr).write(value);
-        //    old
-        //}
+        unsafe {
+            let val_ptr = self.node.value_ptr(self.idx);
+            let old = (*val_ptr).assume_init_read();
+            (*val_ptr).write(value);
+            old
+        }
     }
 }
 
@@ -171,72 +165,62 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
 
     /// Insert a value into the map
     pub fn insert(self, value: V) -> &'a mut V {
-        todo!();
-        //        let key = self.key;
-        //        let map = self.map;
-        //
-        //        // Handle empty tree
-        //        if map.root.is_none() {
-        //            unsafe {
-        //                let leaf = BTreeMap::<K, V>::alloc_leaf();
-        //                map.root = Some(leaf);
-        //
-        //                let key_ptr = BTreeMap::<K, V>::leaf_key_ptr(leaf, 0);
-        //                let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(leaf, 0);
-        //                (*key_ptr).write(key);
-        //                (*val_ptr).write(value);
-        //                (*leaf.as_ptr()).count = 1;
-        //                map.len = 1;
-        //
-        //                return (*val_ptr).assume_init_mut();
-        //            }
-        //        }
-        //
-        //        // Find the leaf node where we should insert
-        //        let (node, idx) = map.find_leaf(&key).unwrap();
-        //
-        //        unsafe {
-        //            let header = node.as_ref();
-        //            let count = header.count as usize;
-        //
-        //            // Check if key already exists
-        //            if idx < count {
-        //                let key_ptr = BTreeMap::<K, V>::leaf_key_ptr(node, idx);
-        //                if (*key_ptr).assume_init_ref() == &key {
-        //                    // Key exists - replace value
-        //                    let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(node, idx);
-        //                    (*val_ptr).write(value);
-        //                    return (*val_ptr).assume_init_mut();
-        //                }
-        //            }
-        //
-        //            // Check if leaf has space (single node version - no split yet)
-        //            if count >= BTreeMap::<K, V>::leaf_capacity() {
-        //                panic!("BTreeMap: node capacity exceeded - split not yet implemented");
-        //            }
-        //
-        //            // Shift elements to make room
-        //            for i in (idx..count).rev() {
-        //                let src_key = BTreeMap::<K, V>::leaf_key_ptr(node, i);
-        //                let dst_key = BTreeMap::<K, V>::leaf_key_ptr(node, i + 1);
-        //                let k = (*src_key).assume_init_read();
-        //                (*dst_key).write(k);
-        //
-        //                let src_val = BTreeMap::<K, V>::leaf_value_ptr(node, i);
-        //                let dst_val = BTreeMap::<K, V>::leaf_value_ptr(node, i + 1);
-        //                let v = (*src_val).assume_init_read();
-        //                (*dst_val).write(v);
-        //            }
-        //
-        //            // Insert new key-value
-        //            let key_ptr = BTreeMap::<K, V>::leaf_key_ptr(node, idx);
-        //            let val_ptr = BTreeMap::<K, V>::leaf_value_ptr(node, idx);
-        //            (*key_ptr).write(key);
-        //            (*val_ptr).write(value);
-        //            (*node.as_ptr()).count += 1;
-        //            map.len += 1;
-        //
-        //            (*val_ptr).assume_init_mut()
-        //        }
+        let key = self.key;
+        let map = self.map;
+        let idx = self.idx;
+
+        // Handle empty tree
+        if map.root.is_none() {
+            unsafe {
+                let mut leaf = LeafNode::<K, V>::alloc();
+                map.root = Some(Node::Leaf(leaf.clone()));
+
+                let key_ptr = leaf.key_ptr(0);
+                let val_ptr = leaf.value_ptr(0);
+                (*key_ptr).write(key);
+                (*val_ptr).write(value);
+                leaf.get_header_mut().count = 1;
+                map.len = 1;
+
+                return (*val_ptr).assume_init_mut();
+            }
+        }
+
+        // Get the leaf node where we should insert
+        let mut leaf = self.node.expect("VacantEntry should have a node when root is not None");
+
+        unsafe {
+            let count = leaf.count() as u32;
+
+            // Check if leaf has space
+            if count < LeafNode::<K, V>::cap() as u32 {
+                // Shift elements to make room
+                for i in (idx..count).rev() {
+                    let src_key = leaf.key_ptr(i);
+                    let dst_key = leaf.key_ptr(i + 1);
+                    let k = (*src_key).assume_init_read();
+                    (*dst_key).write(k);
+
+                    let src_val = leaf.value_ptr(i);
+                    let dst_val = leaf.value_ptr(i + 1);
+                    let v = (*src_val).assume_init_read();
+                    (*dst_val).write(v);
+                }
+
+                // Insert new key-value
+                let key_ptr = leaf.key_ptr(idx);
+                let val_ptr = leaf.value_ptr(idx);
+                (*key_ptr).write(key);
+                (*val_ptr).write(value);
+                leaf.get_header_mut().count += 1;
+                map.len += 1;
+
+                return (*val_ptr).assume_init_mut();
+            }
+
+            // Leaf is full, need to split
+            // For now, panic as split is not yet implemented
+            panic!("BTreeMap: node capacity exceeded - split not yet implemented");
+        }
     }
 }

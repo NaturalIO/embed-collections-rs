@@ -126,7 +126,13 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
     /// Returns the old value if the key already existed
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         // use entry api to insert
-        todo!();
+        match self.entry(key) {
+            Entry::Occupied(mut entry) => Some(entry.insert(value)),
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+                None
+            }
+        }
     }
 
     /// Returns true if the map contains the key
@@ -209,7 +215,7 @@ mod tests {
     #[test]
     fn test_capacity() {
         // For i32 keys and values, we should fit several per node
-        let cap = <BTreeMap<i32, i32>>::leaf_capacity();
+        let cap = LeafNode::<i32, i32>::cap();
         assert!(cap >= 2);
     }
 

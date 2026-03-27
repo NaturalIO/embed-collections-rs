@@ -33,9 +33,9 @@ The Layout:
 #[repr(C)]
 pub(crate) struct NodeHeader {
     /// Height of the node (0 = leaf, >0 = internal)
-    height: u32,
+    pub(crate) height: u32,
     /// Count of items in the node
-    count: u32,
+    pub(crate) count: u32,
 }
 
 impl NodeHeader {
@@ -71,12 +71,12 @@ impl NodeBase {
     }
 
     #[inline(always)]
-    fn get_header(&self) -> &NodeHeader {
+    pub(crate) fn get_header(&self) -> &NodeHeader {
         unsafe { self.header.as_ref() }
     }
 
     #[inline(always)]
-    fn get_header_mut(&mut self) -> &mut NodeHeader {
+    pub(crate) fn get_header_mut(&mut self) -> &mut NodeHeader {
         unsafe { self.header.as_mut() }
     }
 
@@ -103,7 +103,7 @@ impl NodeBase {
 
     /// Get count of items in the node
     #[inline(always)]
-    fn count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.get_header().count as usize
     }
 
@@ -349,7 +349,7 @@ impl<K, V> InterNode<K, V> {
         }
     }
 
-    fn cap() -> usize {
+    pub(crate) fn cap() -> usize {
         Self::LAYOUT.0
     }
 }
@@ -454,13 +454,13 @@ impl<K, V> LeafNode<K, V> {
 
     /// Get pointer to key at index
     #[inline(always)]
-    unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
+    pub(crate) unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
         unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
-    pub unsafe fn value_ptr(&self, idx: u32) -> *mut MaybeUninit<V> {
+    pub(crate) unsafe fn value_ptr(&self, idx: u32) -> *mut MaybeUninit<V> {
         unsafe { self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx) }
     }
 
@@ -481,18 +481,19 @@ impl<K, V> LeafNode<K, V> {
         self.base.search::<K>(LEAF_HEAD_SIZE, key)
     }
 
-    fn cap() -> usize {
+    pub(crate) fn cap() -> usize {
         Self::LAYOUT.0
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn test_fill_node() {
-        assert_eq(LeafNode::<usize, usize>::cap(), 16);
-        assert_eq(InterNode::<usize, usize>::cap(), 15);
+        assert_eq!(LeafNode::<usize, usize>::cap(), 16);
+        assert_eq!(InterNode::<usize, usize>::cap(), 15);
     }
 }
