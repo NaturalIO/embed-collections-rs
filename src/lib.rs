@@ -149,6 +149,7 @@ pub mod slist;
 pub mod slist_owned;
 pub mod various;
 pub use various::Various;
+pub mod btree;
 
 /// Cache line size in bytes
 #[cfg(any(
