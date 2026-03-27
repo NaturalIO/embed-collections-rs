@@ -6,18 +6,17 @@
 //! - No parent pointers (path stored during descent)
 //! - Linear search within nodes, respecting cacheline boundaries
 
-use crate::CACHE_LINE_SIZE;
 use alloc::vec::Vec;
-use core::alloc::Layout;
-use core::mem::MaybeUninit;
-use core::ptr::{NonNull, null_mut};
+use core::cell::UnsafeCell;
 mod entry;
 pub use entry::*;
+mod node;
+use node::*;
 
 /// B+Tree Map for single-threaded use
 pub struct BTreeMap<K, V> {
     /// Root node (may be null for empty tree)
-    root: Option<BTreeRoot<K, V>>,
+    root: Option<Node<K, V>>,
     /// Number of elements in the tree
     len: usize,
     // use unsafe to avoid borrow problems
@@ -50,6 +49,7 @@ impl<K, V> BTreeMap<K, V> {
         unsafe {
             let cache = &mut *self.cache.get();
             cache.set_len(0);
+            cache
         }
     }
 }
@@ -62,7 +62,7 @@ impl<K, V> Default for BTreeMap<K, V> {
 
 impl<K, V> Drop for BTreeMap<K, V> {
     fn drop(&mut self) {
-        if let Some(root) = self.root {
+        if let Some(root) = &mut self.root {
             match root {
                 Node::Inter(node) => {
                     // recursive drop
@@ -79,27 +79,22 @@ impl<K, V> Drop for BTreeMap<K, V> {
 impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
     /// Returns an entry to the key in the map
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
-        match self.find_leaf(&key) {
-            Some((node, idx)) => {
-                unsafe {
-                    let header = node.as_ref();
-                    if idx < header.count as usize {
-                        let key_ptr = Self::leaf_key_ptr(node, idx);
-                        if (*key_ptr).assume_init_ref() == &key {
-                            // Key exists
-                            return Entry::Occupied(OccupiedEntry { map: self, node, idx });
-                        }
-                    }
-                    Entry::Vacant(VacantEntry { map: self, key })
-                }
-            }
-            None => Entry::Vacant(VacantEntry { map: self, key }),
+        let cache = self.get_cache();
+        let leaf = match &self.root {
+            None => return Entry::Vacant(VacantEntry { map: self, key, idx: 0, node: None }),
+            Some(root) => root.find_leaf_with_cache(cache, &key),
+        };
+        let (idx, is_equal) = leaf.search(&key);
+        if is_equal {
+            Entry::Occupied(OccupiedEntry { map: self, idx, node: leaf })
+        } else {
+            Entry::Vacant(VacantEntry { map: self, key, idx, node: Some(leaf) })
         }
     }
 
     /// Returns a reference to the value corresponding to the key
     pub fn get(&self, key: &K) -> Option<&V> {
-        let leaf = match self.root {
+        let leaf = match &self.root {
             None => return None,
             Some(root) => root.find_leaf(key),
         };
@@ -107,14 +102,14 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
         if is_equal {
             let value = unsafe { leaf.value_ptr(idx) };
             debug_assert!(!value.is_null());
-            return Some(unsafe { &*value });
+            return Some(unsafe { (*value).assume_init_ref() });
         }
         None
     }
 
     /// Returns a mutable reference to the value corresponding to the key
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        let leaf = match self.root {
+        let leaf = match &self.root {
             None => return None,
             Some(root) => root.find_leaf(key),
         };
@@ -122,7 +117,7 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
         if is_equal {
             let value = unsafe { leaf.value_ptr(idx) };
             debug_assert!(!value.is_null());
-            return Some(unsafe { &mut *value });
+            return Some(unsafe { (*value).assume_init_mut() });
         }
         None
     }
@@ -144,6 +139,7 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
     where
         K: Clone,
     {
+        //TODO fix it
         match self.entry(key.clone()) {
             Entry::Occupied(entry) => Some(entry.remove()),
             Entry::Vacant(_) => None,

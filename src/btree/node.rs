@@ -3,7 +3,7 @@ use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use alloc::vec::Vec;
 use core::alloc::Layout;
 use core::marker::PhantomData;
-use core::mem::{MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr::{NonNull, null_mut};
 
@@ -53,7 +53,7 @@ impl NodeHeader {
 
 /// Generic node wrapper
 #[derive(Clone)]
-struct NodeBase {
+pub(crate) struct NodeBase {
     header: NonNull<NodeHeader>,
 }
 
@@ -67,13 +67,6 @@ impl NodeBase {
             }
             let header = NonNull::new_unchecked(p as *mut NodeHeader);
             Self { header }
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn dealloc(&self) {
-        unsafe {
-            dealloc(self.header.as_ptr() as *mut u8, Self::LAYOUT);
         }
     }
 
@@ -96,8 +89,10 @@ impl NodeBase {
 
     /// Get pointer to key at index with given header offset
     #[inline(always)]
-    unsafe fn item_ptr<T>(&self, start_offset: usize, idx: usize) -> *mut T {
-        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx * size_of::<T>) }
+    unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *mut T {
+        unsafe {
+            NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * size_of::<T>())
+        }
     }
 
     /// Check if this is a leaf node
@@ -121,43 +116,45 @@ impl NodeBase {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline]
-    fn search<K>(header_offset: usize, key: &K) -> (u32, bool)
+    fn search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
         macro_rules! _search {
             ($start: expr, $end: expr) => {
-                let mut idx = $start;
+                let mut idx = $start as u32;
                 if $start < $end {
-                    let mut k = self.item_ptr::<K>($start);
+                    let mut k = self.item_ptr::<K>(header_offset, $start as u32);
                     loop {
-                        if (*k) == key {
-                            return (idx as u32, true);
-                        } else if (*k) > key {
+                        if *k == *key {
+                            return (idx, true);
+                        } else if (*k) > *key {
                             // insert to this pos, idx should move right
-                            return (idx as u32, false);
+                            return (idx, false);
                         }
                         idx += 1;
                         k = k.add(1);
-                        if idx == $end {
+                        if idx == $end as u32 {
                             break;
                         }
                     }
                     // NOTE: be aware to check idx == cap
                 }
-                return (idx as u32, false);
+                return (idx, false);
             };
         }
 
-        let count = self.count();
-        let first_line_bytes = CACHE_LINE_SIZE - header_offset;
-        let first_line_limit = (first_line_bytes / size_of::<K>());
-        if count > first_line_limit
-            && key > (*self.item_ptr::<K>(header_offset, first_line_limit - 1))
-        {
-            _search!(first_line_limit, count);
-        } else {
-            _search!(0, count);
+        unsafe {
+            let count = self.count();
+            let first_line_bytes = CACHE_LINE_SIZE - header_offset;
+            let first_line_limit = first_line_bytes / size_of::<K>();
+            if count > first_line_limit
+                && *key > (*self.item_ptr::<K>(header_offset, first_line_limit as u32 - 1))
+            {
+                _search!(first_line_limit, count);
+            } else {
+                _search!(0, count);
+            }
         }
     }
 }
@@ -170,19 +167,22 @@ pub(crate) enum Node<K, V> {
 impl<K: Ord, V> Node<K, V> {
     #[inline]
     pub fn find_leaf(&self, key: &K) -> LeafNode<K, V> {
-        let mut cur = self;
-        match cur {
-            Node::Leaf(node) => return Some(node.clone()),
+        match self {
+            Node::Leaf(node) => return node.clone(),
             Node::Inter(node) => {
-                let (idx, is_equal) = node.search(key);
-                if is_equal {
-                    if node.height() == 1 {
-                        return node.get_child_as_leaf(idx);
+                let mut cur = node.clone();
+                loop {
+                    let (idx, is_equal) = cur.search(key);
+                    if is_equal {
+                        if node.height() == 1 {
+                            return node.get_child_as_leaf(idx);
+                        } else {
+                            cur = node.get_child_as_inter(idx);
+                        }
                     } else {
-                        cur = node.get_child_as_inter(idx);
+                        // there must be a leaf for this
+                        cur = node.get_child_as_inter(idx)
                     }
-                } else {
-                    cur = node.get_child_as_inter(idx)
                 }
             }
         }
@@ -192,20 +192,23 @@ impl<K: Ord, V> Node<K, V> {
     pub fn find_leaf_with_cache(
         &self, cache: &mut Vec<InterNode<K, V>>, key: &K,
     ) -> LeafNode<K, V> {
-        let mut cur = self;
-        match cur {
-            Node::Leaf(node) => return Some(node.clone()),
+        match &self {
+            Node::Leaf(node) => return node.clone(),
             Node::Inter(node) => {
-                let (idx, is_equal) = node.search(key);
-                if is_equal {
-                    if node.height() == 1 {
-                        return node.get_child_as_leaf(idx);
+                let mut cur = node.clone();
+                loop {
+                    let (idx, is_equal) = cur.search(key);
+                    if is_equal {
+                        if node.height() == 1 {
+                            return node.get_child_as_leaf(idx);
+                        } else {
+                            cache.push(node.clone());
+                            cur = node.get_child_as_inter(idx);
+                        }
                     } else {
-                        cur = node.get_child_as_inter(idx);
-                        cache.push(node.clone());
+                        // there must be a leaf for this
+                        cur = node.get_child_as_inter(idx)
                     }
-                } else {
-                    cur = node.get_child_as_inter(idx)
                 }
             }
         }
@@ -220,14 +223,20 @@ struct LeafPtrs {
 }
 
 /// Internal node wrapper - wraps Node and provides internal node-specific operations
-#[derive(Clone)]
 pub(crate) struct InterNode<K, V> {
     base: NodeBase,
     _phan: PhantomData<fn(&K, &V)>,
 }
 
+impl<K, V> Clone for InterNode<K, V> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self { base: self.base.clone(), _phan: Default::default() }
+    }
+}
+
 impl<K, V> Deref for InterNode<K, V> {
-    type Target = Node<K, V>;
+    type Target = NodeBase;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -270,23 +279,23 @@ impl<K, V> InterNode<K, V> {
 
     #[inline(always)]
     pub unsafe fn alloc(height: u32) -> Self {
-        let mut node = unsafe { Node::alloc(Self::LAYOUT[1]) };
-        let header = node.get_header_mut();
+        let mut base = NodeBase::alloc(Self::LAYOUT.1);
+        let header = base.get_header_mut();
         header.height = height; // Internal nodes have height > 0
         header.count = 0;
-        Self(node)
+        Self { base, _phan: Default::default() }
     }
 
     #[inline(always)]
-    pub unsafe fn dealloc(self) {
+    pub unsafe fn dealloc(&mut self) {
         unsafe {
             if needs_drop::<K>() {
                 let count = self.count();
-                for i in 0..count {
+                for i in 0..count as u32 {
                     (*self.key_ptr(i)).assume_init_drop();
                 }
             }
-            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT);
+            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
         }
     }
 
@@ -298,62 +307,67 @@ impl<K, V> InterNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    fn search(key: &K) -> (usize, bool)
+    fn search(&self, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
-        self.base.search::<K>(INTER_KEY_HEAD_SIZE)
+        self.base.search::<K>(INTER_KEY_HEAD_SIZE, key)
     }
 
     /// Get pointer to key at index
     #[inline(always)]
-    unsafe fn key_ptr(&self, idx: usize) -> *mut MaybeUninit<K> {
-        self.base.item_ptr::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx)
+    pub unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
+        unsafe { self.base.item_ptr::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
-    unsafe fn child_ptr(&self, idx: usize) -> *mut MaybeUninit<*mut NodeHeader> {
-        self.base.item_ptr::<MaybeUninit<*mut NodeHeader>>(AREA_SIZE, idx)
+    unsafe fn child_ptr(&self, idx: u32) -> *mut NodeHeader {
+        unsafe { self.base.item_ptr::<NodeHeader>(AREA_SIZE, idx) }
     }
 
     #[inline]
-    fn get_child_as_leaf(&self) -> LeafNode<K, V> {
-        let child_ptr = unsafe { &*self.child_ptr(idx) };
+    fn get_child_as_leaf(&self, idx: u32) -> LeafNode<K, V> {
+        let child_ptr = unsafe { self.child_ptr(idx) };
         if child_ptr.is_null() {
             panic!("child is null");
         } else {
-            let base = NodeBase { header: NonNull::new_unchecked(child_ptr) };
-            LeafNode::<K, V> { base: Node::Leaf(base), _phan: Default::default() }
+            let base = NodeBase { header: unsafe { NonNull::new_unchecked(child_ptr) } };
+            LeafNode::<K, V> { base, _phan: Default::default() }
         }
     }
 
     /// Get child at index as a Node
     #[inline(always)]
-    fn get_child_as_inter(&self, idx: usize) -> InterNode<K, V> {
-        let child_ptr = unsafe { &*self.child_ptr(idx) };
+    fn get_child_as_inter(&self, idx: u32) -> InterNode<K, V> {
+        let child_ptr = unsafe { self.child_ptr(idx) };
         if child_ptr.is_null() {
             panic!("child is null");
         } else {
-            let base = NodeBase { header: NonNull::new_unchecked(child_ptr) };
-            Self { base: Node::Inter(base), _phan: Default::default() }
+            let base = NodeBase { header: unsafe { NonNull::new_unchecked(child_ptr) } };
+            Self { base, _phan: Default::default() }
         }
     }
 
     fn cap() -> usize {
-        Self::LAYOUT[0]
+        Self::LAYOUT.0
     }
 }
 
 /// Leaf node wrapper - wraps Node and provides leaf-specific operations
-#[derive(Clone)]
 pub(crate) struct LeafNode<K, V> {
     base: NodeBase,
     _phan: PhantomData<fn(&K, &V)>,
 }
+impl<K, V> Clone for LeafNode<K, V> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self { base: self.base.clone(), _phan: Default::default() }
+    }
+}
 
 impl<K, V> Deref for LeafNode<K, V> {
-    type Target = Node<K, V>;
+    type Target = NodeBase;
 
     fn deref(&self) -> &Self::Target {
         &self.base
@@ -396,79 +410,79 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline(always)]
     pub unsafe fn alloc() -> Self {
-        let mut node = Node::alloc(Self::LAYOUT[1]);
-        let header = node.get_header_mut();
+        let mut base = NodeBase::alloc(Self::LAYOUT.1);
+        let header = base.get_header_mut();
         header.height = 0; // Leaf nodes have height 0
         header.count = 0;
         // Initialize leaf pointers
         let ptrs =
-            unsafe { NodeHeader::get_field::<LeafPtrs>(node.header, AREA_SIZE) as *mut LeafPtrs };
+            unsafe { NodeHeader::get_field::<LeafPtrs>(base.header, AREA_SIZE) as *mut LeafPtrs };
         unsafe {
             (*ptrs).prev = null_mut();
             (*ptrs).next = null_mut();
         }
-        Self { node, _phan: Default::default() }
+        Self { base, _phan: Default::default() }
     }
 
     #[inline(always)]
-    pub unsafe fn dealloc(self) {
+    pub unsafe fn dealloc(&mut self) {
         let count = self.count();
         unsafe {
             if needs_drop::<K>() {
-                for i in 0..count {
+                for i in 0..count as u32 {
                     (*self.key_ptr(i)).assume_init_drop();
                 }
             }
             if needs_drop::<V>() {
-                for i in 0..count {
+                for i in 0..count as u32 {
                     (*self.value_ptr(i)).assume_init_drop();
                 }
             }
-            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT);
+            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
         }
     }
 
     #[inline(always)]
     fn get_keys(&self) -> &[K] {
-        self.get_array::<K>(LEAF_HEAD_SIZE, 0)
+        self.base.get_array::<K>(LEAF_HEAD_SIZE, 0)
     }
 
     #[inline(always)]
     fn get_values(&self) -> &[V] {
-        self.get_array::<V>(AREA_SIZE + LEAF_HEAD_SIZE, 0)
+        self.base.get_array::<V>(AREA_SIZE + LEAF_HEAD_SIZE, 0)
     }
 
     /// Get pointer to key at index
     #[inline(always)]
-    unsafe fn key_ptr(&self, idx: usize) -> *mut MaybeUninit<K> {
-        self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx)
+    unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
+        unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
-    unsafe fn value_ptr(&self, idx: usize) -> *mut MaybeUninit<V> {
-        self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx)
+    pub unsafe fn value_ptr(&self, idx: u32) -> *mut MaybeUninit<V> {
+        unsafe { self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to LeafPtrs
     #[inline(always)]
     unsafe fn brothers(&self) -> *mut LeafPtrs {
         let base = self.header.as_ptr() as *mut u8;
-        base.add(AREA_SIZE) as *mut LeafPtrs
+        unsafe { base.add(AREA_SIZE) as *mut LeafPtrs }
     }
 
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search(key: &K) -> (usize, bool)
+    pub fn search(&self, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
-        self.base.search::<K>(LEAF_HEAD_SIZE)
+        self.base.search::<K>(LEAF_HEAD_SIZE, key)
     }
 
     fn cap() -> usize {
-        Self::LAYOUT[0]
+        Self::LAYOUT.0
     }
 }
 
