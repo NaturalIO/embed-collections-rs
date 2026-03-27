@@ -81,6 +81,11 @@ impl NodeBase {
     }
 
     #[inline(always)]
+    pub(crate) fn header(&self) -> NonNull<NodeHeader> {
+        self.header
+    }
+
+    #[inline(always)]
     fn get_array<T>(&self, header_size: usize, delta: usize) -> &[T] {
         let header = self.get_header();
         let items_ptr = unsafe { NodeHeader::get_field::<T>(self.header, header_size) };
@@ -109,7 +114,7 @@ impl NodeBase {
 
     /// Get height of the node
     #[inline(always)]
-    fn height(&self) -> u32 {
+    pub(crate) fn height(&self) -> u32 {
         self.get_header().height
     }
 
@@ -217,9 +222,9 @@ impl<K: Ord, V> Node<K, V> {
 
 /// Leaf node prev/next pointers
 #[repr(C)]
-struct LeafPtrs {
-    prev: *mut NodeHeader,
-    next: *mut NodeHeader,
+pub(crate) struct LeafPtrs {
+    pub(crate) prev: *mut NodeHeader,
+    pub(crate) next: *mut NodeHeader,
 }
 
 /// Internal node wrapper - wraps Node and provides internal node-specific operations
@@ -322,7 +327,7 @@ impl<K, V> InterNode<K, V> {
 
     /// Get pointer to child at index
     #[inline(always)]
-    unsafe fn child_ptr(&self, idx: u32) -> *mut *mut NodeHeader {
+    pub(crate) unsafe fn child_ptr(&self, idx: u32) -> *mut *mut NodeHeader {
         unsafe { self.base.item_ptr::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
     }
 
@@ -472,9 +477,15 @@ impl<K, V> LeafNode<K, V> {
 
     /// Get pointer to LeafPtrs
     #[inline(always)]
-    unsafe fn brothers(&self) -> *mut LeafPtrs {
+    pub(crate) unsafe fn brothers(&self) -> *mut LeafPtrs {
         let base = self.header.as_ptr() as *mut u8;
         unsafe { base.add(AREA_SIZE) as *mut LeafPtrs }
+    }
+
+    /// Create LeafNode from header pointer
+    #[inline(always)]
+    pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
+        Self { base: NodeBase { header }, _phan: Default::default() }
     }
 
     /// search the position to insert
