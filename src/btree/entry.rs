@@ -219,8 +219,7 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
             }
 
             // Leaf is full, need to split
-            // For now, panic as split is not yet implemented
-            panic!("BTreeMap: node capacity exceeded - split not yet implemented");
+            map.insert_with_split(key, value, leaf, idx)
         }
     }
 }
