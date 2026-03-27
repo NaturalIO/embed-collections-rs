@@ -372,46 +372,6 @@ impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
 
 // Merge and underflow handling
 impl<K: Ord + Sized, V: Sized> BTreeMap<K, V> {
-    /// Find parent of a leaf node
-    pub(crate) fn find_parent_of_leaf(&self, leaf: &LeafNode<K, V>) -> Option<InterNode<K, V>> {
-        match &self.root {
-            None => None,
-            Some(Node::Leaf(_)) => None, // Leaf is root, no parent
-            Some(Node::Inter(root)) => {
-                let mut current = root.clone();
-                loop {
-                    // Check if any child is the target leaf
-                    let count = current.count() as u32;
-                    for i in 0..=count {
-                        let child_ptr = unsafe { *current.child_ptr(i) };
-                        if child_ptr == leaf.header().as_ptr() {
-                            return Some(current);
-                        }
-                    }
-                    // Not found, go deeper
-                    let mut found = false;
-                    for i in 0..=count {
-                        let child_ptr = unsafe { *current.child_ptr(i) };
-                        if !child_ptr.is_null() {
-                            let child_header = unsafe { &*child_ptr };
-                            if child_header.height > 0 {
-                                // This is an internal node, check if leaf is in its subtree
-                                current = unsafe {
-                                    InterNode::from_header(NonNull::new_unchecked(child_ptr))
-                                };
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if !found {
-                        return None;
-                    }
-                }
-            }
-        }
-    }
-
     /// Handle leaf node underflow by borrowing from or merging with sibling
     pub(crate) unsafe fn handle_leaf_underflow(
         &mut self, parent: InterNode<K, V>, leaf: &mut LeafNode<K, V>,
