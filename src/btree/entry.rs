@@ -123,9 +123,7 @@ impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
                     let _leaf = root.find_leaf_with_cache(cache, &key);
                     if !cache.is_empty() {
                         let parent = cache[cache.len() - 1].clone();
-                        unsafe {
-                            self.map.handle_leaf_underflow(parent, &mut self.node);
-                        }
+                        self.map.handle_leaf_underflow(parent, &mut self.node);
                     }
                 }
             }
@@ -159,7 +157,7 @@ impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
         }
     }
 
-    /// Insert a value into the map and return the old value
+    /// replace a value into the map and return the old value
     pub fn insert(&mut self, value: V) -> V {
         unsafe {
             let val_ptr = self.node.value_ptr(self.idx);
@@ -183,42 +181,27 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
 
     /// Insert a value into the map
     pub fn insert(self, value: V) -> &'a mut V {
-        let key = self.key;
-        let map = self.map;
-        let idx = self.idx;
-
-        // Handle empty tree
+        let (key, map, idx) = (self.key, self.map, self.idx);
         if map.root.is_none() {
             unsafe {
+                // empty tree
                 let mut leaf = LeafNode::<K, V>::alloc();
                 map.root = Some(Node::Leaf(leaf.clone()));
-
-                let key_ptr = leaf.key_ptr(0);
-                let val_ptr = leaf.value_ptr(0);
-                (*key_ptr).write(key);
-                (*val_ptr).write(value);
-                leaf.get_header_mut().count = 1;
                 map.len = 1;
-
-                return (*val_ptr).assume_init_mut();
+                return &mut *leaf.insert_no_split(0, key, value);
             }
         }
-
         // Get the leaf node where we should insert
         let mut leaf = self.node.expect("VacantEntry should have a node when root is not None");
-
-        unsafe {
-            let count = leaf.count() as u32;
-
-            // Check if leaf has space
-            if count < LeafNode::<K, V>::cap() as u32 {
-                leaf.insert(idx, key, value);
-                map.len += 1;
-                return unsafe { (*leaf.value_ptr(idx)).assume_init_mut() };
-            }
-
+        let count = leaf.count() as u32;
+        // Check if leaf has space
+        let value_p = if count < LeafNode::<K, V>::cap() as u32 {
+            map.len += 1;
+            leaf.insert_no_split(idx, key, value)
+        } else {
             // Leaf is full, need to split
             map.insert_with_split(key, value, leaf, idx)
-        }
+        };
+        unsafe { &mut *value_p }
     }
 }
