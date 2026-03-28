@@ -242,14 +242,28 @@ impl<K, V> LeafNode<K, V> {
 
     /// If append == true, move the items to the tail,
     /// If append == false, prepend to items to the front.
-    pub fn move_right(
-        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32, append: bool,
+    #[inline(always)]
+    pub fn move_right<const APPEND: bool>(
+        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32,
+    ) {
+        self.copy_right::<APPEND>(right_node, start_idx, move_count);
+        self.get_header_mut().count -= move_count;
+    }
+
+    /// If append == true, move the items to the tail,
+    /// If append == false, prepend to items to the front.
+    ///
+    /// # Safety
+    ///
+    /// It does not change the count of current node
+    #[inline]
+    pub fn copy_right<const APPEND: bool>(
+        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32,
     ) {
         debug_assert!(start_idx + move_count <= self.count() as u32);
         debug_assert!(right_node.count() + move_count as usize <= Self::cap());
-
         unsafe {
-            if append {
+            if APPEND {
                 // Append to tail of right_node
                 let right_count = right_node.count() as u32;
 
@@ -286,9 +300,6 @@ impl<K, V> LeafNode<K, V> {
                 let dst_val = right_node.value_ptr(0);
                 ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
             }
-
-            // Update counts
-            self.get_header_mut().count -= move_count;
             right_node.get_header_mut().count += move_count;
         }
     }
@@ -310,22 +321,22 @@ impl<K, V> LeafNode<K, V> {
             let insert_left = split_idx >= idx;
             let total_copy = count - split_idx;
             if insert_left {
-                self.move_right(&mut new_leaf, split_idx, total_copy, true);
+                self.move_right::<true>(&mut new_leaf, split_idx, total_copy);
                 let ptr_v = self.insert_no_split_with_idx(idx, key, value);
                 return (new_leaf, ptr_v);
             } else {
                 debug_assert!(idx > split_idx);
                 let first_copy = idx - split_idx;
-                self.move_right(&mut new_leaf, split_idx, first_copy, true);
+                self.copy_right::<true>(&mut new_leaf, split_idx, first_copy);
                 let ptr_v = new_leaf.insert_no_split_with_idx(first_copy, key, value);
                 if total_copy > first_copy {
-                    self.move_right(
+                    self.copy_right::<true>(
                         &mut new_leaf,
                         split_idx + first_copy,
                         total_copy - first_copy,
-                        true,
                     );
                 }
+                self.get_header_mut().count = split_idx;
                 return (new_leaf, ptr_v);
             }
         } else {
