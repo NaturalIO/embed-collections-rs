@@ -883,6 +883,7 @@ impl<K, V> LeafNode<K, V> {
                 (*new_leaf.brothers()).next = right.get_ptr();
             }
             (*new_leaf.brothers()).prev = self.get_ptr();
+            (*self.brothers()).next = new_leaf.get_ptr();
         }
         if idx < count {
             let split_idx = count >> 1;
@@ -1083,6 +1084,103 @@ mod tests {
 
             leaf1.dealloc();
             leaf2.dealloc();
+        }
+    }
+
+    #[test]
+    fn test_leaf_node_split() {
+        unsafe {
+            // Create a leaf node and fill it to capacity
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill the leaf with keys 0..cap
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write(i as i32);
+                (*val_ptr).write((i * 10) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            // Verify the leaf is full
+            assert!(leaf.is_full().is_ok());
+            assert_eq!(leaf.count(), cap);
+
+            // Test 1: Insert at split_idx (new key should go to left node)
+            let split_idx = (cap >> 1) as u32;
+            let old_key_at_split = (*leaf.key_ptr(split_idx)).assume_init_ref().clone();
+            let new_key = old_key_at_split - 1; // New key is smaller than old key at split_idx
+            let new_value = new_key * 10;
+
+            let (mut new_leaf, _ptr_v) = leaf.insert_with_split(split_idx, new_key, new_value);
+
+            // Verify the split - new key should be in left node at split_idx
+            let left_count = leaf.count();
+            let right_count = new_leaf.count();
+
+            assert!(left_count > 0);
+            assert!(right_count > 0);
+            assert_eq!(left_count + right_count, cap + 1);
+
+            // Verify new key is in left node at split_idx
+            let found_key = (*leaf.key_ptr(split_idx)).assume_init_ref();
+            let found_value = (*leaf.value_ptr(split_idx)).assume_init_ref();
+            assert_eq!(*found_key, new_key);
+            assert_eq!(*found_value, new_value);
+
+            // Verify old key at split_idx was moved to right node
+            let old_key_in_right = (*new_leaf.key_ptr(0)).assume_init_ref();
+            assert_eq!(*old_key_in_right, old_key_at_split);
+
+            // Verify sibling pointers
+            assert_eq!((*leaf.brothers()).next, new_leaf.get_ptr());
+            assert_eq!((*new_leaf.brothers()).prev, leaf.get_ptr());
+            assert!((*leaf.brothers()).prev.is_null());
+            assert!((*new_leaf.brothers()).next.is_null());
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
+        }
+    }
+
+    #[test]
+    fn test_leaf_node_split_at_split_idx_with_search() {
+        unsafe {
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill with keys 0, 2, 4, 6, ... (even numbers)
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write((i * 2) as i32);
+                (*val_ptr).write((i * 20) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            let split_idx = (cap >> 1) as u32;
+            let old_key_at_split = (*leaf.key_ptr(split_idx)).assume_init_ref().clone();
+
+            // Insert an odd key that should be placed at split_idx
+            let new_key = old_key_at_split - 1;
+            let (search_idx, is_equal) = leaf.search(&new_key);
+
+            // Verify search returns correct position
+            assert!(!is_equal);
+            assert_eq!(search_idx, split_idx);
+
+            // Now perform the split
+            let (mut new_leaf, _ptr_v) = leaf.insert_with_split(search_idx, new_key, new_key * 10);
+
+            // Verify new key is at split_idx in left node
+            let found_key = (*leaf.key_ptr(split_idx)).assume_init_ref();
+            assert_eq!(*found_key, new_key);
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
         }
     }
 }
