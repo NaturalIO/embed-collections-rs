@@ -352,7 +352,7 @@ impl<K, V> InterNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    fn search(&self, key: &K) -> (u32, bool)
+    pub(crate) fn search(&self, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
@@ -424,6 +424,147 @@ impl<K, V> InterNode<K, V> {
                 ptr,
             )
         };
+    }
+
+    /// Move items to the tail of left_node
+    pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
+        debug_assert!(start_idx + move_count <= self.count() as u32);
+        debug_assert!(left_node.count() + move_count as usize <= Self::cap());
+
+        unsafe {
+            let left_count = left_node.count() as u32;
+
+            // Move keys using bulk copy
+            let src_key = self.key_ptr(start_idx);
+            let dst_key = left_node.key_ptr(left_count);
+            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+            // Move children using bulk copy (need move_count + 1 children)
+            let src_child = self.child_ptr(start_idx);
+            let dst_child = left_node.child_ptr(left_count);
+            ptr::copy_nonoverlapping(src_child, dst_child, (move_count + 1) as usize);
+
+            // Update counts
+            self.get_header_mut().count -= move_count;
+            left_node.get_header_mut().count += move_count;
+        }
+    }
+
+    /// If append == true, move the items to the tail,
+    /// If append == false, prepend to items to the front.
+    pub fn move_right(
+        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32, append: bool,
+    ) {
+        debug_assert!(start_idx + move_count <= self.count() as u32);
+        debug_assert!(right_node.count() + move_count as usize <= Self::cap());
+
+        unsafe {
+            if append {
+                // Append to tail of right_node
+                let right_count = right_node.count() as u32;
+
+                // Move keys using bulk copy
+                let src_key = self.key_ptr(start_idx);
+                let dst_key = right_node.key_ptr(right_count);
+                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+                // Move children using bulk copy (need move_count + 1 children)
+                let src_child = self.child_ptr(start_idx);
+                let dst_child = right_node.child_ptr(right_count);
+                ptr::copy_nonoverlapping(src_child, dst_child, (move_count + 1) as usize);
+            } else {
+                // Prepend to head of right_node
+                let right_count = right_node.count() as u32;
+
+                // Shift existing elements in right_node to make space
+                if right_count > 0 {
+                    let src_key = right_node.key_ptr(0);
+                    let dst_key = right_node.key_ptr(move_count);
+                    ptr::copy(src_key, dst_key, right_count as usize);
+
+                    let src_child = right_node.child_ptr(0);
+                    let dst_child = right_node.child_ptr(move_count);
+                    ptr::copy(src_child, dst_child, (right_count + 1) as usize);
+                }
+
+                // Move new elements to the front
+                let src_key = self.key_ptr(start_idx);
+                let dst_key = right_node.key_ptr(0);
+                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+                let src_child = self.child_ptr(start_idx);
+                let dst_child = right_node.child_ptr(0);
+                ptr::copy_nonoverlapping(src_child, dst_child, (move_count + 1) as usize);
+            }
+
+            // Update counts
+            self.get_header_mut().count -= move_count;
+            right_node.get_header_mut().count += move_count;
+        }
+    }
+
+    /// Split internal node when inserting at idx with key and child pointer
+    /// Returns (new_right_node, promote_key)
+    pub fn split(&mut self, idx: u32, key: K, child_ptr: *mut NodeHeader) -> (Self, K) {
+        let count = self.count() as u32;
+        let split_idx = count >> 1;
+        let mut new_node = unsafe { InterNode::<K, V>::alloc(self.height()) };
+
+        unsafe {
+            // Determine which side the insertion should go
+            let insert_left = idx <= split_idx;
+
+            if insert_left {
+                // Split point is to the right of insertion
+                // Move right half (including split_idx) to new node
+                let right_count = count - split_idx;
+                self.move_right(&mut new_node, split_idx, right_count, true);
+
+                // Extract the promote key (first key of new_node)
+                let promote_key_ptr = new_node.key_ptr(0);
+                let promote_key = (*promote_key_ptr).assume_init_read();
+
+                // Remove the promote key from new_node (shift left)
+                for i in 0..(right_count - 1) {
+                    let src_key = new_node.key_ptr(i + 1);
+                    let dst_key = new_node.key_ptr(i);
+                    let k = (*src_key).assume_init_read();
+                    (*dst_key).write(k);
+                }
+                new_node.get_header_mut().count -= 1;
+
+                // Insert the new key and child into left node
+                self.insert_no_split(idx, key, child_ptr);
+
+                (new_node, promote_key)
+            } else {
+                // Split point is to the left of insertion
+                // Move right half (after split_idx) to new node, excluding split_idx
+                let right_count = count - split_idx - 1;
+                if right_count > 0 {
+                    self.move_right(&mut new_node, split_idx + 1, right_count, true);
+                }
+
+                // Extract the promote key (key at split_idx)
+                let promote_key_ptr = self.key_ptr(split_idx);
+                let promote_key = (*promote_key_ptr).assume_init_read();
+
+                // Remove the promote key from left node (shift left)
+                for i in split_idx..(count - 1) {
+                    let src_key = self.key_ptr(i + 1);
+                    let dst_key = self.key_ptr(i);
+                    let k = (*src_key).assume_init_read();
+                    (*dst_key).write(k);
+                }
+                self.get_header_mut().count -= 1;
+
+                // Insert the new key and child into right node
+                let insert_pos = idx - split_idx - 1;
+                new_node.insert_no_split(insert_pos, key, child_ptr);
+
+                (new_node, promote_key)
+            }
+        }
     }
 
     #[inline]
@@ -658,9 +799,26 @@ impl<K, V> LeafNode<K, V> {
 
     /// move items to the tail of left_node
     pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
-        todo!();
-        self.get_header_mut().count -= move_count;
-        left_node.get_header_mut().count += move_count;
+        debug_assert!(start_idx + move_count <= self.count() as u32);
+        debug_assert!(left_node.count() + move_count as usize <= Self::cap());
+
+        unsafe {
+            let left_count = left_node.count() as u32;
+
+            // Move keys using bulk copy
+            let src_key = self.key_ptr(start_idx);
+            let dst_key = left_node.key_ptr(left_count);
+            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+            // Move values using bulk copy
+            let src_val = self.value_ptr(start_idx);
+            let dst_val = left_node.value_ptr(left_count);
+            ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+
+            // Update counts
+            self.get_header_mut().count -= move_count;
+            left_node.get_header_mut().count += move_count;
+        }
     }
 
     /// If append == true, move the items to the tail,
@@ -668,9 +826,52 @@ impl<K, V> LeafNode<K, V> {
     pub fn move_right(
         &mut self, right_node: &mut Self, start_idx: u32, move_count: u32, append: bool,
     ) {
-        todo!();
-        self.get_header_mut().count -= move_count;
-        right_node.get_header_mut().count += move_count;
+        debug_assert!(start_idx + move_count <= self.count() as u32);
+        debug_assert!(right_node.count() + move_count as usize <= Self::cap());
+
+        unsafe {
+            if append {
+                // Append to tail of right_node
+                let right_count = right_node.count() as u32;
+
+                // Move keys using bulk copy
+                let src_key = self.key_ptr(start_idx);
+                let dst_key = right_node.key_ptr(right_count);
+                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+                // Move values using bulk copy
+                let src_val = self.value_ptr(start_idx);
+                let dst_val = right_node.value_ptr(right_count);
+                ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+            } else {
+                // Prepend to head of right_node
+                let right_count = right_node.count() as u32;
+
+                // Shift existing elements in right_node to make space
+                if right_count > 0 {
+                    let src_key = right_node.key_ptr(0);
+                    let dst_key = right_node.key_ptr(move_count);
+                    ptr::copy(src_key, dst_key, right_count as usize);
+
+                    let src_val = right_node.value_ptr(0);
+                    let dst_val = right_node.value_ptr(move_count);
+                    ptr::copy(src_val, dst_val, right_count as usize);
+                }
+
+                // Move new elements to the front
+                let src_key = self.key_ptr(start_idx);
+                let dst_key = right_node.key_ptr(0);
+                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+
+                let src_val = self.value_ptr(start_idx);
+                let dst_val = right_node.value_ptr(0);
+                ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+            }
+
+            // Update counts
+            self.get_header_mut().count -= move_count;
+            right_node.get_header_mut().count += move_count;
+        }
     }
 
     pub fn insert_with_split(&mut self, idx: u32, key: K, value: V) -> (Self, *mut V) {
@@ -689,14 +890,14 @@ impl<K, V> LeafNode<K, V> {
             let insert_left = split_idx >= idx;
             let total_copy = count - split_idx;
             if insert_left {
-                self.move_right(&mut new_leaf, total_copy, true);
+                self.move_right(&mut new_leaf, split_idx, total_copy, true);
                 let ptr_v = self.insert_no_split_with_idx(idx, key, value);
                 return (new_leaf, ptr_v);
             } else {
                 debug_assert!(idx > split_idx);
                 let first_copy = idx - split_idx;
                 self.move_right(&mut new_leaf, split_idx, first_copy, true);
-                let ptr_v = new_leaf.insert_no_split_with_idx(idx - split_idx, key, value);
+                let ptr_v = new_leaf.insert_no_split_with_idx(first_copy, key, value);
                 if total_copy > first_copy {
                     self.move_right(
                         &mut new_leaf,
