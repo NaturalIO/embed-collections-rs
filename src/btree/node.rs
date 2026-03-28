@@ -1,5 +1,5 @@
 use super::{inter::*, leaf::*};
-use crate::CACHE_LINE_SIZE;
+use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
 use alloc::vec::Vec;
 use core::ptr::{self, NonNull, null_mut};
@@ -206,11 +206,10 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let (idx, is_equal) = cur.search(key);
-                    let child_idx = if is_equal { idx + 1 } else { idx };
                     if cur.is_leaf() {
-                        return cur.get_child_as_leaf(child_idx);
+                        return cur.get_child_as_leaf(idx);
                     } else {
-                        cur = cur.get_child_as_inter(child_idx);
+                        cur = cur.get_child_as_inter(idx);
                     }
                 }
             }
@@ -227,15 +226,113 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let (idx, is_equal) = cur.search(key);
-                    let child_idx = if is_equal { idx + 1 } else { idx };
                     if cur.is_leaf() {
                         cache.push((cur.clone(), idx));
-                        return cur.get_child_as_leaf(child_idx);
+                        return cur.get_child_as_leaf(idx);
                     } else {
                         cache.push((cur.clone(), idx));
-                        cur = cur.get_child_as_inter(child_idx);
+                        cur = cur.get_child_as_inter(idx);
                     }
                 }
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+#[repr(u8)]
+enum PathState {
+    Current,
+    Left,
+    Right,
+    Stale,
+}
+
+pub(super) struct PathCache<K, V> {
+    state: PathState,
+    depth: u32,
+    inner: Various<(InterNode<K, V>, u32)>,
+}
+
+impl<K, V> PathCache<K, V> {
+    #[inline]
+    pub fn new() -> Self {
+        Self { inner: Various::new(), state: PathState::Current, depth: 0 }
+    }
+
+    #[inline]
+    pub fn move_left(&mut self) {
+        let state = match self.state {
+            PathState::Current => PathState::Right,
+            PathState::Left => PathState::Current,
+            _ => {
+                let _ = self.inner.take();
+                PathState::Stale
+            }
+        };
+        self.state = state;
+    }
+
+    #[inline]
+    pub fn move_right(&mut self) {
+        let state = match self.state {
+            PathState::Current => PathState::Left,
+            PathState::Right => PathState::Current,
+            _ => {
+                let _ = self.inner.take();
+                PathState::Stale
+            }
+        };
+        self.state = state;
+    }
+
+    #[inline(always)]
+    pub fn push(&mut self, inter: InterNode<K, V>, idx: u32) {
+        self.inner.push((inter, idx));
+        self.depth += 1;
+    }
+
+    /// pop parent from cache, if we need new_root, return None
+    #[inline(always)]
+    pub fn pop(&mut self, key: &K, root: &Node<K, V>) -> Option<InterNode<K, V>> {
+        match self.state {
+            PathState::Stale => {
+                if self.depth == 0 {
+                    return None;
+                }
+                let depth = self.depth - 1;
+                self.depth = depth;
+                let mut new_cache = Self::new();
+                root.find_child_with_cache(key, depth);
+                let item = new_cache.pop(key, root);
+                self.inner = new_cache.inner.take();
+                item
+            }
+            PathState::Current => {
+                if let Some((node, _idx)) = self.inner.pop() {
+                    self.depth -= 1;
+                    Some(node)
+                } else if self.depth == 0 {
+                    None
+                } else {
+                    unreachable!();
+                }
+            }
+            PathState::Left => {
+                let depth = self.depth;
+                if depth == 0 {
+                    return None;
+                }
+                let (node, idx) = self.inner.pop().unwrap();
+                self.depth = depth - 1;
+                if idx + 1 < InterNode::<K, V>::cap() as u32 {
+                    return Some(node); // have common parent
+                }
+                todo!();
+                // iterate top to find a common ancestor
+            }
+            PathState::Right => {
+                todo!();
             }
         }
     }
