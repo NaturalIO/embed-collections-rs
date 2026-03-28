@@ -69,12 +69,63 @@ impl<K, V> Drop for BTreeMap<K, V> {
     fn drop(&mut self) {
         if let Some(root) = &mut self.root {
             match root {
-                Node::Inter(node) => {
-                    // recursive drop
-                    todo!();
-                    //unsafe{node.dealloc()};
+                Node::Inter(inter_node) => {
+                    unsafe {
+                        // Non-recursive drop using BFS
+                        let mut nodes_to_free = Vec::new();
+                        let mut current_level = Vec::new();
+
+                        // Start with root's children
+                        let root_count = inter_node.count() as u32;
+                        for i in 0..=root_count {
+                            let child_ptr = *inter_node.child_ptr(i);
+                            if !child_ptr.is_null() {
+                                current_level.push(child_ptr);
+                            }
+                        }
+
+                        // First, collect all leaf nodes and free them
+                        let mut next_level = Vec::new();
+                        while !current_level.is_empty() {
+                            for &child_ptr in &current_level {
+                                let header = &*child_ptr;
+                                if header.is_leaf() {
+                                    // This is a leaf node, free it
+                                    let mut leaf = LeafNode::<K, V>::from_header(
+                                        NonNull::new_unchecked(child_ptr),
+                                    );
+                                    leaf.dealloc();
+                                } else {
+                                    // This is an internal node, add its children to next level
+                                    let node = InterNode::<K, V>::from_header(
+                                        NonNull::new_unchecked(child_ptr),
+                                    );
+                                    let count = node.count() as u32;
+                                    for i in 0..=count {
+                                        let grandchild_ptr = *node.child_ptr(i);
+                                        if !grandchild_ptr.is_null() {
+                                            next_level.push(grandchild_ptr);
+                                        }
+                                    }
+                                    nodes_to_free.push(child_ptr);
+                                }
+                            }
+                            current_level = next_level;
+                            next_level = Vec::new();
+                        }
+
+                        // Free internal nodes in reverse order (from bottom to top)
+                        for node_ptr in nodes_to_free.iter().rev() {
+                            let mut node =
+                                InterNode::<K, V>::from_header(NonNull::new_unchecked(*node_ptr));
+                            node.dealloc();
+                        }
+
+                        // Finally, free the root
+                        inter_node.dealloc();
+                    }
                 }
-                Node::Leaf(node) => unsafe { node.dealloc() },
+                Node::Leaf(leaf_node) => unsafe { leaf_node.dealloc() },
             }
         }
     }
@@ -188,9 +239,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
         self.propagate_split(split_key, leaf, new_leaf);
-        // publish new node
-        todo!();
-        return ptr_v;
+        ptr_v
     }
 
     /// Propagate node split up the tree using iteration (non-recursive)
