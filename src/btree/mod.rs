@@ -238,26 +238,25 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         }
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
-        self.propagate_split(split_key, leaf, new_leaf);
+        self.propagate_split(split_key, leaf.get_ptr(), new_leaf.get_ptr());
         ptr_v
     }
 
     /// Propagate node split up the tree using iteration (non-recursive)
-    fn propagate_split(&mut self, key: K, left_child: LeafNode<K, V>, right_child: LeafNode<K, V>) {
+    fn propagate_split(
+        &mut self, mut promote_key: K, mut left_ptr: *mut NodeHeader,
+        mut right_ptr: *mut NodeHeader,
+    ) {
         let cache = self.get_cache();
-        let mut current_key = key;
-        let mut left_ptr = left_child.get_ptr();
-        let mut right_ptr = right_child.get_ptr();
+        let inter_cap = InterNode::<K, V>::cap() as u32;
+        let mut height = 1;
 
         // If we have parent nodes in cache, process them iteratively
         while !cache.is_empty() {
             let (mut parent, child_idx) = cache.pop().unwrap();
-
             let parent_count = parent.count() as u32;
-            let parent_cap = InterNode::<K, V>::cap() as u32;
-
             // Check if parent has space
-            if parent_count < parent_cap {
+            if parent_count < inter_cap {
                 // Parent has space, insert and stop propagation
                 unsafe {
                     // Verify that the child pointer at child_idx matches left_ptr
@@ -278,34 +277,35 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         *parent.child_ptr(i + 2) = child;
                     }
                     let key_ptr = parent.key_ptr(child_idx);
-                    (*key_ptr).write(current_key);
+                    (*key_ptr).write(promote_key);
                     *parent.child_ptr(child_idx + 1) = right_ptr;
                     parent.get_header_mut().count += 1;
                 }
                 return;
             }
-
+            height += 1;
             // Parent is full, need to split internal node
-            let (new_parent, promote_key) = parent.split(child_idx, current_key, right_ptr);
-
-            // Update for next iteration
-            current_key = promote_key;
+            let (right, _promote_key) = parent.split(child_idx, current_key, right_ptr);
+            promote_key = _promote_key;
+            right_ptr = right.get_ptr();
             left_ptr = parent.get_ptr();
-            right_ptr = new_parent.get_ptr();
-
             // Continue to next parent in cache (loop will pop next parent)
         }
-
         // No more parents in cache, create new root
-        unsafe {
-            let mut new_root = InterNode::<K, V>::alloc(1);
-            let key_ptr = new_root.key_ptr(0);
-            (*key_ptr).write(current_key);
-            new_root.get_header_mut().count = 1;
-            // Set children
-            *new_root.child_ptr(0) = left_ptr;
-            *new_root.child_ptr(1) = right_ptr;
-            self.root = Some(Node::Inter(new_root));
+        let new_root = InterNode::<K, V>::new(height, promote_key, left_ptr, right_ptr);
+        let _old_root = self.root.replace(Node::Inter(new_root)).expect("should have old root");
+        #[cfg(debug_assertions)]
+        {
+            match _old_root {
+                Node::Inter(node) => {
+                    debug_assert!(height > 1, "old inter root at {height}");
+                    debug_assert_eq!(node.get_ptr(), left_ptr);
+                }
+                Node::Leaf(node) => {
+                    debug_assert_eq!(height, 1);
+                    debug_assert_eq!(node.get_ptr(), left_ptr);
+                }
+            }
         }
     }
 
