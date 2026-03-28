@@ -1,18 +1,73 @@
-//! B+Tree Map - A cache-optimized B+Tree for single-threaded use.
+//! B+Tree Map - A in memory cache-optimized B+Tree for single-threaded use.
 //!
-//! This B+Tree is designed for CPU cache efficiency:
-//! - Nodes are aligned to 4 cache lines (256 bytes on x86_64)
-//! - Keys stored in first 128B (with header), Values/pointers stored in last 128B
-//! - No parent pointers (path stored during descent)
-//! - Linear search within nodes, respecting cacheline boundaries
-//!
+//! ## Feature outlines
+//! - designed for CPU cache efficiency and memory efficiency:
+//! - It's B+tree. Data stores only at leaf level, with links at leaf level.
+//!   - Provids efficent iteration of data
+//!   - Linear search within nodes, respecting cacheline boundaries
+//! - Nodes are filled up in 4 cache lines (256 bytes on x86_64)
+//!   - keys stored in first 128B (with header)
+//!   - Values/pointers stored in last 128B
+//!   - the capacity is calculated according to the size of K, V, with limitations:
+//!     - K & V should <= CACHE_LINE_SIZE - 16  (If K & V is larger should put into `Box`)
+//! - Specialy Entry API which allow to modify after moving the cursor to adjacent data.
+//! - Comparing to std::collections::btree (rust 1.94):
+//!   - The std impl is pure btree (not b+tree) without horizonal links. Data store at both leaf and inter nodes.
+//!   - The std impl is optimised for point lookup,
+//!   - The std impl has fixed Cap=11, size is 288B for InterNode and 192B for LeafNode.
+//!   - The std cursor API is stll unstable (as of 1.94) and provides more complex features
+//! - The detail design notes are with the source in mod.rs and node.rs
+
+/*
+
+# Designer notes
+
+ Target scenario:  To maintain slab tree for disk, lets say 8T , the worst fragmental scenario will
+ need 1 billion nodes. So this design is aim for high fan-out.
+
+ Since There're no parent pointer, no fence keys. So we maintain a cache to accellerate the look
+ up for parent nodes. In the worst case, cache might obsolete and we need to fallback to traverse from the top,
+ when it comes to joining of the nodes.
+
+ Since we support combinding cursor moving in Entry API (try to merge with previous or next adjacent
+ node). But user can call `remove()` on moved cursor.
+
+## The state of PathCache:
+
+- Left
+    - The cache represent the path of left brother of current Entry
+    - cursor moves prev(left), change back to current
+    - cursor moves next(right), change to `Stale`
+- Right
+    - The cache represent the path of right brother of current Entry
+    - cursor moves prev(left), changed to `Stale`
+    - cursor moves next(right), change back to current
+- Current
+    - The cache represent the path of current Entry
+    - the initial state after descending the tree to get an Entry
+    - Cursor moves prev(left)，change to `Right`
+    - cursor moves next(right), chagne to `Left`
+- Stale: cache data is obsoleted, fallback to top-down search from root
+
+## Accelleration Search for finding the parent using PathCache
+
+- Assume PathCache is for Node A, Node B is the right brother of node A. A's ptr is at ParentA[idx]
+  - To find parent for Node B
+    - If idx < last (Cap - 1), then A and B has common parent,
+    - otherwise A and B have no common parent. Should continue iteration to upper PathCache. There will be common ancestor until idx < last
+
+- Assume PathCache is for Node B, Node A is the left brother of node B, B's ptr is at ParentB[idx]
+  - To find parent for Node A
+    - If idx > 0, then A and B has common parent.
+    - otherwise A and B have no common parent. Should continue interation to upper PathCache. There will be common ancestor until idx > 0
+
+*/
 
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
 use core::ptr::NonNull;
 pub mod entry;
 use entry::*;
-// The memory layout is in the node module
 mod node;
 use node::*;
 
@@ -291,6 +346,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             left_ptr = parent.get_ptr();
             // Continue to next parent in cache (loop will pop next parent)
         }
+        // TODO to deal with cache lost situation
         // No more parents in cache, create new root
         let new_root = InterNode::<K, V>::new(height, promote_key, left_ptr, right_ptr);
         let _old_root = self.root.replace(Node::Inter(new_root)).expect("should have old root");
