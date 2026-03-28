@@ -319,7 +319,7 @@ impl<K, V> InterNode<K, V> {
     pub fn new_root(
         height: u32, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
     ) -> Self {
-        let root = unsafe { Self::alloc(height) };
+        let mut root = unsafe { Self::alloc(height) };
         root.set_left_ptr(left_ptr);
         root.insert_no_split_with_idx(0, promote_key, right_ptr);
         root
@@ -528,7 +528,7 @@ impl<K, V> InterNode<K, V> {
                 new_node.get_header_mut().count -= 1;
 
                 // Insert the new key and child into left node
-                self.insert_no_split(idx, key, child_ptr);
+                self.insert_no_split_with_idx(idx, key, child_ptr);
 
                 (new_node, promote_key)
             } else {
@@ -561,7 +561,7 @@ impl<K, V> InterNode<K, V> {
 
                 // Insert the new key and child into right node
                 let insert_pos = idx - split_idx - 1;
-                new_node.insert_no_split(insert_pos, key, child_ptr);
+                new_node.insert_no_split_with_idx(insert_pos, key, child_ptr);
 
                 (new_node, promote_key)
             }
