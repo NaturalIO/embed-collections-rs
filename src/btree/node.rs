@@ -219,14 +219,18 @@ impl<K: Ord, V> Node<K, V> {
                 loop {
                     let (idx, is_equal) = cur.search(key);
                     if is_equal {
-                        if node.height() == 1 {
-                            return node.get_child_as_leaf(idx);
+                        if cur.height() == 1 {
+                            return cur.get_child_as_leaf(idx);
                         } else {
-                            cur = node.get_child_as_inter(idx);
+                            cur = cur.get_child_as_inter(idx);
                         }
                     } else {
                         // there must be a leaf for this
-                        cur = node.get_child_as_inter(idx)
+                        if cur.height() == 1 {
+                            return cur.get_child_as_leaf(idx);
+                        } else {
+                            cur = cur.get_child_as_inter(idx);
+                        }
                     }
                 }
             }
@@ -235,7 +239,7 @@ impl<K: Ord, V> Node<K, V> {
 
     #[inline]
     pub fn find_leaf_with_cache(
-        &self, cache: &mut Vec<InterNode<K, V>>, key: &K,
+        &self, cache: &mut Vec<(InterNode<K, V>, u32)>, key: &K,
     ) -> LeafNode<K, V> {
         match &self {
             Node::Leaf(node) => return node.clone(),
@@ -245,14 +249,21 @@ impl<K: Ord, V> Node<K, V> {
                     let (idx, is_equal) = cur.search(key);
                     if is_equal {
                         if node.height() == 1 {
+                            cache.push((node.clone(), idx));
                             return node.get_child_as_leaf(idx);
                         } else {
-                            cache.push(node.clone());
+                            cache.push((node.clone(), idx));
                             cur = node.get_child_as_inter(idx);
                         }
                     } else {
                         // there must be a leaf for this
-                        cur = node.get_child_as_inter(idx)
+                        if node.height() == 1 {
+                            cache.push((node.clone(), idx));
+                            return node.get_child_as_leaf(idx);
+                        } else {
+                            cache.push((node.clone(), idx));
+                            cur = node.get_child_as_inter(idx);
+                        }
                     }
                 }
             }
@@ -524,12 +535,19 @@ impl<K, V> InterNode<K, V> {
                 let promote_key_ptr = new_node.key_ptr(0);
                 let promote_key = (*promote_key_ptr).assume_init_read();
 
-                // Remove the promote key from new_node (shift left)
+                // Remove the promote key from new_node (shift left keys and children)
                 for i in 0..(right_count - 1) {
                     let src_key = new_node.key_ptr(i + 1);
                     let dst_key = new_node.key_ptr(i);
                     let k = (*src_key).assume_init_read();
                     (*dst_key).write(k);
+                }
+                // Shift children left - remove the first child which corresponds to the promoted key
+                for i in 0..right_count {
+                    let src_child = new_node.child_ptr(i + 1);
+                    let dst_child = new_node.child_ptr(i);
+                    let child = (*src_child).clone();
+                    (*dst_child) = child;
                 }
                 new_node.get_header_mut().count -= 1;
 
@@ -549,12 +567,19 @@ impl<K, V> InterNode<K, V> {
                 let promote_key_ptr = self.key_ptr(split_idx);
                 let promote_key = (*promote_key_ptr).assume_init_read();
 
-                // Remove the promote key from left node (shift left)
+                // Remove the promote key from left node (shift left keys and children)
                 for i in split_idx..(count - 1) {
                     let src_key = self.key_ptr(i + 1);
                     let dst_key = self.key_ptr(i);
                     let k = (*src_key).assume_init_read();
                     (*dst_key).write(k);
+                }
+                // Shift children left - remove the child after the promoted key
+                for i in (split_idx + 1)..count {
+                    let src_child = self.child_ptr(i + 1);
+                    let dst_child = self.child_ptr(i);
+                    let child = (*src_child).clone();
+                    (*dst_child) = child;
                 }
                 self.get_header_mut().count -= 1;
 
@@ -1181,6 +1206,54 @@ mod tests {
             // Cleanup
             leaf.dealloc();
             new_leaf.dealloc();
+        }
+    }
+
+    #[test]
+
+    fn test_internal_node_split_basic() {
+        unsafe {
+            // Create an internal node with just a few items
+
+            let mut node = InterNode::<i32, i32>::alloc(1);
+
+            // Add 3 keys and 4 children (node is not full)
+
+            (*node.key_ptr(0)).write(10);
+
+            (*node.key_ptr(1)).write(20);
+
+            (*node.key_ptr(2)).write(30);
+
+            (*node.child_ptr(0)) = 100 as *mut NodeHeader;
+
+            (*node.child_ptr(1)) = 200 as *mut NodeHeader;
+
+            (*node.child_ptr(2)) = 300 as *mut NodeHeader;
+
+            (*node.child_ptr(3)) = 400 as *mut NodeHeader;
+
+            node.get_header_mut().count = 3;
+
+            // Split at middle (idx = 1)
+
+            let new_key = 25;
+
+            let new_child = 250 as *mut NodeHeader;
+
+            let (mut new_node, promote_key) = node.split(1, new_key, new_child);
+
+            // Just verify no crash and counts are reasonable
+
+            assert!(node.count() > 0);
+
+            assert!(new_node.count() > 0);
+
+            // Cleanup
+
+            node.dealloc();
+
+            new_node.dealloc();
         }
     }
 }
