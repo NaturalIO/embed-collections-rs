@@ -89,7 +89,7 @@ pub struct BTreeMap<K, V> {
     /// Number of elements in the tree
     len: usize,
     // use unsafe to avoid borrow problems
-    cache: UnsafeCell<Vec<(InterNode<K, V>, u32)>>,
+    cache: UnsafeCell<PathCache<K, V>>,
 }
 
 unsafe impl<K: Send, V: Send> Send for BTreeMap<K, V> {}
@@ -98,7 +98,7 @@ unsafe impl<K: Send, V: Send> Sync for BTreeMap<K, V> {}
 impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Create a new empty BTreeMap
     pub const fn new() -> Self {
-        Self { root: None, len: 0, cache: UnsafeCell::new(Vec::new()) }
+        Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::new()) }
     }
 }
 
@@ -113,15 +113,6 @@ impl<K, V> BTreeMap<K, V> {
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
-    }
-
-    #[inline(always)]
-    fn get_cache(&self) -> &mut Vec<(InterNode<K, V>, u32)> {
-        unsafe {
-            let cache = &mut *self.cache.get();
-            cache.set_len(0);
-            cache
-        }
     }
 }
 
@@ -199,6 +190,15 @@ impl<K, V> Drop for BTreeMap<K, V> {
 
 // Main operations
 impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
+    #[inline(always)]
+    fn get_cache(&self) -> &mut PathCache<K, V> {
+        unsafe {
+            let cache = &mut *self.cache.get();
+            cache.clear();
+            cache
+        }
+    }
+
     /// Returns an entry to the key in the map
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         let cache = self.get_cache();
@@ -310,7 +310,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     /// Propagate node split up the tree using iteration (non-recursive)
     fn propagate_split(
-        &mut self, mut promote_key: K, mut left_ptr: *mut NodeHeader,
+        &mut self, mut promote_key: K, elem_key: &K, mut left_ptr: *mut NodeHeader,
         mut right_ptr: *mut NodeHeader,
     ) {
         let cache = self.get_cache();
@@ -319,7 +319,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
         // If we have parent nodes in cache, process them iteratively
         while !cache.is_empty() {
-            let (mut parent, child_idx) = cache.pop().unwrap();
+            let (mut parent, child_idx) = cache.pop(elem_key, self.root.as_ref().unwrap()).unwrap();
             let parent_count = parent.count() as u32;
             // Check if parent has space
             if parent_count < inter_cap {
