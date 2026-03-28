@@ -81,8 +81,8 @@ impl NodeBase {
     }
 
     #[inline(always)]
-    pub(crate) fn header(&self) -> NonNull<NodeHeader> {
-        self.header
+    pub(crate) fn get_ptr(&self) -> *mut NodeHeader {
+        self.header.as_ptr() as *mut NodeHeader
     }
 
     #[inline(always)]
@@ -118,13 +118,14 @@ impl NodeBase {
         self.get_header().height
     }
 
-    /// search the position to insert
+    /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
     fn search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
+        // TODO review this
         macro_rules! _search {
             ($start: expr, $end: expr) => {
                 let mut idx = $start as u32;
@@ -515,14 +516,13 @@ impl<K, V> LeafNode<K, V> {
         let header = base.get_header_mut();
         header.height = 0; // Leaf nodes have height 0
         header.count = 0;
-        // Initialize leaf pointers
-        let ptrs =
-            unsafe { NodeHeader::get_field::<LeafPtrs>(base.header, AREA_SIZE) as *mut LeafPtrs };
+        let this = Self { base, _phan: Default::default() };
         unsafe {
+            let ptrs = this.brothers();
             (*ptrs).prev = null_mut();
             (*ptrs).next = null_mut();
         }
-        Self { base, _phan: Default::default() }
+        this
     }
 
     #[inline(always)]
@@ -541,6 +541,12 @@ impl<K, V> LeafNode<K, V> {
             }
             dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
         }
+    }
+
+    #[inline(always)]
+    pub fn is_full(&self) -> Result<(), u32> {
+        let avail = Self::cap() - self.count();
+        if avail == 0 { Ok(()) } else { Err(avail as u32) }
     }
 
     #[inline(always)]
@@ -568,8 +574,29 @@ impl<K, V> LeafNode<K, V> {
     /// Get pointer to LeafPtrs
     #[inline(always)]
     pub(crate) unsafe fn brothers(&self) -> *mut LeafPtrs {
-        let base = self.header.as_ptr() as *mut u8;
-        unsafe { base.add(AREA_SIZE) as *mut LeafPtrs }
+        unsafe { NodeHeader::get_field::<LeafPtrs>(self.header, AREA_SIZE) }
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_left_node(&self) -> Option<Self> {
+        unsafe {
+            let p = (*self.brothers()).prev;
+            if p.is_null() {
+                return None;
+            }
+            Some(Self::from_header(NonNull::new_unchecked(p)))
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_right_node(&self) -> Option<Self> {
+        unsafe {
+            let p = (*self.brothers()).next;
+            if p.is_null() {
+                return None;
+            }
+            Some(Self::from_header(NonNull::new_unchecked(p)))
+        }
     }
 
     /// Create LeafNode from header pointer
@@ -591,8 +618,23 @@ impl<K, V> LeafNode<K, V> {
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
     #[inline]
-    pub fn insert_no_split(&mut self, idx: u32, key: K, value: V) -> *mut V {
+    pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
         debug_assert!(self.count() < Self::cap());
+        unsafe {
+            self.base.insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
+        }
+    }
+
+    /// Insert key-value at index (assuming there is space)
+    /// Uses copy_within pattern for efficient shifting
+    #[inline]
+    pub fn insert_no_split(&mut self, key: K, value: V) -> *mut V
+    where
+        K: Ord,
+    {
+        debug_assert!(self.count() < Self::cap());
+        let (idx, is_equal) = self.search(&key);
+        debug_assert!(!is_equal);
         unsafe {
             self.base.insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
         }
@@ -609,8 +651,66 @@ impl<K, V> LeafNode<K, V> {
         }
     }
 
+    #[inline]
     pub(crate) fn cap() -> usize {
         Self::LAYOUT.0
+    }
+
+    /// move items to the tail of left_node
+    pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
+        todo!();
+        self.get_header_mut().count -= move_count;
+        left_node.get_header_mut().count += move_count;
+    }
+
+    /// If append == true, move the items to the tail,
+    /// If append == false, prepend to items to the front.
+    pub fn move_right(
+        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32, append: bool,
+    ) {
+        todo!();
+        self.get_header_mut().count -= move_count;
+        right_node.get_header_mut().count += move_count;
+    }
+
+    pub fn insert_with_split(&mut self, idx: u32, key: K, value: V) -> (Self, *mut V) {
+        let mut new_leaf = unsafe { LeafNode::<K, V>::alloc() };
+        let count = self.count() as u32;
+        unsafe {
+            if let Some(right) = self.get_right_node() {
+                (*right.brothers()).prev = new_leaf.get_ptr();
+                (*new_leaf.brothers()).next = right.get_ptr();
+            }
+            (*new_leaf.brothers()).prev = self.get_ptr();
+        }
+        if idx < count {
+            let split_idx = count >> 1;
+            // if split_idx == idx, then the new key must < old key at split_idx
+            let insert_left = split_idx >= idx;
+            let total_copy = count - split_idx;
+            if insert_left {
+                self.move_right(&mut new_leaf, total_copy, true);
+                let ptr_v = self.insert_no_split_with_idx(idx, key, value);
+                return (new_leaf, ptr_v);
+            } else {
+                debug_assert!(idx > split_idx);
+                let first_copy = idx - split_idx;
+                self.move_right(&mut new_leaf, split_idx, first_copy, true);
+                let ptr_v = new_leaf.insert_no_split_with_idx(idx - split_idx, key, value);
+                if total_copy > first_copy {
+                    self.move_right(
+                        &mut new_leaf,
+                        split_idx + first_copy,
+                        total_copy - first_copy,
+                        true,
+                    );
+                }
+                return (new_leaf, ptr_v);
+            }
+        } else {
+            let ptr_v = new_leaf.insert_no_split_with_idx(0, key, value);
+            (new_leaf, ptr_v)
+        }
     }
 }
 

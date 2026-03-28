@@ -1,14 +1,14 @@
 use super::*;
 
 /// Entry for an existing key-value pair in the map
-pub struct OccupiedEntry<'a, K, V> {
+pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized> {
     pub(crate) map: &'a mut BTreeMap<K, V>,
     pub(crate) node: LeafNode<K, V>,
     pub(crate) idx: u32,
 }
 
 /// Entry for a vacant key position in the map
-pub struct VacantEntry<'a, K, V> {
+pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized> {
     pub(crate) map: &'a mut BTreeMap<K, V>,
     pub(crate) node: Option<LeafNode<K, V>>,
     pub(crate) key: K,
@@ -16,12 +16,12 @@ pub struct VacantEntry<'a, K, V> {
 }
 
 /// Entry into a BTreeMap for in-place manipulation
-pub enum Entry<'a, K, V> {
+pub enum Entry<'a, K: Ord + Clone + Sized, V: Sized> {
     Occupied(OccupiedEntry<'a, K, V>),
     Vacant(VacantEntry<'a, K, V>),
 }
 
-impl<'a, K: Ord, V> Entry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
     /// Ensures a value is in the entry by inserting the default if empty,
     /// and returns a mutable reference to the value in the entry.
     pub fn or_insert(self, default: V) -> &'a mut V
@@ -71,7 +71,7 @@ impl<'a, K: Ord, V> Entry<'a, K, V> {
     }
 }
 
-impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// Get a reference to the key
     pub fn key(&self) -> &K {
         unsafe {
@@ -168,7 +168,7 @@ impl<'a, K: Ord, V> OccupiedEntry<'a, K, V> {
     }
 }
 
-impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// Get a reference to the key
     pub fn key(&self) -> &K {
         &self.key
@@ -188,7 +188,7 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
                 let mut leaf = LeafNode::<K, V>::alloc();
                 map.root = Some(Node::Leaf(leaf.clone()));
                 map.len = 1;
-                return &mut *leaf.insert_no_split(0, key, value);
+                return &mut *leaf.insert_no_split_with_idx(0, key, value);
             }
         }
         // Get the leaf node where we should insert
@@ -197,7 +197,7 @@ impl<'a, K: Ord, V> VacantEntry<'a, K, V> {
         // Check if leaf has space
         let value_p = if count < LeafNode::<K, V>::cap() as u32 {
             map.len += 1;
-            leaf.insert_no_split(idx, key, value)
+            leaf.insert_no_split_with_idx(idx, key, value)
         } else {
             // Leaf is full, need to split
             map.insert_with_split(key, value, leaf, idx)
