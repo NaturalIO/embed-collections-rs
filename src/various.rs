@@ -179,10 +179,22 @@ impl<T> Various<T> {
         }
     }
 
+    /// Take the content out and leave and empty option inside, freeing inner memory
     #[inline]
     pub fn take(&mut self) -> Self {
         use core::mem;
         Various { inner: mem::replace(&mut self.inner, VariousInner::One(None)) }
+    }
+
+    /// Clear the content without freeing inner memory
+    #[inline]
+    pub fn clear(&mut self) {
+        match &mut self.inner {
+            VariousInner::One(inner) => {
+                let _ = inner.take();
+            }
+            VariousInner::More(inner) => inner.clear(),
+        }
     }
 }
 
