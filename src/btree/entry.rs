@@ -2,17 +2,17 @@ use super::*;
 
 /// Entry for an existing key-value pair in the map
 pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized> {
-    pub(crate) map: &'a mut BTreeMap<K, V>,
-    pub(crate) node: LeafNode<K, V>,
-    pub(crate) idx: u32,
+    pub(super) map: &'a mut BTreeMap<K, V>,
+    pub(super) node: LeafNode<K, V>,
+    pub(super) idx: u32,
 }
 
 /// Entry for a vacant key position in the map
 pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized> {
-    pub(crate) map: &'a mut BTreeMap<K, V>,
-    pub(crate) node: Option<LeafNode<K, V>>,
-    pub(crate) key: K,
-    pub(crate) idx: u32,
+    pub(super) map: &'a mut BTreeMap<K, V>,
+    pub(super) node: Option<LeafNode<K, V>>,
+    pub(super) key: K,
+    pub(super) idx: u32,
 }
 
 /// Entry into a BTreeMap for in-place manipulation

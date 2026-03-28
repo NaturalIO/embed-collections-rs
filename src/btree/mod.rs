@@ -77,6 +77,10 @@ pub mod entry;
 use entry::*;
 mod node;
 use node::*;
+mod inter;
+use inter::*;
+mod leaf;
+use leaf::*;
 
 /// B+Tree Map for single-threaded use
 pub struct BTreeMap<K, V> {
@@ -373,7 +377,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Handle leaf node underflow by borrowing from or merging with sibling
-    pub(crate) unsafe fn handle_leaf_underflow(
+    unsafe fn handle_leaf_underflow(
         &mut self, _parent: InterNode<K, V>, _leaf: &mut LeafNode<K, V>,
     ) {
         // TODO: Implement underflow handling with proper pointer-based parent tracking
