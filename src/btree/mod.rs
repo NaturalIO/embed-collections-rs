@@ -23,7 +23,7 @@ pub struct BTreeMap<K, V> {
     /// Number of elements in the tree
     len: usize,
     // use unsafe to avoid borrow problems
-    cache: UnsafeCell<Vec<InterNode<K, V>>>,
+    cache: UnsafeCell<Vec<(InterNode<K, V>, u32)>>,
 }
 
 unsafe impl<K: Send, V: Send> Send for BTreeMap<K, V> {}
@@ -50,7 +50,7 @@ impl<K, V> BTreeMap<K, V> {
     }
 
     #[inline(always)]
-    fn get_cache(&self) -> &mut Vec<InterNode<K, V>> {
+    fn get_cache(&self) -> &mut Vec<(InterNode<K, V>, u32)> {
         unsafe {
             let cache = &mut *self.cache.get();
             cache.set_len(0);
@@ -251,10 +251,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
         // If we have parent nodes in cache, process them iteratively
         while !cache.is_empty() {
-            let mut parent = cache.pop().unwrap();
-
-            // Use binary search to find insertion position using the split key
-            let (child_idx, _is_equal) = parent.search(&current_key);
+            let (mut parent, child_idx) = cache.pop().unwrap();
 
             let parent_count = parent.count() as u32;
             let parent_cap = InterNode::<K, V>::cap() as u32;
@@ -263,6 +260,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             if parent_count < parent_cap {
                 // Parent has space, insert and stop propagation
                 unsafe {
+                    // Verify that the child pointer at child_idx matches left_ptr
+                    let existing_child = *parent.child_ptr(child_idx);
+                    debug_assert_eq!(
+                        existing_child, left_ptr,
+                        "Parent child pointer mismatch: expected {:?}, got {:?}",
+                        left_ptr, existing_child
+                    );
+
                     // Shift keys and children to make space
                     for i in (child_idx..parent_count).rev() {
                         let src_key = parent.key_ptr(i);
@@ -630,17 +635,124 @@ mod tests {
     }
 
     #[test]
-    fn test_split_leaf() {
+    fn test_split_leaf_simple() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
         let cap = LeafNode::<i32, i32>::cap();
-        // Insert more than capacity to trigger split
-        for i in 0..cap + 5 {
+
+        // First, fill exactly to capacity
+        for i in 0..cap {
             assert_eq!(map.insert(i as i32, i as i32 * 10), None);
         }
-        assert_eq!(map.len(), cap + 5);
-        // Verify all values after split
-        for i in 0..cap + 5 {
+        assert_eq!(map.len(), cap);
+
+        // Verify all values
+        for i in 0..cap {
             assert_eq!(map.get(&(i as i32)), Some(&(i as i32 * 10)));
+        }
+
+        // Now insert one more to trigger split - insert at the end
+        assert_eq!(map.insert(cap as i32, cap as i32 * 10), None);
+        assert_eq!(map.len(), cap + 1);
+
+        // Verify all values including the new one
+        for i in 0..=cap {
+            assert_eq!(map.get(&(i as i32)), Some(&(i as i32 * 10)));
+        }
+    }
+
+    #[test]
+    fn test_split_leaf_insert_at_beginning() {
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        let cap = LeafNode::<i32, i32>::cap();
+
+        // Fill to capacity
+        for i in 0..cap {
+            assert_eq!(map.insert(i as i32, i as i32 * 10), None);
+        }
+
+        // Insert at the beginning (should trigger split and move to left)
+        assert_eq!(map.insert(-1, -10), None);
+        assert_eq!(map.len(), cap + 1);
+
+        // Verify the new key
+        assert_eq!(map.get(&-1), Some(&-10));
+
+        // Verify some original keys
+        assert_eq!(map.get(&0), Some(&0));
+        assert_eq!(map.get(&(cap as i32 - 1)), Some(&((cap - 1) as i32 * 10)));
+    }
+
+    #[test]
+    fn test_split_leaf_insert_in_middle() {
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        let cap = LeafNode::<i32, i32>::cap();
+
+        // Fill with even numbers: 0, 2, 4, 6, ...
+        for i in 0..cap {
+            assert_eq!(map.insert((i * 2) as i32, (i * 20) as i32), None);
+        }
+
+        // Insert an odd number in the middle
+        let insert_key = cap as i32;
+        assert_eq!(map.insert(insert_key, insert_key * 10), None);
+        assert_eq!(map.len(), cap + 1);
+
+        // Verify the new key
+        assert_eq!(map.get(&insert_key), Some(&(insert_key * 10)));
+
+        // Verify some original keys
+        assert_eq!(map.get(&0), Some(&0));
+        assert_eq!(map.get(&2), Some(&40));
+    }
+
+    #[test]
+    fn test_split_leaf_minimal() {
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        let cap = LeafNode::<i32, i32>::cap();
+
+        // Insert just enough to trigger one split
+        for i in 0..(cap + 1) {
+            println!("Inserting {}", i);
+            map.insert(i as i32, i as i32 * 10);
+        }
+
+        assert_eq!(map.len(), cap + 1);
+    }
+
+    #[test]
+    fn test_split_leaf_verify_structure() {
+        let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        let cap = LeafNode::<i32, i32>::cap();
+
+        // Insert just enough to trigger one split
+        let total = cap + 5;
+        for i in 0..total {
+            map.insert(i as i32, i as i32 * 10);
+        }
+
+        assert_eq!(map.len(), total);
+
+        // Now manually traverse the tree to verify structure
+        if let Some(Node::Inter(root)) = &map.root {
+            println!("Root has {} children", root.count() + 1);
+
+            unsafe {
+                // Check first child
+                let child0_ptr = *root.child_ptr(0);
+                assert!(!child0_ptr.is_null(), "Child 0 is null");
+
+                // Try to access it as leaf
+                let leaf0 = LeafNode::<i32, i32>::from_header(NonNull::new_unchecked(child0_ptr));
+                println!("Leaf 0 has {} items", leaf0.count());
+
+                // Check second child
+                let child1_ptr = *root.child_ptr(1);
+                if !child1_ptr.is_null() {
+                    let leaf1 =
+                        LeafNode::<i32, i32>::from_header(NonNull::new_unchecked(child1_ptr));
+                    println!("Leaf 1 has {} items", leaf1.count());
+                }
+            }
         }
     }
 
