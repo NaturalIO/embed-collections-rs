@@ -109,7 +109,7 @@ impl NodeBase {
     /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
-    pub fn search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
+    pub fn _search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
@@ -154,7 +154,7 @@ impl NodeBase {
 
     /// NOTE: it will require two calls to remove (k, v) pair, so the count is not decrease here
     #[inline]
-    pub unsafe fn remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
+    pub unsafe fn _remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
         debug_assert!(idx < left + 1);
         unsafe {
             let item_p = self.item_ptr::<T>(header_offset, idx);
@@ -171,7 +171,7 @@ impl NodeBase {
     ///
     /// # Safety
     /// it does not check is_full
-    pub unsafe fn insert<K, V>(
+    pub unsafe fn _insert<K, V>(
         &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
     ) -> *mut V {
         let count = self.count() as u32;
@@ -205,7 +205,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let (idx, is_equal) = cur.search(key);
+                    let (idx, _is_equal) = cur.search(key);
                     if cur.is_leaf() {
                         return cur.get_child_as_leaf(idx);
                     } else {
@@ -223,7 +223,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let (idx, is_equal) = cur.search(key);
+                    let (idx, _is_equal) = cur.search(key);
                     if cur.is_leaf() {
                         cache.push(cur.clone(), idx);
                         return cur.get_child_as_leaf(idx);

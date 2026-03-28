@@ -97,8 +97,8 @@ unsafe impl<K: Send, V: Send> Sync for BTreeMap<K, V> {}
 
 impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Create a new empty BTreeMap
-    pub const fn new() -> Self {
-        Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::new()) }
+    pub fn new() -> Self {
+        Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::<K, V>::new()) }
     }
 }
 
@@ -310,7 +310,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     /// Propagate node split up the tree using iteration (non-recursive)
     fn propagate_split(
-        &mut self, mut promote_key: K, elem_key: &K, mut left_ptr: *mut NodeHeader,
+        &mut self, mut promote_key: K, mut left_ptr: *mut NodeHeader,
         mut right_ptr: *mut NodeHeader,
     ) {
         let cache = self.get_cache();
@@ -318,46 +318,19 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let mut height = 1;
 
         // If we have parent nodes in cache, process them iteratively
-        while !cache.is_empty() {
-            let (mut parent, child_idx) = cache.pop(elem_key, self.root.as_ref().unwrap()).unwrap();
-            let parent_count = parent.count() as u32;
-            // Check if parent has space
-            if parent_count < inter_cap {
-                // Parent has space, insert and stop propagation
-                unsafe {
-                    // Verify that the child pointer at child_idx matches left_ptr
-                    let existing_child = *parent.child_ptr(child_idx);
-                    debug_assert_eq!(
-                        existing_child, left_ptr,
-                        "Parent child pointer mismatch: expected {:?}, got {:?}",
-                        left_ptr, existing_child
-                    );
-
-                    // Shift keys and children to make space
-                    for i in (child_idx..parent_count).rev() {
-                        let src_key = parent.key_ptr(i);
-                        let dst_key = parent.key_ptr(i + 1);
-                        let k = (*src_key).assume_init_read();
-                        (*dst_key).write(k);
-                        let child = *parent.child_ptr(i + 1);
-                        *parent.child_ptr(i + 2) = child;
-                    }
-                    let key_ptr = parent.key_ptr(child_idx);
-                    (*key_ptr).write(promote_key);
-                    *parent.child_ptr(child_idx + 1) = right_ptr;
-                    parent.get_header_mut().count += 1;
-                }
+        while let Some(mut parent) = cache.pop(&promote_key, self.root.as_ref().unwrap()) {
+            if !parent.is_full().is_ok() {
+                parent.insert_no_split(promote_key, right_ptr);
                 return;
             }
             height += 1;
             // Parent is full, need to split internal node
-            let (right, _promote_key) = parent.split(child_idx, promote_key, right_ptr);
+            let (right, _promote_key) = parent.insert_split(promote_key, right_ptr);
             promote_key = _promote_key;
             right_ptr = right.get_ptr();
             left_ptr = parent.get_ptr();
             // Continue to next parent in cache (loop will pop next parent)
         }
-        // TODO to deal with cache lost situation
         // No more parents in cache, create new root
         let new_root = InterNode::<K, V>::new_root(height, promote_key, left_ptr, right_ptr);
         let _old_root = self.root.replace(Node::Inter(new_root)).expect("should have old root");
