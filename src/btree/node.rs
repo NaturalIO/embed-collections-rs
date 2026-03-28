@@ -46,7 +46,7 @@ impl NodeHeader {
 
     /// Check if this is a leaf node (height == 0)
     #[inline(always)]
-    fn is_leaf(&self) -> bool {
+    pub(crate) fn is_leaf(&self) -> bool {
         self.height == 0
     }
 }
