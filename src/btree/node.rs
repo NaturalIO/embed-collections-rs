@@ -217,9 +217,7 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[inline]
-    pub fn find_leaf_with_cache(
-        &self, cache: &mut Vec<(InterNode<K, V>, u32)>, key: &K,
-    ) -> LeafNode<K, V> {
+    pub fn find_leaf_with_cache(&self, cache: &mut PathCache<K, V>, key: &K) -> LeafNode<K, V> {
         match &self {
             Node::Leaf(node) => return node.clone(),
             Node::Inter(node) => {
@@ -227,14 +225,32 @@ impl<K: Ord, V> Node<K, V> {
                 loop {
                     let (idx, is_equal) = cur.search(key);
                     if cur.is_leaf() {
-                        cache.push((cur.clone(), idx));
+                        cache.push(cur.clone(), idx);
                         return cur.get_child_as_leaf(idx);
                     } else {
-                        cache.push((cur.clone(), idx));
+                        cache.push(cur.clone(), idx);
                         cur = cur.get_child_as_inter(idx);
                     }
                 }
             }
+        }
+    }
+
+    pub fn find_child_with_cache(
+        &self, cache: &mut PathCache<K, V>, key: &K, mut depth: u32,
+    ) -> InterNode<K, V> {
+        if let Node::Inter(node) = &self {
+            let mut cur = node.clone();
+            while depth > 0 {
+                depth -= 1;
+                let (idx, is_equal) = cur.search(key);
+                debug_assert!(!cur.is_leaf());
+                cache.push(cur.clone(), idx);
+                cur = cur.get_child_as_inter(idx);
+            }
+            cur
+        } else {
+            unreachable!();
         }
     }
 }
@@ -254,10 +270,16 @@ pub(super) struct PathCache<K, V> {
     inner: Various<(InterNode<K, V>, u32)>,
 }
 
-impl<K, V> PathCache<K, V> {
+impl<K: Ord, V> PathCache<K, V> {
     #[inline]
     pub fn new() -> Self {
         Self { inner: Various::new(), state: PathState::Current, depth: 0 }
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.inner.clear();
+        self.depth = 0;
     }
 
     #[inline]
@@ -303,7 +325,7 @@ impl<K, V> PathCache<K, V> {
                 let depth = self.depth - 1;
                 self.depth = depth;
                 let mut new_cache = Self::new();
-                root.find_child_with_cache(key, depth);
+                root.find_child_with_cache(&mut new_cache, key, depth);
                 let item = new_cache.pop(key, root);
                 self.inner = new_cache.inner.take();
                 item
