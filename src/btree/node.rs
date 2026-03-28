@@ -218,19 +218,11 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let (idx, is_equal) = cur.search(key);
-                    if is_equal {
-                        if cur.height() == 1 {
-                            return cur.get_child_as_leaf(idx);
-                        } else {
-                            cur = cur.get_child_as_inter(idx);
-                        }
+                    let child_idx = if is_equal { idx + 1 } else { idx };
+                    if cur.height() == 1 {
+                        return cur.get_child_as_leaf(child_idx);
                     } else {
-                        // there must be a leaf for this
-                        if cur.height() == 1 {
-                            return cur.get_child_as_leaf(idx);
-                        } else {
-                            cur = cur.get_child_as_inter(idx);
-                        }
+                        cur = cur.get_child_as_inter(child_idx);
                     }
                 }
             }
@@ -247,23 +239,13 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let (idx, is_equal) = cur.search(key);
-                    if is_equal {
-                        if node.height() == 1 {
-                            cache.push((node.clone(), idx));
-                            return node.get_child_as_leaf(idx);
-                        } else {
-                            cache.push((node.clone(), idx));
-                            cur = node.get_child_as_inter(idx);
-                        }
+                    let child_idx = if is_equal { idx + 1 } else { idx };
+                    if cur.height() == 1 {
+                        cache.push((cur.clone(), idx));
+                        return cur.get_child_as_leaf(child_idx);
                     } else {
-                        // there must be a leaf for this
-                        if node.height() == 1 {
-                            cache.push((node.clone(), idx));
-                            return node.get_child_as_leaf(idx);
-                        } else {
-                            cache.push((node.clone(), idx));
-                            cur = node.get_child_as_inter(idx);
-                        }
+                        cache.push((cur.clone(), idx));
+                        cur = cur.get_child_as_inter(child_idx);
                     }
                 }
             }
@@ -331,6 +313,16 @@ impl<K, V> InterNode<K, V> {
             Ok(l) => (inter_key_cap, l),
             Err(_) => panic!("invalid layout"),
         }
+    }
+
+    #[inline(always)]
+    pub fn new_root(
+        height: u32, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
+    ) -> Self {
+        let root = unsafe { Self::alloc(height) };
+        root.set_left_ptr(left_ptr);
+        root.insert_no_split_with_idx(0, promote_key, right_ptr);
+        root
     }
 
     #[inline(always)]
@@ -421,10 +413,18 @@ impl<K, V> InterNode<K, V> {
         Self { base: NodeBase { header }, _phan: Default::default() }
     }
 
+    #[inline(always)]
+    pub(crate) fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
+        unsafe {
+            let p = self.child_ptr(0);
+            p.write(child_ptr)
+        }
+    }
+
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
     #[inline]
-    pub fn insert_no_split(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
+    pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
         debug_assert!(self.count() < Self::cap());
         let _ = unsafe {
             self.base.insert::<K, *mut NodeHeader>(
@@ -435,30 +435,6 @@ impl<K, V> InterNode<K, V> {
                 ptr,
             )
         };
-    }
-
-    /// Move items to the tail of left_node
-    pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
-        debug_assert!(start_idx + move_count <= self.count() as u32);
-        debug_assert!(left_node.count() + move_count as usize <= Self::cap());
-
-        unsafe {
-            let left_count = left_node.count() as u32;
-
-            // Move keys using bulk copy
-            let src_key = self.key_ptr(start_idx);
-            let dst_key = left_node.key_ptr(left_count);
-            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
-
-            // Move children using bulk copy (need move_count + 1 children)
-            let src_child = self.child_ptr(start_idx);
-            let dst_child = left_node.child_ptr(left_count);
-            ptr::copy_nonoverlapping(src_child, dst_child, (move_count + 1) as usize);
-
-            // Update counts
-            self.get_header_mut().count -= move_count;
-            left_node.get_header_mut().count += move_count;
-        }
     }
 
     /// If append == true, move the items to the tail,
@@ -960,108 +936,55 @@ mod tests {
     }
 
     #[test]
-    fn test_leaf_node_alloc_and_dealloc() {
-        unsafe {
-            let mut leaf = LeafNode::<i32, i32>::alloc();
-            assert_eq!(leaf.height(), 0);
-            assert_eq!(leaf.count(), 0);
-
-            // Insert some values
-            for i in 0..4 {
-                let key_ptr = leaf.key_ptr(i as u32);
-                let val_ptr = leaf.value_ptr(i as u32);
-                (*key_ptr).write((i * 10) as i32);
-                (*val_ptr).write((i * 100) as i32);
-            }
-            leaf.get_header_mut().count = 4;
-
-            // Verify values
-            for i in 0..4 {
-                let key_ptr = leaf.key_ptr(i as u32);
-                let val_ptr = leaf.value_ptr(i as u32);
-                assert_eq!((*key_ptr).assume_init_ref(), &((i * 10) as i32));
-                assert_eq!((*val_ptr).assume_init_ref(), &((i * 100) as i32));
-            }
-
-            leaf.dealloc();
-        }
-    }
-
-    #[test]
     fn test_leaf_node_search() {
         unsafe {
-            let mut leaf = LeafNode::<i32, i32>::alloc();
-
+            let mut leaf = LeafNode::<usize, usize>::alloc();
+            let cap = LeafNode::<usize, usize>::cap();
             // Insert sorted keys: 10, 20, 30, 40
-            let keys = [10i32, 20, 30, 40];
-            for (i, &k) in keys.iter().enumerate() {
-                let key_ptr = leaf.key_ptr(i as u32);
-                let val_ptr = leaf.value_ptr(i as u32);
-                (*key_ptr).write(k);
-                (*val_ptr).write(k * 10);
+            for k in 10..(cap + 10) {
+                leaf.insert_no_split(k * 2, k * 2);
             }
-            leaf.get_header_mut().count = 4;
-
+            assert_eq!(leaf.count(), cap);
             // Test search - existing key
-            let (idx, found) = leaf.search(&20);
-            assert!(found);
-            assert_eq!(idx, 1);
-
-            // Test search - non-existing key (should return insertion point)
-            let (idx, found) = leaf.search(&25);
-            assert!(!found);
-            assert_eq!(idx, 2);
-
+            for k in 10..(cap + 10) {
+                let (idx, found) = leaf.search(&(k * 2));
+                assert!(found);
+                assert_eq!(idx, (k - 10) as u32);
+            }
             // Test search - key smaller than all
-            let (idx, found) = leaf.search(&5);
+            let (idx, found) = leaf.search(&0);
             assert!(!found);
             assert_eq!(idx, 0);
 
-            // Test search - key larger than all
-            let (idx, found) = leaf.search(&50);
+            // non-existing key (should return insertion point)
+            let (idx, found) = leaf.search(&21);
             assert!(!found);
-            assert_eq!(idx, 4);
+            assert_eq!(idx, 1);
+
+            // larger than max key
+            let (idx, found) = leaf.search(&((cap + 11) * 2));
+            assert!(!found);
+            assert_eq!(idx as usize, cap);
 
             leaf.dealloc();
-        }
-    }
-
-    #[test]
-    fn test_internal_node_alloc() {
-        unsafe {
-            let mut inter = InterNode::<i32, i32>::alloc(1);
-            assert_eq!(inter.height(), 1);
-            assert_eq!(inter.count(), 0);
-
-            // Insert keys
-            for i in 0..3 {
-                let key_ptr = inter.key_ptr(i as u32);
-                (*key_ptr).write((i * 10) as i32);
-            }
-            inter.get_header_mut().count = 3;
-
-            // Set up child pointers (just null for test)
-            for i in 0..=3 {
-                let child_ptr = inter.child_ptr(i as u32);
-                *child_ptr = ptr::null_mut();
-            }
-
-            inter.dealloc();
         }
     }
 
     #[test]
     fn test_internal_node_search() {
         unsafe {
-            let mut inter = InterNode::<i32, i32>::alloc(1);
+            let mut inter = InterNode::<usize, usize>::alloc(1);
+            let cap = InterNode::<usize, usize>::cap();
 
-            // Insert sorted keys: 10, 20, 30
-            let keys = [10i32, 20, 30];
-            for (i, &k) in keys.iter().enumerate() {
-                let key_ptr = inter.key_ptr(i as u32);
-                (*key_ptr).write(k);
+            for i in 1..(cap + 1) {
+                inter.insert_no_split(i, i as *mut NodeHeader);
             }
-            inter.get_header_mut().count = 3;
+            assert_eq!(inter.count(), cap);
+            for i in 1..(cap + 1) {
+                let (idx, found) = inter.search(&i);
+                assert!(found);
+                assert_eq!(idx, (i - 1) as u)
+            }
 
             // Test search - existing key
             let (idx, found) = inter.search(&20);
