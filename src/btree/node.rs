@@ -205,7 +205,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let (idx, _is_equal) = cur.search(key);
+                    let idx = cur.search(key);
                     if cur.is_leaf() {
                         return cur.get_child_as_leaf(idx);
                     } else {
@@ -223,7 +223,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let (idx, _is_equal) = cur.search(key);
+                    let idx = cur.search(key);
                     if cur.is_leaf() {
                         cache.push(cur.clone(), idx);
                         return cur.get_child_as_leaf(idx);
@@ -243,7 +243,7 @@ impl<K: Ord, V> Node<K, V> {
             let mut cur = node.clone();
             while depth > 0 {
                 depth -= 1;
-                let (idx, is_equal) = cur.search(key);
+                let idx = cur.search(key);
                 debug_assert!(!cur.is_leaf());
                 cache.push(cur.clone(), idx);
                 cur = cur.get_child_as_inter(idx);
@@ -267,6 +267,7 @@ enum PathState {
 pub(super) struct PathCache<K, V> {
     state: PathState,
     depth: u32,
+    // Various<ptr> has 13 cap, which is quite enough for btree
     inner: Various<(InterNode<K, V>, u32)>,
 }
 

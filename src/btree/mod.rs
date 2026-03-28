@@ -275,7 +275,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Insert with split handling - called when leaf is full
-    pub(crate) fn insert_with_split(
+    fn insert_with_split(
         &mut self, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u32,
     ) -> *mut V {
         debug_assert!(leaf.is_full().is_ok());
@@ -293,7 +293,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
             if let Some(mut right_node) = leaf.get_right_node() {
                 if let Err(avail) = right_node.is_full() {
-                    leaf.move_right(&mut right_node, leaf_count - avail, avail, false);
+                    leaf.move_right::<false>(&mut right_node, leaf_count - avail, avail);
                     todo!();
                     // change right node parent key
                     return leaf.insert_no_split(key, value);
@@ -314,9 +314,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         mut right_ptr: *mut NodeHeader,
     ) {
         let cache = self.get_cache();
-        let inter_cap = InterNode::<K, V>::cap() as u32;
         let mut height = 1;
-
         // If we have parent nodes in cache, process them iteratively
         while let Some(mut parent) = cache.pop(&promote_key, self.root.as_ref().unwrap()) {
             if !parent.is_full().is_ok() {
