@@ -112,7 +112,8 @@ impl<K, V> InterNode<K, V> {
     where
         K: Ord,
     {
-        self.base.search::<K>(INTER_KEY_HEAD_SIZE, key)
+        let (idx, is_equal) = self.base.search::<K>(INTER_KEY_HEAD_SIZE, key);
+        if is_equal { (idx + 1, true) } else { (idx, false) }
     }
 
     /// Get pointer to key at index
