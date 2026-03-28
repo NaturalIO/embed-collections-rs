@@ -69,16 +69,6 @@ impl<K, V> InterNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn new_root(
-        height: u32, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
-    ) -> Self {
-        let mut root = unsafe { Self::alloc(height) };
-        root.set_left_ptr(left_ptr);
-        root.insert_no_split_with_idx(0, promote_key, right_ptr);
-        root
-    }
-
-    #[inline(always)]
     pub unsafe fn alloc(height: u32) -> Self {
         let mut base = NodeBase::alloc(Self::LAYOUT.1);
         let header = base.get_header_mut();
@@ -105,15 +95,27 @@ impl<K, V> InterNode<K, V> {
         self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
     }
 
-    /// search the position to insert
-    /// returns the idx, is_equal
+    pub(crate) fn cap() -> usize {
+        Self::LAYOUT.0
+    }
+
+    /// Create InterNode from header pointer
     #[inline(always)]
-    pub(crate) fn search(&self, key: &K) -> (u32, bool)
-    where
-        K: Ord,
-    {
-        let (idx, is_equal) = self.base.search::<K>(INTER_KEY_HEAD_SIZE, key);
-        if is_equal { (idx + 1, true) } else { (idx, false) }
+    pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
+        Self { base: NodeBase { header }, _phan: Default::default() }
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
+        unsafe {
+            let p = self.child_ptr(0);
+            p.write(child_ptr)
+        }
+    }
+    #[inline(always)]
+    pub fn is_full(&self) -> Result<(), u32> {
+        let avail = Self::cap() - self.count();
+        if avail == 0 { Ok(()) } else { Err(avail as u32) }
     }
 
     /// Get pointer to key at index
@@ -154,23 +156,35 @@ impl<K, V> InterNode<K, V> {
             }
         }
     }
+}
 
-    pub(crate) fn cap() -> usize {
-        Self::LAYOUT.0
+impl<K: Ord, V> InterNode<K, V> {
+    /// (inter_key_cap, leaf_key_cap)
+    #[inline(always)]
+    pub fn new_root(
+        height: u32, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
+    ) -> Self {
+        let mut root = unsafe { Self::alloc(height) };
+        root.set_left_ptr(left_ptr);
+        root.insert_no_split_with_idx(0, promote_key, right_ptr);
+        root
     }
 
-    /// Create InterNode from header pointer
+    /// search the position to insert
+    /// returns the idx, is_equal
     #[inline(always)]
-    pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
-        Self { base: NodeBase { header }, _phan: Default::default() }
+    pub(crate) fn search(&self, key: &K) -> (u32, bool)
+    where
+        K: Ord,
+    {
+        let (idx, is_equal) = self.base._search::<K>(INTER_KEY_HEAD_SIZE, key);
+        if is_equal { (idx + 1, true) } else { (idx, false) }
     }
 
-    #[inline(always)]
-    pub(crate) fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
-        unsafe {
-            let p = self.child_ptr(0);
-            p.write(child_ptr)
-        }
+    pub fn insert_no_split(&mut self, key: K, ptr: *mut NodeHeader) {
+        let (idx, _is_equal) = self.search(&key);
+        debug_assert!(!_is_equal);
+        self.insert_no_split_with_idx(idx, key, ptr);
     }
 
     /// Insert key-value at index (assuming there is space)
@@ -179,7 +193,7 @@ impl<K, V> InterNode<K, V> {
     pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
         debug_assert!(self.count() < Self::cap());
         let _ = unsafe {
-            self.base.insert::<K, *mut NodeHeader>(
+            self.base._insert::<K, *mut NodeHeader>(
                 INTER_KEY_HEAD_SIZE,
                 AREA_SIZE + size_of::<*mut NodeHeader>(), // the left ptr should not be touch
                 idx,
@@ -244,10 +258,13 @@ impl<K, V> InterNode<K, V> {
 
     /// Split internal node when inserting at idx with key and child pointer
     /// Returns (new_right_node, promote_key)
-    pub fn split(&mut self, idx: u32, key: K, child_ptr: *mut NodeHeader) -> (Self, K) {
+    pub fn insert_split(&mut self, key: K, child_ptr: *mut NodeHeader) -> (Self, K) {
         let count = self.count() as u32;
+        let (idx, _is_equal) = self.search(&key);
+        debug_assert!(!_is_equal);
         let split_idx = count >> 1;
         let mut new_node = unsafe { InterNode::<K, V>::alloc(self.height()) };
+        todo!(); // check the idx when move
 
         unsafe {
             // Determine which side the insertion should go
@@ -325,7 +342,7 @@ impl<K, V> InterNode<K, V> {
     where
         K: Ord,
     {
-        let (idx, is_equal) = self.search(key);
+        let (idx, is_equal) = self.base._search(INTER_KEY_HEAD_SIZE, key);
         let count = self.count() as u32; // the count is equal to keys count, but value count should + 1
         if !is_equal {
             if idx != 0 {
@@ -333,13 +350,13 @@ impl<K, V> InterNode<K, V> {
             }
             // remove the left child
             unsafe {
-                self.base.remove_slot::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, 0, count)
+                self.base._remove_slot::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, 0, count)
             };
         } else {
             unsafe {
-                let _key = self.base.remove_slot::<K>(INTER_KEY_HEAD_SIZE, idx, count);
+                let _key = self.base._remove_slot::<K>(INTER_KEY_HEAD_SIZE, idx, count);
                 // let the key drop
-                self.base.remove_slot::<*mut NodeHeader>(
+                self.base._remove_slot::<*mut NodeHeader>(
                     AREA_SIZE + INTER_PTR_HEAD_SIZE,
                     idx + 1,
                     count,

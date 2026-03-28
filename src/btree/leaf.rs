@@ -172,7 +172,7 @@ impl<K, V> LeafNode<K, V> {
     where
         K: Ord,
     {
-        self.base.search::<K>(LEAF_HEAD_SIZE, key)
+        self.base._search::<K>(LEAF_HEAD_SIZE, key)
     }
 
     /// Insert key-value at index (assuming there is space)
@@ -181,7 +181,7 @@ impl<K, V> LeafNode<K, V> {
     pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
         debug_assert!(self.count() < Self::cap());
         unsafe {
-            self.base.insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
+            self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
         }
     }
 
@@ -196,7 +196,7 @@ impl<K, V> LeafNode<K, V> {
         let (idx, is_equal) = self.search(&key);
         debug_assert!(!is_equal);
         unsafe {
-            self.base.insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
+            self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
         }
     }
 
@@ -204,8 +204,8 @@ impl<K, V> LeafNode<K, V> {
     pub fn remove_no_borrow(&mut self, idx: u32) -> (K, V) {
         let left = self.count() as u32 - 1;
         unsafe {
-            let key = self.base.remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
-            let value = self.base.remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
+            let key = self.base._remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
+            let value = self.base._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
             self.get_header_mut().count = left;
             (key, value)
         }
