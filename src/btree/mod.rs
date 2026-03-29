@@ -302,9 +302,9 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         &mut self, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u32,
     ) -> *mut V {
         debug_assert!(leaf.is_full().is_ok());
-        let leaf_count = leaf.count() as u32;
+        let cap = LeafNode::<K, V>::cap();
         self.len += 1;
-        if idx < leaf_count {
+        if idx < cap {
             // random insert, try borrow space from left and right
             if let Some(mut left_node) = leaf.get_left_node() {
                 if let Err(_) = left_node.is_full() {
@@ -327,14 +327,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if let Err(_) = right_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
                     debug_assert!(!_is_equal);
-                    if idx == LeafNode::<K, V>::cap() as u32 {
+                    if idx == cap {
                         // leaf is not change, in this condition, right_node is the leftmost child
                         // of its parent, need to update its separate_key
                         let val_p = right_node.insert_no_split_with_idx(0, key, value);
                         self.update_parent_key(right_node, PathState::Left);
                         return val_p;
                     } else {
-                        leaf.move_right::<false>(&mut right_node, leaf_count - 1, 1);
+                        leaf.move_right::<false>(&mut right_node, cap - 1, 1);
                         let val_p = leaf.insert_no_split(key, value);
                         self.update_parent_key(right_node, PathState::Left);
                         return val_p;
