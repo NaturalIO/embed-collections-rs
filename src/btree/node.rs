@@ -9,6 +9,9 @@ pub(super) const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
 /// Total node size: 4 cache lines (256 bytes on x86_64)
 pub(super) const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
 
+pub(super) const PTR_SIZE: usize = size_of::<*mut NodeHeader>();
+pub(super) const PTR_ALIGN: usize = align_of::<*mut NodeHeader>();
+
 /*
 The Layout:
 - InterNode: CACHELINE( 8B NodeHeader | Keys | alignment ),  CACHELINE(Values)
@@ -46,7 +49,7 @@ pub(super) struct NodeBase {
 
 impl NodeBase {
     #[inline(always)]
-    pub fn alloc(layout: Layout) -> Self {
+    pub fn _alloc(layout: Layout) -> Self {
         unsafe {
             let p: *mut u8 = alloc(layout);
             if p.is_null() {
@@ -80,11 +83,13 @@ impl NodeBase {
     }
 
     /// Get pointer to key at index with given header offset
+    ///
+    /// # Safety
+    ///
+    /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
-    pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *mut T {
-        unsafe {
-            NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * size_of::<T>())
-        }
+    pub unsafe fn item_ptr<T>(&self, start_offset: usize, item_size: usize, idx: u32) -> *mut T {
+        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * item_size) }
     }
 
     /// Check if this is a leaf node
@@ -108,7 +113,7 @@ impl NodeBase {
     /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
-    pub fn _search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
+    pub fn _search<K>(&self, header_offset: usize, key_size: usize, key: &K) -> (u32, bool)
     where
         K: Ord,
     {
@@ -117,7 +122,7 @@ impl NodeBase {
             ($start: expr, $end: expr) => {
                 let mut idx = $start as u32;
                 if $start < $end {
-                    let mut k = self.item_ptr::<K>(header_offset, $start as u32);
+                    let mut k = self.item_ptr::<K>(header_offset, key_size, $start as u32);
                     loop {
                         if *k == *key {
                             return (idx, true);
@@ -142,7 +147,7 @@ impl NodeBase {
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
             let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
             if count > first_line_limit
-                && *key > (*self.item_ptr::<K>(header_offset, first_line_limit - 1))
+                && *key > (*self.item_ptr::<K>(header_offset, key_size, first_line_limit - 1))
             {
                 _search!(first_line_limit, count);
             } else {
@@ -153,10 +158,12 @@ impl NodeBase {
 
     /// NOTE: it will require two calls to remove (k, v) pair, so the count is not decrease here
     #[inline]
-    pub unsafe fn _remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
+    pub unsafe fn _remove_slot<T>(
+        &mut self, header_offset: usize, item_size: usize, idx: u32, mut left: u32,
+    ) -> T {
         debug_assert!(idx < left + 1);
         unsafe {
-            let item_p = self.item_ptr::<T>(header_offset, idx);
+            let item_p = self.item_ptr::<T>(header_offset, item_size, idx);
             let item = item_p.read();
             left -= idx;
             if left > 0 {
@@ -171,16 +178,17 @@ impl NodeBase {
     /// # Safety
     /// it does not check is_full
     pub unsafe fn _insert<K, V>(
-        &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
+        &mut self, key_header_offset: usize, value_header_offset: usize, key_size: usize,
+        value_size: usize, idx: u32, key: K, value: V,
     ) -> *mut V {
         let count = self.count() as u32;
         unsafe {
-            let key_p = self.item_ptr::<K>(key_header_offset, idx);
+            let key_p = self.item_ptr::<K>(key_header_offset, key_size, idx);
             if idx < count {
                 ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
             }
             key_p.write(key);
-            let value_p = self.item_ptr::<V>(value_header_offset, idx);
+            let value_p = self.item_ptr::<V>(value_header_offset, value_size, idx);
             if idx < count {
                 ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
             }
@@ -204,7 +212,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let idx = cur.search(key);
+                    let idx = cur.search_child(key);
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
@@ -223,7 +231,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let idx = cur.search(key);
+                    let idx = cur.search_child(key);
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
@@ -245,7 +253,7 @@ impl<K: Ord, V> Node<K, V> {
             let mut cur = node.clone();
             while depth > 0 {
                 depth -= 1;
-                let idx = cur.search(key);
+                let idx = cur.search_child(key);
                 cache.push(cur.clone(), idx);
                 cur = cur.get_child_as_inter(idx);
             }

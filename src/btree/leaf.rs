@@ -45,7 +45,7 @@ impl<K, V> DerefMut for LeafNode<K, V> {
 
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: (u32, Layout) = Self::cal_layout();
+    const LAYOUT: (u32, Layout, usize, usize) = Self::cal_layout();
 
     /// return inter_key_cap, leaf_key_cap.
     /// where:
@@ -53,9 +53,15 @@ impl<K, V> LeafNode<K, V> {
     /// - leaf_key_cap = leaf_value_cap;
     ///
     /// assert K, V can fit into the cacheline after devided by header.
-    const fn cal_layout() -> (u32, Layout) {
-        let key_size = size_of::<K>();
-        let value_size = size_of::<V>();
+    const fn cal_layout() -> (u32, Layout, usize, usize) {
+        let mut key_size = size_of::<K>();
+        let mut value_size = size_of::<V>();
+        if key_size < PTR_ALIGN {
+            key_size = PTR_ALIGN;
+        }
+        if value_size < PTR_ALIGN {
+            value_size = PTR_ALIGN;
+        }
         assert!(align_of::<MaybeUninit<K>>() <= 8);
         assert!(align_of::<MaybeUninit<V>>() <= 8);
         assert!(key_size <= CACHE_LINE_SIZE - 16);
@@ -65,15 +71,15 @@ impl<K, V> LeafNode<K, V> {
         if leaf_key_cap > leaf_value_cap {
             leaf_key_cap = leaf_value_cap;
         }
-        match Layout::from_size_align(NODE_SIZE, NODE_SIZE) {
-            Ok(l) => (leaf_key_cap as u32, l),
+        match Layout::from_size_align(NODE_SIZE, PTR_ALIGN) {
+            Ok(l) => (leaf_key_cap as u32, l, key_size, value_size),
             Err(_) => panic!("invalid layout"),
         }
     }
 
     #[inline(always)]
     pub unsafe fn alloc() -> Self {
-        let mut base = NodeBase::alloc(Self::LAYOUT.1);
+        let mut base = NodeBase::_alloc(Self::LAYOUT.1);
         let header = base.get_header_mut();
         header.height = 0; // Leaf nodes have height 0
         header.count = 0;
@@ -123,13 +129,15 @@ impl<K, V> LeafNode<K, V> {
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
-        unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx) }
+        unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, Self::LAYOUT.2, idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
     pub unsafe fn value_ptr(&self, idx: u32) -> *mut MaybeUninit<V> {
-        unsafe { self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx) }
+        unsafe {
+            self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, Self::LAYOUT.3, idx)
+        }
     }
 
     /// Get pointer to LeafPtrs
@@ -174,7 +182,7 @@ impl<K, V> LeafNode<K, V> {
     where
         K: Ord,
     {
-        self.base._search::<K>(LEAF_HEAD_SIZE, key)
+        self.base._search::<K>(LEAF_HEAD_SIZE, Self::LAYOUT.2, key)
     }
 
     /// Insert key-value at index (assuming there is space)
@@ -183,7 +191,15 @@ impl<K, V> LeafNode<K, V> {
     pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
         debug_assert!(self.count() < Self::cap());
         unsafe {
-            self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
+            self.base._insert::<K, V>(
+                LEAF_HEAD_SIZE,
+                AREA_SIZE + LEAF_HEAD_SIZE,
+                Self::LAYOUT.2,
+                Self::LAYOUT.3,
+                idx,
+                key,
+                value,
+            )
         }
     }
 
@@ -197,17 +213,16 @@ impl<K, V> LeafNode<K, V> {
         debug_assert!(self.count() < Self::cap());
         let (idx, is_equal) = self.search(&key);
         debug_assert!(!is_equal);
-        unsafe {
-            self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
-        }
+        self.insert_no_split_with_idx(idx, key, value)
     }
 
     #[inline]
     pub fn remove_no_borrow(&mut self, idx: u32) -> (K, V) {
         let left = self.count() as u32 - 1;
         unsafe {
-            let key = self.base._remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
-            let value = self.base._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
+            let key = self.base._remove_slot::<K>(LEAF_HEAD_SIZE, Self::LAYOUT.2, idx, left);
+            let value =
+                self.base._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, Self::LAYOUT.3, idx, left);
             self.get_header_mut().count = left;
             (key, value)
         }
