@@ -131,10 +131,10 @@ impl NodeBase {
                             return (idx, false);
                         }
                         idx += 1;
-                        k = k.add(1);
                         if idx == $end as u32 {
                             break;
                         }
+                        k = (k as *mut u8).add(key_size) as *mut K;
                     }
                     // NOTE: be aware to check idx == cap
                 }
@@ -145,14 +145,13 @@ impl NodeBase {
         unsafe {
             let count = self.count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
-            let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
-            if count > first_line_limit
-                && *key > (*self.item_ptr::<K>(header_offset, key_size, first_line_limit - 1))
-            {
-                _search!(first_line_limit, count);
-            } else {
-                _search!(0, count);
+            let first_line_limit = (first_line_bytes / key_size) as u32;
+            if count > first_line_limit {
+                if *key > (*self.item_ptr::<K>(header_offset, key_size, first_line_limit - 1)) {
+                    _search!(first_line_limit, count);
+                }
             }
+            _search!(0, count);
         }
     }
 
@@ -163,11 +162,11 @@ impl NodeBase {
     ) -> T {
         debug_assert!(idx < left + 1);
         unsafe {
-            let item_p = self.item_ptr::<T>(header_offset, item_size, idx);
-            let item = item_p.read();
+            let item_p = self.item_ptr::<T>(header_offset, item_size, idx) as *mut u8;
+            let item = (item_p as *mut T).read();
             left -= idx;
             if left > 0 {
-                ptr::copy(item_p.add(1), item_p, left as usize);
+                ptr::copy(item_p.add(item_size), item_p, left as usize * item_size);
             }
             item
         }
@@ -183,18 +182,18 @@ impl NodeBase {
     ) -> *mut V {
         let count = self.count() as u32;
         unsafe {
-            let key_p = self.item_ptr::<K>(key_header_offset, key_size, idx);
+            let key_p = self.item_ptr::<K>(key_header_offset, key_size, idx) as *mut u8;
             if idx < count {
-                ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
+                ptr::copy(key_p, key_p.add(value_size), (count - idx) as usize * key_size);
             }
-            key_p.write(key);
-            let value_p = self.item_ptr::<V>(value_header_offset, value_size, idx);
+            (key_p as *mut K).write(key);
+            let value_p = self.item_ptr::<V>(value_header_offset, value_size, idx) as *mut u8;
             if idx < count {
-                ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
+                ptr::copy(value_p, value_p.add(value_size), (count - idx) as usize * value_size);
             }
-            value_p.write(value);
+            (value_p as *mut V).write(value);
             self.get_header_mut().count = count + 1;
-            value_p
+            value_p as *mut V
         }
     }
 }

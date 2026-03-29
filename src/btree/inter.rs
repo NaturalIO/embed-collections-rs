@@ -235,12 +235,9 @@ impl<K: Ord, V> InterNode<K, V> {
             // Append to tail of right_node
             let right_count = right_node.count();
             // Move keys using bulk copy
-            let src_key = self.key_ptr(start_idx) as *mut K;
-            println!(
-                "copy right start_idx {start_idx} right_count {right_count}, copy {copy_count}"
-            );
-            let dst_key = right_node.key_ptr(right_count) as *mut K;
-            ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
+            let src_key = self.key_ptr(start_idx) as *mut u8;
+            let dst_key = right_node.key_ptr(right_count) as *mut u8;
+            ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize * Self::LAYOUT.2);
 
             // Move children using bulk copy (need to avoid touching left_ptr)
             let src_child = self.child_ptr(start_idx + 1) as *mut *mut NodeHeader;
@@ -259,7 +256,6 @@ impl<K: Ord, V> InterNode<K, V> {
         let idx = self.search_key(&key);
         let mut new_node = unsafe { InterNode::<K, V>::alloc(self.height()) };
         if idx == cap {
-            println!("cap");
             // the right most position, new empty node
             new_node.set_left_ptr(child_ptr);
             return (new_node, key);
@@ -267,7 +263,6 @@ impl<K: Ord, V> InterNode<K, V> {
         let split_idx = cap >> 1;
         unsafe {
             if idx == split_idx {
-                println!("equal");
                 // key don't need to insert, just promote. key < split_key, so child_ptr is left_ptr
                 new_node.set_left_ptr(child_ptr);
                 self.copy_right(&mut new_node, split_idx, cap - split_idx);
@@ -278,7 +273,6 @@ impl<K: Ord, V> InterNode<K, V> {
             new_node.set_left_ptr(*self.child_ptr(split_idx + 1));
             // Determine which side the insertion should go
             if idx < split_idx {
-                println!("insert left split_idx {split_idx}");
                 // Split point is to the right of insertion
                 // Move right half (including split_idx) to new node
                 let right_count = cap - split_idx - 1;

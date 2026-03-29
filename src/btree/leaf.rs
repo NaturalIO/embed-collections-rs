@@ -242,14 +242,14 @@ impl<K, V> LeafNode<K, V> {
             let left_count = left_node.count();
 
             // Move keys using bulk copy
-            let src_key = self.key_ptr(start_idx);
-            let dst_key = left_node.key_ptr(left_count);
-            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+            let src_key = self.key_ptr(start_idx) as *mut u8;
+            let dst_key = left_node.key_ptr(left_count) as *mut u8;
+            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize * Self::LAYOUT.2);
 
             // Move values using bulk copy
-            let src_val = self.value_ptr(start_idx);
-            let dst_val = left_node.value_ptr(left_count);
-            ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+            let src_val = self.value_ptr(start_idx) as *mut u8;
+            let dst_val = left_node.value_ptr(left_count) as *mut u8;
+            ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize * Self::LAYOUT.3);
 
             // Update counts
             self.get_header_mut().count -= move_count;
