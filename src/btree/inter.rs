@@ -5,7 +5,7 @@ use alloc::alloc::{Layout, dealloc};
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
-use core::ptr::{self, NonNull, null_mut};
+use core::ptr::{self, NonNull};
 
 /// Header size at start of key area for internal nodes
 const INTER_KEY_HEAD_SIZE: usize = 8;
@@ -133,7 +133,7 @@ impl<K, V> InterNode<K, V> {
     #[inline]
     pub fn get_child_as_leaf(&self, idx: u32) -> LeafNode<K, V> {
         unsafe {
-            let child_ptr = (*self.child_ptr(idx));
+            let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
                 panic!("child is null");
             } else {
@@ -146,7 +146,7 @@ impl<K, V> InterNode<K, V> {
     #[inline(always)]
     pub fn get_child_as_inter(&self, idx: u32) -> InterNode<K, V> {
         unsafe {
-            let child_ptr = (*self.child_ptr(idx));
+            let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
                 panic!("child is null");
             } else {
@@ -246,7 +246,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 return (new_node, key);
             }
             let promote_key = (*self.key_ptr(split_idx)).assume_init_read();
-            new_node.set_left_ptr((*self.child_ptr(split_idx + 1)));
+            new_node.set_left_ptr(*self.child_ptr(split_idx + 1));
             // Determine which side the insertion should go
             if idx < split_idx {
                 // Split point is to the right of insertion
