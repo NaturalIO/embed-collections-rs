@@ -2,6 +2,7 @@ use super::leaf::*;
 use super::node::*;
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, dealloc};
+use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
@@ -42,7 +43,7 @@ impl<K, V> DerefMut for InterNode<K, V> {
 
 impl<K, V> InterNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: (usize, Layout) = Self::cal_layout();
+    const LAYOUT: (u32, Layout) = Self::cal_layout();
 
     /// return inter_key_cap, leaf_key_cap.
     /// where:
@@ -50,7 +51,7 @@ impl<K, V> InterNode<K, V> {
     /// - leaf_key_cap = leaf_value_cap;
     ///
     /// assert K, V can fit into the cacheline after devided by header.
-    const fn cal_layout() -> (usize, Layout) {
+    const fn cal_layout() -> (u32, Layout) {
         let key_size = size_of::<K>();
         let value_size = size_of::<V>();
         assert!(align_of::<MaybeUninit<K>>() <= 8);
@@ -63,7 +64,7 @@ impl<K, V> InterNode<K, V> {
             inter_key_cap = inter_value_cap - 1;
         }
         match Layout::from_size_align(NODE_SIZE, NODE_SIZE) {
-            Ok(l) => (inter_key_cap, l),
+            Ok(l) => (inter_key_cap as u32, l),
             Err(_) => panic!("invalid layout"),
         }
     }
@@ -95,13 +96,14 @@ impl<K, V> InterNode<K, V> {
         self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
     }
 
-    pub(crate) fn cap() -> usize {
+    pub(crate) fn cap() -> u32 {
         Self::LAYOUT.0
     }
 
     /// Create InterNode from header pointer
     #[inline(always)]
     pub(crate) unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
+        unsafe { debug_assert!(!header.as_ref().is_leaf()) };
         Self { base: NodeBase { header }, _phan: Default::default() }
     }
 
@@ -131,13 +133,17 @@ impl<K, V> InterNode<K, V> {
     }
 
     #[inline]
-    pub fn get_child_as_leaf(&self, idx: u32) -> LeafNode<K, V> {
+    pub fn get_child(&self, idx: u32) -> Node<K, V> {
         unsafe {
             let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
                 panic!("child is null");
             } else {
-                LeafNode::<K, V>::from_header(NonNull::new_unchecked(child_ptr))
+                if (*child_ptr).is_leaf() {
+                    Node::Leaf(LeafNode::<K, V>::from_header(NonNull::new_unchecked(child_ptr)))
+                } else {
+                    Node::Inter(InterNode::<K, V>::from_header(NonNull::new_unchecked(child_ptr)))
+                }
             }
         }
     }
@@ -206,10 +212,10 @@ impl<K: Ord, V> InterNode<K, V> {
     #[inline(always)]
     fn copy_right(&mut self, right_node: &mut Self, start_idx: u32, copy_count: u32) {
         debug_assert!(start_idx + copy_count <= self.count() as u32);
-        debug_assert!(right_node.count() + copy_count as usize <= Self::cap());
+        debug_assert!(right_node.count() + copy_count <= Self::cap());
         unsafe {
             // Append to tail of right_node
-            let right_count = right_node.count() as u32;
+            let right_count = right_node.count();
             // Move keys using bulk copy
             let src_key = self.key_ptr(start_idx);
             let dst_key = right_node.key_ptr(right_count);
@@ -227,8 +233,8 @@ impl<K: Ord, V> InterNode<K, V> {
     /// Split internal node when inserting at idx with key and child pointer
     /// Returns (new_right_node, promote_key)
     pub fn insert_split(&mut self, key: K, child_ptr: *mut NodeHeader) -> (Self, K) {
-        let count = self.count() as u32;
-        debug_assert_eq!(count, Self::cap() as u32);
+        let count = self.count();
+        debug_assert_eq!(count, Self::cap());
         let idx = self.search(&key);
         let mut new_node = unsafe { InterNode::<K, V>::alloc(self.height()) };
         if idx == count {
@@ -302,6 +308,23 @@ impl<K: Ord, V> InterNode<K, V> {
     }
 }
 
+impl<K: fmt::Debug, V> fmt::Debug for InterNode<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.count();
+        write!(f, "InterNode {{ height: {}, count: {}, keys: [", self.height(), count)?;
+        for i in 0..count {
+            unsafe {
+                let key = (*self.key_ptr(i as u32)).assume_init_ref();
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{:?}", key)?;
+            }
+        }
+        write!(f, "], children: {} }}", count + 1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -314,12 +337,12 @@ mod tests {
 
             inter.set_left_ptr(0 as *mut NodeHeader);
             for i in 1..(cap + 1) {
-                inter.insert_no_split(i, i as *mut NodeHeader);
+                inter.insert_no_split(i as usize, i as *mut NodeHeader);
             }
             assert_eq!(inter.count(), cap);
             // Test search - existing key
             for i in 1..(cap + 1) {
-                let idx = inter.search(&i);
+                let idx = inter.search(&(i as usize));
                 assert_eq!(idx, i as u32);
             }
 
@@ -336,32 +359,176 @@ mod tests {
     }
 
     #[test]
-    fn test_internal_node_split_basic() {
+    fn test_inter_split_insert_left() {
+        let cap = InterNode::<i32, i32>::cap();
         unsafe {
-            // Create an internal node with just a few items
+            // Test Case 2: Insert key before split_idx (should go to left node)
+            let mut node = InterNode::<i32, i32>::alloc(1);
+
+            // Fill the node to capacity with dummy pointers
+            (*node.child_ptr(0)) = 0x1000 as *mut NodeHeader;
+            for i in 0..cap {
+                (*node.key_ptr(i)).write((i * 10) as i32);
+                (*node.child_ptr(i + 1)) = (0x1000 + (i + 1) * 0x100) as *mut NodeHeader;
+            }
+            node.get_header_mut().count = cap;
+
+            let split_idx = cap >> 1;
+            let insert_key = (split_idx * 10 - 15) as i32; // Key before split_idx
+            let insert_child = 0x5000 as *mut NodeHeader;
+
+            let (mut new_node, _promote_key) = node.insert_split(insert_key, insert_child);
+
+            // Verify counts
+            let left_count = node.count() as u32;
+            let right_count = new_node.count() as u32;
+
+            assert_eq!(left_count, split_idx, "Left node should have split_idx keys");
+            assert_eq!(right_count, cap - split_idx, "Right node should have cap - split_idx keys");
+            assert_eq!(
+                left_count + right_count,
+                cap + 1,
+                "Total keys should be cap + 1 when insert_key != promote_key"
+            );
+
+            // Verify the inserted key is in left node
+            let in_left = (0..split_idx).any(|i| {
+                let key = (*node.key_ptr(i)).assume_init_ref();
+                *key == insert_key
+            });
+            assert!(in_left, "Key inserted before split_idx should be in left node");
+
+            // Cleanup
+            new_node.dealloc();
+            node.dealloc();
+            println!("Test Case 2 completed successfully");
+        }
+    }
+
+    #[test]
+    fn test_internal_node_split_at_promote() {
+        // Insert key at split_idx position (will be promoted, not inserted)
+        unsafe {
+            let cap = InterNode::<i32, i32>::cap();
+
+            println!("=== Test Internal Node Split Basic ===");
+            println!("cap = {}", cap);
 
             let mut node = InterNode::<i32, i32>::alloc(1);
 
-            // Add 3 keys and 4 children (node is not full)
-            (*node.key_ptr(0)).write(10);
-            (*node.key_ptr(1)).write(20);
-            (*node.key_ptr(2)).write(30);
-            (*node.child_ptr(0)) = 100 as *mut NodeHeader;
-            (*node.child_ptr(1)) = 200 as *mut NodeHeader;
-            (*node.child_ptr(2)) = 300 as *mut NodeHeader;
-            (*node.child_ptr(3)) = 400 as *mut NodeHeader;
-            node.get_header_mut().count = 3;
-            // Split at middle (idx = 1)
-            let new_key = 25;
-            let new_child = 250 as *mut NodeHeader;
-            let (mut new_node, promote_key) = node.insert_split(new_key, new_child);
-            // Just verify no crash and counts are reasonable
-            assert!(node.count() > 0);
-            assert!(new_node.count() > 0);
-            // Cleanup
-            node.dealloc();
+            // Fill the node to capacity with dummy pointers
+            (*node.child_ptr(0)) = 0x1000 as *mut NodeHeader;
+            for i in 0..cap {
+                (*node.key_ptr(i)).write((i * 10) as i32);
+                (*node.child_ptr(i + 1)) = (0x1000 + (i + 1) * 0x100) as *mut NodeHeader;
+            }
+            node.get_header_mut().count = cap;
 
+            println!(
+                "Before split: node.count = {}, node.ptr = {:?}",
+                node.count(),
+                node.get_ptr()
+            );
+
+            let split_idx = cap >> 1;
+            let insert_key = (split_idx * 10 - 5) as i32; // Key between split_idx-1 and split_idx
+            let insert_child = 0x5000 as *mut NodeHeader;
+
+            println!(
+                "split_idx = {}, insert_key = {}, insert_child = {:?}",
+                split_idx, insert_key, insert_child
+            );
+
+            let (mut new_node, promote_key) = node.insert_split(insert_key, insert_child);
+
+            println!(
+                "After split: left count = {}, right count = {}, promote_key = {}",
+                node.count(),
+                new_node.count(),
+                promote_key
+            );
+            println!("left ptr = {:?}, right ptr = {:?}", node.get_ptr(), new_node.get_ptr());
+
+            // Verify counts
+            let left_count = node.count() as u32;
+            let right_count = new_node.count() as u32;
+
+            println!("Asserting: left_count({}) == split_idx({})", left_count, split_idx);
+            assert_eq!(left_count, split_idx, "Left node should have split_idx keys");
+            assert_eq!(right_count, cap - split_idx, "Right node should have cap - split_idx keys");
+            assert_eq!(
+                left_count + right_count,
+                cap,
+                "Total keys should be cap when insert_key == promote_key"
+            );
+            assert_eq!(promote_key, insert_key, "Promoted key should be the inserted key");
+
+            // Verify the inserted key is NOT in either node (it was promoted)
+            let in_left = (0..split_idx).any(|i| {
+                let key = (*node.key_ptr(i)).assume_init_ref();
+                *key == insert_key
+            });
+            let in_right = (0..(cap - split_idx)).any(|i| {
+                let key = (*new_node.key_ptr(i)).assume_init_ref();
+                *key == insert_key
+            });
+            assert!(
+                !in_left && !in_right,
+                "Inserted key at split_idx should be promoted, not stored in nodes"
+            );
+
+            // Cleanup
             new_node.dealloc();
+            node.dealloc();
+            println!("Test Case 1 completed successfully");
+        }
+    }
+
+    #[test]
+    fn test_inter_split_insert_right() {
+        let cap = InterNode::<i32, i32>::cap() as u32;
+        // Test Case 3: Insert key after split_idx (should go to right node)
+        unsafe {
+            println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
+            let mut node = InterNode::<i32, i32>::alloc(1);
+
+            // Fill the node to capacity with dummy pointers
+            (*node.child_ptr(0)) = 0x1000 as *mut NodeHeader;
+            for i in 0..cap {
+                (*node.key_ptr(i)).write((i * 10) as i32);
+                (*node.child_ptr(i + 1)) = (0x1000 + (i + 1) * 0x100) as *mut NodeHeader;
+            }
+            node.get_header_mut().count = cap;
+
+            let split_idx = cap >> 1;
+            let insert_key = (split_idx * 10 + 5) as i32; // Key after split_idx
+            let insert_child = 0x5000 as *mut NodeHeader;
+
+            let (mut new_node, _promote_key) = node.insert_split(insert_key, insert_child);
+
+            // Verify counts
+            let left_count = node.count() as u32;
+            let right_count = new_node.count() as u32;
+
+            assert_eq!(left_count, split_idx, "Left node should have split_idx keys");
+            assert_eq!(right_count, cap - split_idx, "Right node should have cap - split_idx keys");
+            assert_eq!(
+                left_count + right_count,
+                cap + 1,
+                "Total keys should be cap + 1 when insert_key != promote_key"
+            );
+
+            // Verify the inserted key is in right node
+            let in_right = (0..(cap - split_idx)).any(|i| {
+                let key = (*new_node.key_ptr(i)).assume_init_ref();
+                *key == insert_key
+            });
+            assert!(in_right, "Key inserted after split_idx should be in right node");
+
+            // Cleanup
+            new_node.dealloc();
+            node.dealloc();
+            println!("Test Case 3 completed successfully");
         }
     }
 }

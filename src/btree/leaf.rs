@@ -1,6 +1,7 @@
 use super::node::*;
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, dealloc};
+use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
@@ -44,7 +45,7 @@ impl<K, V> DerefMut for LeafNode<K, V> {
 
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: (usize, Layout) = Self::cal_layout();
+    const LAYOUT: (u32, Layout) = Self::cal_layout();
 
     /// return inter_key_cap, leaf_key_cap.
     /// where:
@@ -52,7 +53,7 @@ impl<K, V> LeafNode<K, V> {
     /// - leaf_key_cap = leaf_value_cap;
     ///
     /// assert K, V can fit into the cacheline after devided by header.
-    const fn cal_layout() -> (usize, Layout) {
+    const fn cal_layout() -> (u32, Layout) {
         let key_size = size_of::<K>();
         let value_size = size_of::<V>();
         assert!(align_of::<MaybeUninit<K>>() <= 8);
@@ -65,7 +66,7 @@ impl<K, V> LeafNode<K, V> {
             leaf_key_cap = leaf_value_cap;
         }
         match Layout::from_size_align(NODE_SIZE, NODE_SIZE) {
-            Ok(l) => (leaf_key_cap, l),
+            Ok(l) => (leaf_key_cap as u32, l),
             Err(_) => panic!("invalid layout"),
         }
     }
@@ -162,6 +163,7 @@ impl<K, V> LeafNode<K, V> {
     /// Create LeafNode from header pointer
     #[inline(always)]
     pub unsafe fn from_header(header: NonNull<NodeHeader>) -> Self {
+        unsafe { debug_assert!(header.as_ref().is_leaf()) };
         Self { base: NodeBase { header }, _phan: Default::default() }
     }
 
@@ -212,17 +214,17 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn cap() -> usize {
+    pub fn cap() -> u32 {
         Self::LAYOUT.0
     }
 
     /// move items to the tail of left_node
     pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
-        debug_assert!(start_idx + move_count <= self.count() as u32);
-        debug_assert!(left_node.count() + move_count as usize <= Self::cap());
+        debug_assert!(start_idx + move_count <= self.count());
+        debug_assert!(left_node.count() + move_count <= Self::cap());
 
         unsafe {
-            let left_count = left_node.count() as u32;
+            let left_count = left_node.count();
 
             // Move keys using bulk copy
             let src_key = self.key_ptr(start_idx);
@@ -258,24 +260,24 @@ impl<K, V> LeafNode<K, V> {
     /// It does not change the count of current node
     #[inline]
     pub fn copy_right<const APPEND: bool>(
-        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32,
+        &mut self, right_node: &mut Self, start_idx: u32, copy_count: u32,
     ) {
-        debug_assert!(start_idx + move_count <= self.count() as u32);
-        debug_assert!(right_node.count() + move_count as usize <= Self::cap());
+        debug_assert!(start_idx + copy_count <= self.count());
+        debug_assert!(right_node.count() + copy_count <= Self::cap());
         unsafe {
             if APPEND {
                 // Append to tail of right_node
-                let right_count = right_node.count() as u32;
+                let right_count = right_node.count();
 
                 // Move keys using bulk copy
                 let src_key = self.key_ptr(start_idx);
                 let dst_key = right_node.key_ptr(right_count);
-                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+                ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
                 // Move values using bulk copy
                 let src_val = self.value_ptr(start_idx);
                 let dst_val = right_node.value_ptr(right_count);
-                ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+                ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             } else {
                 // Prepend to head of right_node
                 let right_count = right_node.count() as u32;
@@ -283,24 +285,24 @@ impl<K, V> LeafNode<K, V> {
                 // Shift existing elements in right_node to make space
                 if right_count > 0 {
                     let src_key = right_node.key_ptr(0);
-                    let dst_key = right_node.key_ptr(move_count);
+                    let dst_key = right_node.key_ptr(copy_count);
                     ptr::copy(src_key, dst_key, right_count as usize);
 
                     let src_val = right_node.value_ptr(0);
-                    let dst_val = right_node.value_ptr(move_count);
+                    let dst_val = right_node.value_ptr(copy_count);
                     ptr::copy(src_val, dst_val, right_count as usize);
                 }
 
                 // Move new elements to the front
                 let src_key = self.key_ptr(start_idx);
                 let dst_key = right_node.key_ptr(0);
-                ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+                ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
                 let src_val = self.value_ptr(start_idx);
                 let dst_val = right_node.value_ptr(0);
-                ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+                ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             }
-            right_node.get_header_mut().count += move_count;
+            right_node.get_header_mut().count += copy_count;
         }
     }
 
@@ -340,9 +342,28 @@ impl<K, V> LeafNode<K, V> {
                 return (new_leaf, ptr_v);
             }
         } else {
+            println!("leaf insert_with_split  right");
             let ptr_v = new_leaf.insert_no_split_with_idx(0, key, value);
             (new_leaf, ptr_v)
         }
+    }
+}
+
+impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for LeafNode<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.count();
+        write!(f, "LeafNode {{ count: {}, keys: [", count)?;
+        for i in 0..count {
+            unsafe {
+                let key = (*self.key_ptr(i as u32)).assume_init_ref();
+                let val = (*self.value_ptr(i as u32)).assume_init_ref();
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{:?}: {:?}", key, val)?;
+            }
+        }
+        write!(f, "] }}")
     }
 }
 
@@ -354,12 +375,12 @@ mod tests {
     fn test_leaf_node_search() {
         unsafe {
             let mut leaf = LeafNode::<usize, usize>::alloc();
-            let cap = LeafNode::<usize, usize>::cap();
+            let cap = LeafNode::<usize, usize>::cap() as usize;
             // Insert sorted keys: 10, 20, 30, 40
             for k in 10..(cap + 10) {
                 leaf.insert_no_split(k * 2, k * 2);
             }
-            assert_eq!(leaf.count(), cap);
+            assert_eq!(leaf.count(), cap as u32);
             // Test search - existing key
             for k in 10..(cap + 10) {
                 let (idx, found) = leaf.search(&(k * 2));
@@ -475,6 +496,222 @@ mod tests {
             // Verify new key is at split_idx in left node
             let found_key = (*leaf.key_ptr(split_idx)).assume_init_ref();
             assert_eq!(*found_key, new_key);
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
+        }
+    }
+
+    /// Test leaf node split when inserting key at split_idx (new key < old key at split_idx)
+    #[test]
+    fn test_leaf_node_split_insert_at_split_idx_left() {
+        unsafe {
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill the leaf with keys 0..cap
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write(i as i32);
+                (*val_ptr).write((i * 10) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            // Insert key smaller than the key at split_idx
+            let split_idx = (cap >> 1) as u32;
+            let old_key_at_split = (*leaf.key_ptr(split_idx)).assume_init_ref().clone();
+            let new_key = old_key_at_split - 1;
+            let new_value = new_key * 10;
+
+            let (mut new_leaf, _ptr_v) = leaf.insert_with_split(split_idx, new_key, new_value);
+
+            // Verify the split
+            let left_count = leaf.count();
+            let right_count = new_leaf.count();
+
+            assert!(left_count > 0, "Left node should have keys");
+            assert!(right_count > 0, "Right node should have keys");
+            assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
+
+            // New key should be at split_idx in left node
+            let found_key = (*leaf.key_ptr(split_idx)).assume_init_ref();
+            let found_value = (*leaf.value_ptr(split_idx)).assume_init_ref();
+            assert_eq!(*found_key, new_key, "New key should be at split_idx in left node");
+            assert_eq!(*found_value, new_value, "New value should be at split_idx in left node");
+
+            // Old key at split_idx should be moved to right node at position 0
+            let old_key_in_right = (*new_leaf.key_ptr(0)).assume_init_ref();
+            assert_eq!(
+                *old_key_in_right, old_key_at_split,
+                "Old key at split_idx should be at position 0 in right node"
+            );
+
+            // Verify sibling pointers
+            assert_eq!(
+                (*leaf.brothers()).next,
+                new_leaf.get_ptr(),
+                "Left node's next should point to right node"
+            );
+            assert_eq!(
+                (*new_leaf.brothers()).prev,
+                leaf.get_ptr(),
+                "Right node's prev should point to left node"
+            );
+            assert!((*leaf.brothers()).prev.is_null(), "Left node's prev should be null");
+            assert!((*new_leaf.brothers()).next.is_null(), "Right node's next should be null");
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
+        }
+    }
+
+    /// Test leaf node split when inserting key at split_idx (new key > old key at split_idx)
+    #[test]
+    fn test_leaf_node_split_insert_at_split_idx_right() {
+        unsafe {
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill the leaf with keys 0..cap
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write(i as i32);
+                (*val_ptr).write((i * 10) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            // Insert key larger than the key at split_idx
+            let split_idx = (cap >> 1) as u32;
+            let old_key_at_split = (*leaf.key_ptr(split_idx)).assume_init_ref().clone();
+            let new_key = old_key_at_split + 1;
+            let new_value = new_key * 10;
+
+            let (mut new_leaf, _ptr_v) = leaf.insert_with_split(split_idx + 1, new_key, new_value);
+
+            // Verify the split
+            let left_count = leaf.count();
+            let right_count = new_leaf.count();
+
+            assert!(left_count > 0, "Left node should have keys");
+            assert!(right_count > 0, "Right node should have keys");
+            assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
+
+            // New key should be at position 0 in right node
+            let found_key = (*new_leaf.key_ptr(0)).assume_init_ref();
+            let found_value = (*new_leaf.value_ptr(0)).assume_init_ref();
+            assert_eq!(*found_key, new_key, "New key should be at position 0 in right node");
+            assert_eq!(*found_value, new_value, "New value should be at position 0 in right node");
+
+            // Old key at split_idx should remain in left node
+            let old_key_in_left = (*leaf.key_ptr(split_idx)).assume_init_ref();
+            assert_eq!(
+                *old_key_in_left, old_key_at_split,
+                "Old key at split_idx should remain in left node"
+            );
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
+        }
+    }
+
+    /// Test leaf node split when inserting key at the beginning (index 0)
+    #[test]
+    fn test_leaf_node_split_insert_at_beginning() {
+        unsafe {
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill the leaf with keys 0..cap
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write(i as i32);
+                (*val_ptr).write((i * 10) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            // Insert key at the beginning (index 0)
+            let insert_key = -1;
+            let insert_value = -10;
+
+            let (mut new_leaf, _ptr_v) = leaf.insert_with_split(0, insert_key, insert_value);
+
+            // Verify the split
+            let left_count = leaf.count();
+            let right_count = new_leaf.count();
+
+            assert!(left_count > 0, "Left node should have keys");
+            assert!(right_count > 0, "Right node should have keys");
+            assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
+
+            // New key should be at index 0 in left node
+            let found_key = (*leaf.key_ptr(0)).assume_init_ref();
+            let found_value = (*leaf.value_ptr(0)).assume_init_ref();
+            assert_eq!(*found_key, insert_key, "New key should be at index 0 in left node");
+            assert_eq!(*found_value, insert_value, "New value should be at index 0 in left node");
+
+            // Original first key should be moved to position 1 in left node
+            let original_first_key = (*leaf.key_ptr(1)).assume_init_ref();
+            assert_eq!(
+                *original_first_key, 0,
+                "Original first key (0) should be at index 1 in left node"
+            );
+
+            // Cleanup
+            leaf.dealloc();
+            new_leaf.dealloc();
+        }
+    }
+
+    /// Test leaf node split when inserting key at the end (index = cap)
+    #[test]
+    fn test_leaf_node_split_insert_at_end() {
+        unsafe {
+            let mut leaf = LeafNode::<i32, i32>::alloc();
+            let cap = LeafNode::<i32, i32>::cap();
+
+            // Fill the leaf with keys 0..cap
+            for i in 0..cap {
+                let key_ptr = leaf.key_ptr(i as u32);
+                let val_ptr = leaf.value_ptr(i as u32);
+                (*key_ptr).write(i as i32);
+                (*val_ptr).write((i * 10) as i32);
+            }
+            leaf.get_header_mut().count = cap as u32;
+
+            // Insert key at the end (index = cap)
+            let insert_key = cap as i32;
+            let insert_value = insert_key * 10;
+
+            let (mut new_leaf, _ptr_v) =
+                leaf.insert_with_split(cap as u32, insert_key, insert_value);
+
+            // Verify the split
+            let left_count = leaf.count();
+            let right_count = new_leaf.count();
+
+            assert!(left_count > 0, "Left node should have keys");
+            assert!(right_count > 0, "Right node should have keys");
+            assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
+
+            // New key should be at index 0 in right node (empty new node case)
+            let found_key = (*new_leaf.key_ptr(0)).assume_init_ref();
+            let found_value = (*new_leaf.value_ptr(0)).assume_init_ref();
+            assert_eq!(*found_key, insert_key, "New key should be at index 0 in right node");
+            assert_eq!(*found_value, insert_value, "New value should be at index 0 in right node");
+
+            // Original last key should remain in left node
+            let original_last_key = (*leaf.key_ptr(left_count - 1)).assume_init_ref();
+            assert_eq!(
+                *original_last_key,
+                (cap - 1) as i32,
+                "Original last key should remain in left node"
+            );
 
             // Cleanup
             leaf.dealloc();

@@ -72,6 +72,7 @@
 
 use alloc::vec::Vec;
 use core::cell::UnsafeCell;
+use core::fmt;
 use core::ptr::NonNull;
 pub mod entry;
 use entry::*;
@@ -157,8 +158,8 @@ impl<K, V> Drop for BTreeMap<K, V> {
                                     let node = InterNode::<K, V>::from_header(
                                         NonNull::new_unchecked(child_ptr),
                                     );
-                                    let count = node.count() as u32;
-                                    for i in 0..=count {
+                                    let count = node.count() + 1;
+                                    for i in 0..count {
                                         let grandchild_ptr = *node.child_ptr(i);
                                         if !grandchild_ptr.is_null() {
                                             next_level.push(grandchild_ptr);
@@ -383,6 +384,60 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 Node::Leaf(node) => {
                     debug_assert_eq!(height, 1);
                     debug_assert_eq!(node.get_ptr(), left_ptr);
+                }
+            }
+        }
+    }
+
+    /// Dump the entire tree structure for debugging
+    #[cfg(test)]
+    pub fn dump(&self)
+    where
+        K: fmt::Debug,
+        V: fmt::Debug,
+    {
+        println!("=== BTreeMap Dump ===");
+        println!("Length: {}", self.len());
+        if let Some(root) = &self.root {
+            self.dump_node(root, 0);
+        } else {
+            println!("(empty)");
+        }
+        println!("=====================");
+    }
+
+    #[cfg(test)]
+    fn dump_node(&self, node: &Node<K, V>, depth: usize)
+    where
+        K: fmt::Debug,
+        V: fmt::Debug,
+    {
+        match node {
+            Node::Leaf(leaf) => {
+                print!("{:indent$}", "", indent = depth * 2);
+                println!("{:?}", leaf);
+            }
+            Node::Inter(inter) => {
+                print!("{:indent$}", "", indent = depth * 2);
+                println!("{:?}", inter);
+                // Dump children
+                let count = inter.count() as u32;
+                for i in 0..=count {
+                    unsafe {
+                        let child_ptr = *inter.child_ptr(i);
+                        if !child_ptr.is_null() {
+                            let child_node = if (*child_ptr).is_leaf() {
+                                Node::Leaf(LeafNode::<K, V>::from_header(NonNull::new_unchecked(
+                                    child_ptr,
+                                )))
+                            } else {
+                                Node::Inter(InterNode::<K, V>::from_header(NonNull::new_unchecked(
+                                    child_ptr,
+                                )))
+                            };
+                            self.dump_node(&child_node, depth + 1);
+                        }
+                    }
                 }
             }
         }
@@ -762,12 +817,12 @@ mod tests {
     #[test]
     fn test_fill_node() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
         // Fill the node to capacity
         for i in 0..cap {
             assert_eq!(map.insert(i as i32, i as i32 * 10), None);
         }
-        assert_eq!(map.len(), cap);
+        assert_eq!(map.len(), cap as usize);
         // Verify all values
         for i in 0..cap {
             assert_eq!(map.get(&(i as i32)), Some(&(i as i32 * 10)));
@@ -777,7 +832,7 @@ mod tests {
     #[test]
     fn test_split_leaf_simple() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
 
         // First, fill exactly to capacity
         for i in 0..cap {
@@ -794,16 +849,19 @@ mod tests {
         assert_eq!(map.insert(cap as i32, cap as i32 * 10), None);
         assert_eq!(map.len(), cap + 1);
 
+        println!("verify after split");
+        map.dump(); // Debug: dump tree structure
+
         // Verify all values including the new one
         for i in 0..=cap {
-            assert_eq!(map.get(&(i as i32)), Some(&(i as i32 * 10)));
+            assert_eq!(map.get(&(i as i32)), Some(&(i as i32 * 10)), "Failed to get key {}", i);
         }
     }
 
     #[test]
     fn test_split_leaf_insert_at_beginning() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
 
         // Fill to capacity
         for i in 0..cap {
@@ -825,15 +883,15 @@ mod tests {
     #[test]
     fn test_split_leaf_insert_in_middle() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
 
         // Fill with even numbers: 0, 2, 4, 6, ...
         for i in 0..cap {
             assert_eq!(map.insert((i * 2) as i32, (i * 20) as i32), None);
         }
 
-        // Insert an odd number in the middle
-        let insert_key = cap as i32;
+        // Insert an odd number in the middle (cap - 1 is odd and not in the sequence)
+        let insert_key = (cap - 1) as i32;
         assert_eq!(map.insert(insert_key, insert_key * 10), None);
         assert_eq!(map.len(), cap + 1);
 
@@ -842,13 +900,13 @@ mod tests {
 
         // Verify some original keys
         assert_eq!(map.get(&0), Some(&0));
-        assert_eq!(map.get(&2), Some(&40));
+        assert_eq!(map.get(&2), Some(&20));
     }
 
     #[test]
     fn test_split_leaf_minimal() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
 
         // Insert just enough to trigger one split
         for i in 0..(cap + 1) {
@@ -862,7 +920,7 @@ mod tests {
     #[test]
     fn test_split_leaf_verify_structure() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
 
         // Insert just enough to trigger one split
         let total = cap + 5;
@@ -936,7 +994,7 @@ mod tests {
     #[test]
     fn test_delete_and_merge() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-        let cap = LeafNode::<i32, i32>::cap();
+        let cap = LeafNode::<i32, i32>::cap() as usize;
         // Fill node to capacity
         for i in 0..cap {
             map.insert(i as i32, i as i32 * 10);
