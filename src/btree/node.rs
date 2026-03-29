@@ -1,8 +1,7 @@
 use super::{inter::*, leaf::*};
 use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
-use alloc::vec::Vec;
-use core::ptr::{self, NonNull, null_mut};
+use core::ptr::{self, NonNull};
 
 /// Key area size: first 128 bytes (2 cache lines)
 pub(super) const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
@@ -236,6 +235,8 @@ impl<K: Ord, V> Node<K, V> {
         }
     }
 
+    /// If depth == 0, return the root itself
+    #[inline]
     pub fn find_child_with_cache(
         &self, cache: &mut PathCache<K, V>, key: &K, mut depth: u32,
     ) -> InterNode<K, V> {
@@ -257,7 +258,7 @@ impl<K: Ord, V> Node<K, V> {
 
 #[derive(PartialEq, Debug, Clone, Copy)]
 #[repr(u8)]
-enum PathState {
+pub(super) enum PathState {
     Current,
     Left,
     Right,
@@ -310,14 +311,22 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 
     #[inline(always)]
+    pub fn change_state(&mut self, state: PathState) {
+        self.state = state;
+    }
+
+    #[inline(always)]
     pub fn push(&mut self, inter: InterNode<K, V>, idx: u32) {
         self.inner.push((inter, idx));
         self.depth += 1;
     }
 
-    /// pop parent from cache, if we need new_root, return None
+    /// pop parent and its idx from cache, if we need new_root, return None
+    ///
+    /// If the cache has no acurrate infomation, fallback search top-down from
+    /// root or upper level.
     #[inline(always)]
-    pub fn pop(&mut self, key: &K, root: &Node<K, V>) -> Option<InterNode<K, V>> {
+    pub fn pop(&mut self, key: &K, root: &Node<K, V>) -> Option<(InterNode<K, V>, u32)> {
         match self.state {
             PathState::Stale => {
                 if self.depth == 0 {
@@ -327,14 +336,14 @@ impl<K: Ord, V> PathCache<K, V> {
                 self.depth = depth;
                 let mut new_cache = Self::new();
                 root.find_child_with_cache(&mut new_cache, key, depth);
-                let item = new_cache.pop(key, root);
+                let res = new_cache.pop(key, root);
                 self.inner = new_cache.inner.take();
-                item
+                res
             }
             PathState::Current => {
-                if let Some((node, _idx)) = self.inner.pop() {
+                if let Some((node, idx)) = self.inner.pop() {
                     self.depth -= 1;
-                    Some(node)
+                    Some((node, idx))
                 } else if self.depth == 0 {
                     None
                 } else {
@@ -349,7 +358,7 @@ impl<K: Ord, V> PathCache<K, V> {
                 let (node, idx) = self.inner.pop().unwrap();
                 self.depth = depth - 1;
                 if idx + 1 < InterNode::<K, V>::cap() as u32 {
-                    return Some(node); // have common parent
+                    return Some((node, idx)); // have common parent
                 }
                 todo!();
                 // iterate top to find a common ancestor
