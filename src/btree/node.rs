@@ -9,6 +9,9 @@ pub(super) const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
 /// Total node size: 4 cache lines (256 bytes on x86_64)
 pub(super) const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
 
+pub(super) const PTR_SIZE: usize = size_of::<*mut NodeHeader>();
+pub(super) const PTR_ALIGN: usize = align_of::<*mut NodeHeader>();
+
 /*
 The Layout:
 - InterNode: CACHELINE( 8B NodeHeader | Keys | alignment ),  CACHELINE(Values)
@@ -46,7 +49,7 @@ pub(super) struct NodeBase {
 
 impl NodeBase {
     #[inline(always)]
-    pub fn alloc(layout: Layout) -> Self {
+    pub fn _alloc(layout: Layout) -> Self {
         unsafe {
             let p: *mut u8 = alloc(layout);
             if p.is_null() {
@@ -80,6 +83,10 @@ impl NodeBase {
     }
 
     /// Get pointer to key at index with given header offset
+    ///
+    /// # Safety
+    ///
+    /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *mut T {
         unsafe {
@@ -204,7 +211,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let idx = cur.search(key);
+                    let idx = cur.search_child(key);
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
@@ -223,7 +230,7 @@ impl<K: Ord, V> Node<K, V> {
             Node::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
-                    let idx = cur.search(key);
+                    let idx = cur.search_child(key);
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
@@ -245,7 +252,7 @@ impl<K: Ord, V> Node<K, V> {
             let mut cur = node.clone();
             while depth > 0 {
                 depth -= 1;
-                let idx = cur.search(key);
+                let idx = cur.search_child(key);
                 cache.push(cur.clone(), idx);
                 cur = cur.get_child_as_inter(idx);
             }

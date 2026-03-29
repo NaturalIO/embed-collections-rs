@@ -54,10 +54,18 @@ impl<K, V> LeafNode<K, V> {
     ///
     /// assert K, V can fit into the cacheline after devided by header.
     const fn cal_layout() -> (u32, Layout) {
+        let mut align = align_of::<K>();
+        assert!(align <= 8);
+        assert!(align_of::<V>() <= 8);
+        if align < align_of::<V>() {
+            align = align_of::<V>();
+        }
+        if align < PTR_ALIGN {
+            align = PTR_ALIGN;
+        }
         let key_size = size_of::<K>();
         let value_size = size_of::<V>();
-        assert!(align_of::<MaybeUninit<K>>() <= 8);
-        assert!(align_of::<MaybeUninit<V>>() <= 8);
+        // should be align to align_of
         assert!(key_size <= CACHE_LINE_SIZE - 16);
         assert!(value_size <= CACHE_LINE_SIZE - 16);
         let mut leaf_key_cap = (AREA_SIZE - LEAF_HEAD_SIZE) / key_size;
@@ -65,7 +73,7 @@ impl<K, V> LeafNode<K, V> {
         if leaf_key_cap > leaf_value_cap {
             leaf_key_cap = leaf_value_cap;
         }
-        match Layout::from_size_align(NODE_SIZE, NODE_SIZE) {
+        match Layout::from_size_align(NODE_SIZE, align) {
             Ok(l) => (leaf_key_cap as u32, l),
             Err(_) => panic!("invalid layout"),
         }
@@ -73,7 +81,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline(always)]
     pub unsafe fn alloc() -> Self {
-        let mut base = NodeBase::alloc(Self::LAYOUT.1);
+        let mut base = NodeBase::_alloc(Self::LAYOUT.1);
         let header = base.get_header_mut();
         header.height = 0; // Leaf nodes have height 0
         header.count = 0;
@@ -197,9 +205,7 @@ impl<K, V> LeafNode<K, V> {
         debug_assert!(self.count() < Self::cap());
         let (idx, is_equal) = self.search(&key);
         debug_assert!(!is_equal);
-        unsafe {
-            self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
-        }
+        self.insert_no_split_with_idx(idx, key, value)
     }
 
     #[inline]
