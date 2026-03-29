@@ -95,8 +95,8 @@ impl NodeBase {
 
     /// Get count of items in the node
     #[inline(always)]
-    pub fn count(&self) -> usize {
-        self.get_header().count as usize
+    pub fn count(&self) -> u32 {
+        self.get_header().count
     }
 
     /// Get height of the node
@@ -140,9 +140,9 @@ impl NodeBase {
         unsafe {
             let count = self.count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
-            let first_line_limit = first_line_bytes / size_of::<K>();
+            let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
             if count > first_line_limit
-                && *key > (*self.item_ptr::<K>(header_offset, first_line_limit as u32 - 1))
+                && *key > (*self.item_ptr::<K>(header_offset, first_line_limit - 1))
             {
                 _search!(first_line_limit, count);
             } else {
@@ -205,10 +205,11 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search(key);
-                    if cur.is_leaf() {
-                        return cur.get_child_as_leaf(idx);
-                    } else {
-                        cur = cur.get_child_as_inter(idx);
+                    match cur.get_child(idx) {
+                        Node::Leaf(leaf) => return leaf,
+                        Node::Inter(inter) => {
+                            cur = inter;
+                        }
                     }
                 }
             }
@@ -223,12 +224,12 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search(key);
-                    if cur.is_leaf() {
-                        cache.push(cur.clone(), idx);
-                        return cur.get_child_as_leaf(idx);
-                    } else {
-                        cache.push(cur.clone(), idx);
-                        cur = cur.get_child_as_inter(idx);
+                    match cur.get_child(idx) {
+                        Node::Leaf(leaf) => return leaf,
+                        Node::Inter(inter) => {
+                            cache.push(inter.clone(), idx);
+                            cur = inter;
+                        }
                     }
                 }
             }
@@ -245,7 +246,6 @@ impl<K: Ord, V> Node<K, V> {
             while depth > 0 {
                 depth -= 1;
                 let idx = cur.search(key);
-                debug_assert!(!cur.is_leaf());
                 cache.push(cur.clone(), idx);
                 cur = cur.get_child_as_inter(idx);
             }
