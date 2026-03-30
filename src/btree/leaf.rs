@@ -378,6 +378,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_leaf_align() {
+        {
+            let cap = LeafNode::<u8, usize>::cap();
+            println!("align u8 {}, cap {}", align_of::<u8>(), cap);
+            let mut leaf = unsafe { LeafNode::<u8, usize>::alloc() };
+            for i in 0..cap {
+                leaf.insert_no_split(i as u8, i as usize);
+            }
+            for i in 0..cap {
+                assert_eq!(leaf.get_keys()[i as usize], i as u8);
+                assert_eq!(leaf.get_values()[i as usize], i as usize);
+            }
+            unsafe { leaf.dealloc() };
+        }
+        {
+            let cap = LeafNode::<u8, u16>::cap();
+            println!("align u16 {}, cap {}", align_of::<u16>(), cap);
+            let mut leaf = unsafe { LeafNode::<u8, u16>::alloc() };
+            for i in 0..cap {
+                leaf.insert_no_split(i as u8, i as u16);
+            }
+            for i in 0..cap {
+                assert_eq!(leaf.get_keys()[i as usize], i as u8);
+                assert_eq!(leaf.get_values()[i as usize], i as u16);
+            }
+            unsafe { leaf.dealloc() };
+        }
+    }
+
+    #[test]
     fn test_leaf_node_search() {
         unsafe {
             let mut leaf = LeafNode::<usize, usize>::alloc();

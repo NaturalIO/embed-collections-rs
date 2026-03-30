@@ -691,6 +691,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn test_new() {
         let map: BTreeMap<i32, i32> = BTreeMap::new();

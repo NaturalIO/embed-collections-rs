@@ -350,6 +350,23 @@ impl<K: fmt::Debug, V> fmt::Debug for InterNode<K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::mem::align_of;
+
+    #[test]
+    fn test_inter_align() {
+        let cap = InterNode::<u8, usize>::cap();
+        println!("align u8 {}, cap {}", align_of::<u8>(), cap);
+        let mut inter = unsafe { InterNode::<u8, usize>::alloc(1) };
+        inter.set_left_ptr(0 as *mut NodeHeader);
+        for i in 1..(cap + 1) {
+            inter.insert_no_split(i as u8, i as *mut NodeHeader);
+        }
+        for i in 1..(cap + 1) {
+            let idx = inter.search_child(&(i as u8));
+            assert_eq!(idx, i as u32);
+        }
+        unsafe { inter.dealloc() };
+    }
 
     #[test]
     fn test_inter_node_search() {
