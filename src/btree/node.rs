@@ -319,7 +319,12 @@ impl<K: Ord, V> PathCache<K, V> {
 
     #[inline(always)]
     pub fn change_state(&mut self, state: PathState) {
-        self.state = state;
+        match state {
+            PathState::Current => {}
+            PathState::Left => self.move_right(),
+            PathState::Right => self.move_left(),
+            PathState::Stale => self.state = PathState::Stale,
+        }
     }
 
     #[inline(always)]
