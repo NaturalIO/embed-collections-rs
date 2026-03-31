@@ -348,7 +348,6 @@ impl<K, V> LeafNode<K, V> {
                 return (new_leaf, ptr_v);
             }
         } else {
-            println!("leaf insert_with_split  right");
             let ptr_v = new_leaf.insert_no_split_with_idx(0, key, value);
             (new_leaf, ptr_v)
         }
