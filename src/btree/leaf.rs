@@ -220,7 +220,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn cap() -> u32 {
+    pub const fn cap() -> u32 {
         Self::LAYOUT.0
     }
 

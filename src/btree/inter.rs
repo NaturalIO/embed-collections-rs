@@ -98,7 +98,8 @@ impl<K, V> InterNode<K, V> {
         self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
     }
 
-    pub(crate) fn cap() -> u32 {
+    #[inline]
+    pub const fn cap() -> u32 {
         Self::LAYOUT.0
     }
 

@@ -115,6 +115,22 @@ impl<K, V> BTreeMap<K, V> {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    #[inline]
+    pub const fn cap() -> (u32, u32) {
+        let inter_cap = InterNode::<K, V>::cap();
+        let leaf_cap = LeafNode::<K, V>::cap();
+        (inter_cap, leaf_cap)
+    }
+
+    /// When root is leaf, returns 0, otherwise return the number of layers of inter node
+    #[inline(always)]
+    pub fn height(&self) -> u32 {
+        if let Some(Node::Inter(node)) = &self.root {
+            return node.height();
+        }
+        0
+    }
 }
 
 impl<K: Ord + Sized + Clone, V: Sized> Default for BTreeMap<K, V> {
@@ -195,7 +211,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     fn get_cache(&self) -> &mut PathCache<K, V> {
         unsafe {
             let cache = &mut *self.cache.get();
-            cache.clear();
             cache
         }
     }
@@ -203,6 +218,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns an entry to the key in the map
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         let cache = self.get_cache();
+        cache.clear();
         let leaf = match &self.root {
             None => return Entry::Vacant(VacantEntry { map: self, key, idx: 0, node: None }),
             Some(root) => root.find_leaf_with_cache(cache, &key),
@@ -356,7 +372,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         mut right_ptr: *mut NodeHeader,
     ) {
         let cache = self.get_cache();
-        let mut height = 1;
+        let mut height = 0;
         // If we have parent nodes in cache, process them iteratively
         while let Some((mut parent, _idx)) = cache.pop(&promote_key, self.get_root_unwrap()) {
             if !parent.is_full().is_ok() {
@@ -372,17 +388,17 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // Continue to next parent in cache (loop will pop next parent)
         }
         // No more parents in cache, create new root
-        let new_root = InterNode::<K, V>::new_root(height, promote_key, left_ptr, right_ptr);
+        let new_root = InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr);
         let _old_root = self.root.replace(Node::Inter(new_root)).expect("should have old root");
         #[cfg(debug_assertions)]
         {
             match _old_root {
                 Node::Inter(node) => {
-                    debug_assert!(height > 1, "old inter root at {height}");
+                    debug_assert_eq!(height, node.height(), "old inter root at {height}");
                     debug_assert_eq!(node.get_ptr(), left_ptr);
                 }
                 Node::Leaf(node) => {
-                    debug_assert_eq!(height, 1);
+                    debug_assert_eq!(height, 0);
                     debug_assert_eq!(node.get_ptr(), left_ptr);
                 }
             }
@@ -953,21 +969,23 @@ mod tests {
         }
     }
 
-    /*
     #[test]
-    fn test_large_tree() {
+    fn test_large_tree_split_seq() {
         let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+        let (inter_cap, leaf_cap) = BTreeMap::<i32, i32>::cap();
+        assert!(100 > inter_cap);
+        assert!(100 > leaf_cap);
         // Insert many values to create multi-level tree
         for i in 0..100 {
             assert_eq!(map.insert(i, i * 2), None);
         }
         assert_eq!(map.len(), 100);
+        println!("tree height {}", map.height());
         // Verify all values
         for i in 0..100 {
             assert_eq!(map.get(&i), Some(&(i * 2)));
         }
     }
-    */
 
     #[test]
     fn test_random_inserts() {

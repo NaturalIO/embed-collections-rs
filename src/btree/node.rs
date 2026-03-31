@@ -231,10 +231,10 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
+                    cache.push(cur.clone(), idx);
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
-                            cache.push(inter.clone(), idx);
                             cur = inter;
                         }
                     }
