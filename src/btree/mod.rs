@@ -31,23 +31,6 @@
  Since we support combinding cursor moving in Entry API (try to merge with previous or next adjacent
  node). But user can call `remove()` on moved cursor.
 
-## The state of PathCache:
-
-- Left
-    - The cache represent the path of left brother of current Entry
-    - cursor moves prev(left), change back to current
-    - cursor moves next(right), change to `Stale`
-- Right
-    - The cache represent the path of right brother of current Entry
-    - cursor moves prev(left), change to `Stale`
-    - cursor moves next(right), change back to current
-- Current
-    - The cache represent the path of current Entry
-    - the initial state after descending the tree to get an Entry
-    - Cursor moves prev(left)，change to `Right`
-    - cursor moves next(right), change to `Left`
-- Stale: cache data is obsoleted, fallback to top-down search from root
-
 ## Accelleration Search for finding the parent using PathCache
 
 - Assume PathCache is for Node A, Node B is the right brother of node A. A's ptr is at ParentA[idx]
@@ -67,10 +50,7 @@
 - 2 - 3 split (increase fill ratio to 90%)
 */
 
-use alloc::vec::Vec;
 use core::cell::UnsafeCell;
-use core::fmt;
-use core::ptr::NonNull;
 pub mod entry;
 use entry::*;
 mod node;
@@ -84,7 +64,7 @@ use leaf::*;
 mod tests;
 
 /// B+Tree Map for single-threaded use
-pub struct BTreeMap<K, V> {
+pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
     /// Root node (may be null for empty tree)
     root: Option<Node<K, V>>,
     /// Number of elements in the tree
@@ -93,17 +73,15 @@ pub struct BTreeMap<K, V> {
     cache: UnsafeCell<PathCache<K, V>>,
 }
 
-unsafe impl<K: Send, V: Send> Send for BTreeMap<K, V> {}
-unsafe impl<K: Send, V: Send> Sync for BTreeMap<K, V> {}
+unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Send for BTreeMap<K, V> {}
+unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Sync for BTreeMap<K, V> {}
 
 impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Create a new empty BTreeMap
     pub fn new() -> Self {
         Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::<K, V>::new()) }
     }
-}
 
-impl<K, V> BTreeMap<K, V> {
     /// Returns the number of elements in the map
     #[inline(always)]
     pub fn len(&self) -> usize {
@@ -132,82 +110,7 @@ impl<K, V> BTreeMap<K, V> {
         }
         1
     }
-}
 
-impl<K: Ord + Sized + Clone, V: Sized> Default for BTreeMap<K, V> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<K, V> Drop for BTreeMap<K, V> {
-    fn drop(&mut self) {
-        if let Some(root) = &mut self.root {
-            match root {
-                Node::Inter(inter_node) => {
-                    unsafe {
-                        // Non-recursive drop using BFS
-                        let mut nodes_to_free = Vec::new();
-                        let mut current_level = Vec::new();
-
-                        // Start with root's children
-                        let root_count = inter_node.count() as u32;
-                        for i in 0..=root_count {
-                            let child_ptr = *inter_node.child_ptr(i);
-                            if !child_ptr.is_null() {
-                                current_level.push(child_ptr);
-                            }
-                        }
-
-                        // First, collect all leaf nodes and free them
-                        let mut next_level = Vec::new();
-                        while !current_level.is_empty() {
-                            for &child_ptr in &current_level {
-                                let header = &*child_ptr;
-                                if header.is_leaf() {
-                                    // This is a leaf node, free it
-                                    let mut leaf = LeafNode::<K, V>::from_header(
-                                        NonNull::new_unchecked(child_ptr),
-                                    );
-                                    leaf.dealloc();
-                                } else {
-                                    // This is an internal node, add its children to next level
-                                    let node = InterNode::<K, V>::from_header(
-                                        NonNull::new_unchecked(child_ptr),
-                                    );
-                                    let count = node.count() + 1;
-                                    for i in 0..count {
-                                        let grandchild_ptr = *node.child_ptr(i);
-                                        if !grandchild_ptr.is_null() {
-                                            next_level.push(grandchild_ptr);
-                                        }
-                                    }
-                                    nodes_to_free.push(child_ptr);
-                                }
-                            }
-                            current_level = next_level;
-                            next_level = Vec::new();
-                        }
-
-                        // Free internal nodes in reverse order (from bottom to top)
-                        for node_ptr in nodes_to_free.iter().rev() {
-                            let mut node =
-                                InterNode::<K, V>::from_header(NonNull::new_unchecked(*node_ptr));
-                            node.dealloc();
-                        }
-
-                        // Finally, free the root
-                        inter_node.dealloc();
-                    }
-                }
-                Node::Leaf(leaf_node) => unsafe { leaf_node.dealloc() },
-            }
-        }
-    }
-}
-
-// Main operations
-impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline(always)]
     fn get_cache(&self) -> &mut PathCache<K, V> {
         unsafe {
@@ -303,10 +206,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let key = unsafe { (*leaf.key_ptr(0)).assume_init_ref().clone() };
         while let Some((parent, parent_idx)) = self.get_cache().pop() {
             if parent_idx > 0 {
+                println!("update_parent_key to {:?}", parent);
                 let parent_key = unsafe { (*parent.key_ptr(parent_idx - 1)).assume_init_mut() };
                 *parent_key = key;
                 return;
             }
+            println!("update_parent_key {:?} is just leftmost parent, continue", parent);
             // if parent_idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
             // split key
         }
@@ -405,8 +310,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[cfg(test)]
     pub fn dump(&self)
     where
-        K: fmt::Debug,
-        V: fmt::Debug,
+        K: core::fmt::Debug,
+        V: core::fmt::Debug,
     {
         println!("=== BTreeMap Dump ===");
         println!("Length: {}", self.len());
@@ -421,9 +326,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[cfg(test)]
     fn dump_node(&self, node: &Node<K, V>, depth: usize)
     where
-        K: fmt::Debug,
-        V: fmt::Debug,
+        K: core::fmt::Debug,
+        V: core::fmt::Debug,
     {
+        use core::ptr::NonNull;
         match node {
             Node::Leaf(leaf) => {
                 print!("{:indent$}", "", indent = depth * 2);
@@ -698,4 +604,49 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //            // TODO: Handle parent underflow recursively
     //        }
     //    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
+    fn drop(&mut self) {
+        let root = match self.root.take() {
+            None => return,
+            Some(Node::Leaf(mut leaf)) => unsafe {
+                leaf.dealloc();
+                return;
+            },
+            Some(Node::Inter(inter)) => inter,
+        };
+        let cache = self.get_cache();
+        cache.clear();
+        let mut cur = root;
+        loop {
+            cache.push(cur.clone(), 0);
+            match cur.get_child(0) {
+                Node::Leaf(mut leaf) => {
+                    unsafe { leaf.dealloc() };
+                    break;
+                }
+                Node::Inter(inter) => {
+                    cur = inter;
+                }
+            }
+        }
+        // To navigate to next leaf,
+        // return None when reach the end
+        while let Some((parent, idx)) =
+            cache.move_right_and_pop_l1(|mut node| unsafe { node.dealloc() })
+        {
+            if let Node::Leaf(mut leaf) = parent.get_child(idx) {
+                unsafe { leaf.dealloc() };
+            } else {
+                unreachable!();
+            }
+        }
+    }
 }

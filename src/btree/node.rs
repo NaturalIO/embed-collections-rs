@@ -270,9 +270,9 @@ impl<K: Ord, V> Node<K, V> {
 
 pub(super) struct PathCache<K, V> {
     /// < 0 means the cursor move left N times, > 0 means the cursor move right N times
-    pos: usize,
+    pos: isize,
     // Various<ptr> has 13 cap, which is quite enough for btree
-    pub inner: Various<(InterNode<K, V>, u32)>,
+    inner: Various<(InterNode<K, V>, u32)>,
 }
 
 impl<K: Ord, V> PathCache<K, V> {
@@ -288,16 +288,25 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 
     #[inline]
-    fn _move_left(&mut self) -> usize {
-        self.pos += 1;
-        if let Some((parent, idx)) = self.inner.pop() {
+    fn _move_left(&mut self) {
+        while let Some((parent, idx)) = self.inner.pop() {
+            debug_assert!(self.pos < 0);
+            let move_step = (-self.pos) as u32;
             if idx > 0 {
-                self.inner.push((parent, idx - 1)); // have common parent
-                return self.pos;
+                if move_step > idx {
+                    self.pos += idx as isize;
+                } else {
+                    debug_assert_eq!(self.pos, 0);
+                    self.pos += move_step as isize;
+                    self.inner.push((parent, idx - move_step)); // have common parent
+                    return;
+                }
             }
             let mut depth = 0;
             let (mut grand_parent, mut idx);
             loop {
+                // Safety:
+                // this is for entry API, we already know there is a previous node, unwrap is safe.
                 (grand_parent, idx) = self.inner.pop().unwrap();
                 if idx == 0 {
                     depth += 1;
@@ -312,6 +321,7 @@ impl<K: Ord, V> PathCache<K, V> {
             grand_parent = parent.clone();
             idx = parent.count();
             self.inner.push((parent, idx));
+            // push the right mode branch again
             while depth > 0 {
                 depth -= 1;
                 let idx = grand_parent.count();
@@ -320,55 +330,88 @@ impl<K: Ord, V> PathCache<K, V> {
                 grand_parent = parent.clone();
                 self.inner.push((parent, idx));
             }
+            // only move 1 since we change the branch, should call this function again
+            self.pos += 1;
+            if self.pos == 0 {
+                return;
+            }
         }
-        self.pos
     }
 
     #[inline]
-    fn _move_right(&mut self) -> usize {
-        self.pos -= 1;
-        if let Some((mut parent, idx)) = self.inner.pop() {
-            if idx < parent.count() {
-                self.inner.push((parent, idx + 1)); // have common parent
-                return self.pos;
-            }
-            let mut depth = 0;
-            let (mut grand_parent, mut idx);
-            loop {
-                (grand_parent, idx) = self.inner.pop().unwrap();
-                if idx == grand_parent.count() {
-                    // the last
-                    depth += 1;
-                    parent = grand_parent;
+    fn _move_right<F>(&mut self, post_callback: F)
+    where
+        F: Fn(InterNode<K, V>),
+    {
+        // move of the time move_step is just 1
+        while let Some((parent, mut idx)) = self.inner.pop() {
+            debug_assert!(self.pos > 0);
+            let move_step = self.pos as u32;
+            let right_count = parent.count() + 1 - idx;
+            if right_count > 0 {
+                if right_count < move_step {
+                    self.pos -= right_count as isize;
                 } else {
-                    break;
+                    self.pos -= move_step as isize;
+                    debug_assert_eq!(self.pos, 0);
+                    self.inner.push((parent, idx + move_step)); // have common parent
+                    return;
                 }
             }
-            println!("depth {}", depth);
+            // parent idx reach the end, will not visit again
+            post_callback(parent);
+            let mut depth = 0;
+            let mut grand_parent: InterNode<K, V>;
+            loop {
+                if let Some((_grand_parent, _idx)) = self.inner.pop() {
+                    if _idx == _grand_parent.key_count() {
+                        depth += 1;
+                        // grand_parent idx reach the end, will not visit again
+                        post_callback(_grand_parent);
+                    } else {
+                        grand_parent = _grand_parent;
+                        idx = _idx;
+                        break;
+                    }
+                } else {
+                    // not possible to move further, reach the end at root
+                    self.pos -= 1;
+                    return;
+                }
+            }
             let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx + 1) };
-            parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+            let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             self.inner.push((grand_parent, idx + 1));
             grand_parent = parent.clone();
             self.inner.push((parent, 0));
             depth -= 1;
+            // push the left most branch again
             while depth > 0 {
                 depth -= 1;
                 let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(0) };
-                parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+                let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
                 grand_parent = parent.clone();
                 self.inner.push((parent, 0));
             }
+            // only move 1 since we changed the branch, should call again if not enough
+            self.pos -= 1;
+            if self.pos == 0 {
+                return;
+            }
         }
-        self.pos
     }
 
+    /// For moving the Entry position
     #[inline(always)]
     pub fn move_left(&mut self) {
+        // We delay the cache adjustment until pop because may not need to visit the parent
         self.pos -= 1;
     }
 
+    /// For moving the Entry position
     #[inline(always)]
     pub fn move_right(&mut self) {
+        // We delay the cache adjustment until pop because may not need to visit the parent
         self.pos += 1;
     }
 
@@ -378,24 +421,24 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 
     /// pop parent and its idx from cache, if we need new_root, return None
-    ///
-    /// If the cache has no acurrate infomation, fallback search top-down from
-    /// root or upper level.
     #[inline(always)]
     pub fn pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
         if self.pos < 0 {
-            loop {
-                if self._move_left() == 0 {
-                    break;
-                }
-            }
+            self._move_left();
         } else if self.pos > 0 {
-            loop {
-                if self._move_right() == 0 {
-                    break;
-                }
-            }
+            self._move_right(|_node| {});
         }
-        if let Some((parent, idx)) = self.inner.pop() { Some((parent, idx)) } else { None }
+        self.inner.pop()
+    }
+
+    // for dropping the tree, post order visit, `post_callback` should dealloc on the node
+    #[inline(always)]
+    pub fn move_right_and_pop_l1<F>(&mut self, post_callback: F) -> Option<(InterNode<K, V>, u32)>
+    where
+        F: Fn(InterNode<K, V>),
+    {
+        self.pos += 1;
+        self._move_right(post_callback);
+        self.inner.pop()
     }
 }

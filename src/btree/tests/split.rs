@@ -38,6 +38,7 @@ fn test_btree_random_inserts() {
     for (k, v) in &values {
         assert_eq!(map.get(k), Some(v));
     }
+    //map.dump();
 }
 
 #[test]
