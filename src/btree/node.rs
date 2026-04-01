@@ -267,8 +267,11 @@ impl<K: Ord, V> Node<K, V> {
 #[repr(u8)]
 pub(super) enum PathState {
     Current,
+    // the cursor has been moved left, so cache content is to the right brother of leaf cursor
     Left,
+    // the cursor has been moved right, so cache content is to the left brother of leaf cursor
     Right,
+    // the cache content should be ignore
     Stale,
 }
 
@@ -294,8 +297,8 @@ impl<K: Ord, V> PathCache<K, V> {
     #[inline]
     pub fn move_left(&mut self) {
         let state = match self.state {
-            PathState::Current => PathState::Right,
-            PathState::Left => PathState::Current,
+            PathState::Current => PathState::Left,
+            PathState::Right => PathState::Current,
             _ => {
                 let _ = self.inner.take();
                 PathState::Stale
@@ -307,8 +310,8 @@ impl<K: Ord, V> PathCache<K, V> {
     #[inline]
     pub fn move_right(&mut self) {
         let state = match self.state {
-            PathState::Current => PathState::Left,
-            PathState::Right => PathState::Current,
+            PathState::Current => PathState::Right,
+            PathState::Left => PathState::Current,
             _ => {
                 let _ = self.inner.take();
                 PathState::Stale
@@ -321,8 +324,8 @@ impl<K: Ord, V> PathCache<K, V> {
     pub fn change_state(&mut self, state: PathState) {
         match state {
             PathState::Current => {}
-            PathState::Left => self.move_right(),
-            PathState::Right => self.move_left(),
+            PathState::Left => self.move_left(),
+            PathState::Right => self.move_right(),
             PathState::Stale => self.state = PathState::Stale,
         }
     }
@@ -369,22 +372,25 @@ impl<K: Ord, V> PathCache<K, V> {
                 }
                 let (node, idx) = self.inner.pop().unwrap();
                 self.depth = depth - 1;
-                if idx + 1 < InterNode::<K, V>::cap() as u32 {
+                if idx > 0 {
                     return Some((node, idx)); // have common parent
                 }
                 todo!();
                 // iterate top to find a common ancestor
             }
             PathState::Right => {
+                let depth = self.depth;
+                if depth == 0 {
+                    return None;
+                }
+                let (node, idx) = self.inner.pop().unwrap();
+                self.depth = depth - 1;
+                if idx + 1 < InterNode::<K, V>::cap() as u32 {
+                    return Some((node, idx)); // have common parent
+                }
                 todo!();
+                // iterate top to find a common ancestor
             }
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::super::inter::*;
-    use super::super::leaf::*;
-    use super::*;
 }

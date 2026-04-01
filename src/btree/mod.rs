@@ -327,35 +327,32 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if let Err(_) = left_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
                     debug_assert!(!_is_equal);
-                    if idx == 0 {
+                    let val_p = if idx == 0 {
                         // leaf is not change, but since the insert pos is leftest, mean parent
                         // separate_key <= key, need to update its separate_key
-                        self.update_parent_key(leaf, PathState::Current);
-                        return left_node.insert_no_split(key, value);
+                        left_node.insert_no_split(key, value)
                     } else {
                         leaf.move_left(&mut left_node, 0, 1);
-                        let val_p = leaf.insert_no_split(key, value);
-                        self.update_parent_key(leaf, PathState::Current);
-                        return val_p;
-                    }
+                        leaf.insert_no_split(key, value)
+                    };
+                    self.update_parent_key(leaf, PathState::Current);
+                    return val_p;
                 }
             }
             if let Some(mut right_node) = leaf.get_right_node() {
                 if let Err(_) = right_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
                     debug_assert!(!_is_equal);
-                    if idx == cap {
+                    let val_p = if idx == cap {
                         // leaf is not change, in this condition, right_node is the leftmost child
-                        // of its parent, need to update its separate_key
-                        let val_p = right_node.insert_no_split_with_idx(0, key, value);
-                        self.update_parent_key(right_node, PathState::Left);
-                        return val_p;
+                        // of its parent, key < right_node.get_keys()[0]
+                        right_node.insert_no_split_with_idx(0, key, value)
                     } else {
                         leaf.move_right::<false>(&mut right_node, cap - 1, 1);
-                        let val_p = leaf.insert_no_split(key, value);
-                        self.update_parent_key(right_node, PathState::Left);
-                        return val_p;
-                    }
+                        leaf.insert_no_split(key, value)
+                    };
+                    self.update_parent_key(right_node, PathState::Right);
+                    return val_p;
                 }
             }
         } else {
