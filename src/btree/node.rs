@@ -273,10 +273,10 @@ pub(super) enum PathState {
 }
 
 pub(super) struct PathCache<K, V> {
-    state: PathState,
-    depth: u32,
+    pub state: PathState,
+    pub depth: u32,
     // Various<ptr> has 13 cap, which is quite enough for btree
-    inner: Various<(InterNode<K, V>, u32)>,
+    pub inner: Various<(InterNode<K, V>, u32)>,
 }
 
 impl<K: Ord, V> PathCache<K, V> {
@@ -387,95 +387,4 @@ mod tests {
     use super::super::inter::*;
     use super::super::leaf::*;
     use super::*;
-
-    #[test]
-    fn test_node_capacity() {
-        // On x86_64 with 64-byte cache line:
-        // Leaf: (128 - 16) / 8 = 14 keys/values, but limited by smaller of key/value space
-        // Actually should be (128-16)/8 = 14 for both keys and values
-        let leaf_cap = LeafNode::<i64, i64>::cap();
-        let inter_cap = InterNode::<i64, i64>::cap();
-
-        // Leaf can hold more because keys and values share the same space
-        assert!(leaf_cap >= 2, "Leaf should hold at least 2 items");
-        // Internal: n keys, n+1 children
-        assert!(inter_cap >= 2, "Internal node should hold at least 2 keys");
-    }
-
-    /// Test PathCache state transitions
-    #[test]
-    fn test_path_cache_state_transitions() {
-        let mut cache = PathCache::<i32, i32>::new();
-
-        // Initial state should be Current
-        assert_eq!(cache.state, PathState::Current);
-
-        // Test move_left from Current -> Right
-        cache.move_left();
-        assert_eq!(cache.state, PathState::Right);
-
-        // Test move_left from Right -> Current
-        cache.move_left();
-        assert_eq!(cache.state, PathState::Current);
-
-        // Test move_right from Current -> Left
-        cache.move_right();
-        assert_eq!(cache.state, PathState::Left);
-
-        // Test move_right from Left -> Current
-        cache.move_right();
-        assert_eq!(cache.state, PathState::Current);
-
-        // Test change_state with explicit states
-        cache.change_state(PathState::Left);
-        assert_eq!(cache.state, PathState::Left);
-
-        cache.change_state(PathState::Right);
-        assert_eq!(cache.state, PathState::Right);
-
-        cache.change_state(PathState::Current);
-        assert_eq!(cache.state, PathState::Current);
-
-        // Test Stale state
-        cache.change_state(PathState::Stale);
-        assert_eq!(cache.state, PathState::Stale);
-
-        // Test that move operations from Stale keep it Stale
-        cache.move_left();
-        assert_eq!(cache.state, PathState::Stale);
-
-        cache.move_right();
-        assert_eq!(cache.state, PathState::Stale);
-    }
-
-    /// Test PathCache push/pop operations
-    #[test]
-    fn test_path_cache_push_pop() {
-        let mut cache = PathCache::<i32, i32>::new();
-
-        // Test initial state
-        assert_eq!(cache.depth, 0);
-        assert!(cache.inner.is_empty());
-
-        // Test push
-        unsafe {
-            let mut node = InterNode::<i32, i32>::alloc(1);
-            cache.push(node.clone(), 0);
-            assert_eq!(cache.depth, 1);
-
-            cache.push(node.clone(), 1);
-            assert_eq!(cache.depth, 2);
-
-            // Test pop
-            let (_popped_node, popped_idx) = cache.pop(&0, &Node::Inter(node.clone())).unwrap();
-            assert_eq!(popped_idx, 1);
-            assert_eq!(cache.depth, 1);
-
-            let (_popped_node2, popped_idx2) = cache.pop(&0, &Node::Inter(node.clone())).unwrap();
-            assert_eq!(popped_idx2, 0);
-            assert_eq!(cache.depth, 0);
-
-            node.dealloc();
-        }
-    }
 }

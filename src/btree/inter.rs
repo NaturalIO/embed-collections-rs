@@ -94,7 +94,7 @@ impl<K, V> InterNode<K, V> {
     }
 
     #[inline(always)]
-    fn get_keys(&self) -> &[K] {
+    pub(super) fn get_keys(&self) -> &[K] {
         self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
     }
 
