@@ -191,12 +191,12 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
                 return &mut *leaf.insert_no_split_with_idx(0, key, value);
             }
         }
+        map.len += 1;
         // Get the leaf node where we should insert
         let mut leaf = self.node.expect("VacantEntry should have a node when root is not None");
         let count = leaf.count() as u32;
         // Check if leaf has space
         let value_p = if count < LeafNode::<K, V>::cap() as u32 {
-            map.len += 1;
             leaf.insert_no_split_with_idx(idx, key, value)
         } else {
             // Leaf is full, need to split

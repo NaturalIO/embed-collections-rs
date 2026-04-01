@@ -299,17 +299,15 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     /// update the separate_key in parent after borrowing space from left/right node
     #[inline]
-    fn update_parent_key(&mut self, leaf: LeafNode<K, V>, rel: PathState) {
-        let cache = self.get_cache();
-        cache.change_state(rel);
+    fn update_parent_key(&mut self, leaf: LeafNode<K, V>) {
         let key = unsafe { (*leaf.key_ptr(0)).assume_init_ref().clone() };
-        while let Some((parent, parent_idx)) = self.get_cache().pop(&key, self.get_root_unwrap()) {
+        while let Some((parent, parent_idx)) = self.get_cache().pop() {
             if parent_idx > 0 {
-                let parent_key = unsafe { (*parent.key_ptr(parent_idx)).assume_init_mut() };
+                let parent_key = unsafe { (*parent.key_ptr(parent_idx - 1)).assume_init_mut() };
                 *parent_key = key;
                 return;
             }
-            // if parent_idx == 0, this is the leftest node in the branch, we go up until finding a
+            // if parent_idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
             // split key
         }
     }
@@ -320,47 +318,44 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     ) -> *mut V {
         debug_assert!(leaf.is_full().is_ok());
         let cap = LeafNode::<K, V>::cap();
-        self.len += 1;
         if idx < cap {
             // random insert, try borrow space from left and right
             if let Some(mut left_node) = leaf.get_left_node() {
                 if let Err(_) = left_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
                     debug_assert!(!_is_equal);
-                    println!("borrow left {}", idx);
                     let val_p = if idx == 0 {
-                        // leaf is not change, but since the insert pos is leftest, mean parent
+                        // leaf is not change, but since the insert pos is leftmost of this node, mean parent
                         // separate_key <= key, need to update its separate_key
                         left_node.insert_no_split(key, value)
                     } else {
-                        leaf.move_left(&mut left_node, 0, 1);
+                        leaf.move_left(&mut left_node, 1);
                         leaf.insert_no_split(key, value)
                     };
-                    self.update_parent_key(leaf, PathState::Current);
-                    return val_p;
-                }
-            }
-            if let Some(mut right_node) = leaf.get_right_node() {
-                if let Err(_) = right_node.is_full() {
-                    let (idx, _is_equal) = leaf.search(&key);
-                    println!("borrow right {}", idx);
-                    debug_assert!(!_is_equal);
-                    let val_p = if idx == cap {
-                        // leaf is not change, in this condition, right_node is the leftmost child
-                        // of its parent, key < right_node.get_keys()[0]
-                        right_node.insert_no_split_with_idx(0, key, value)
-                    } else {
-                        leaf.move_right::<false>(&mut right_node, cap - 1, 1);
-                        leaf.insert_no_split(key, value)
-                    };
-                    self.update_parent_key(right_node, PathState::Right);
+                    self.update_parent_key(leaf);
                     return val_p;
                 }
             }
         } else {
             // insert into empty new node, left is probably full, right is probably none
         }
-        println!("split");
+        if let Some(mut right_node) = leaf.get_right_node() {
+            if let Err(_) = right_node.is_full() {
+                let (idx, _is_equal) = leaf.search(&key);
+                debug_assert!(!_is_equal);
+                let val_p = if idx == cap {
+                    // leaf is not change, in this condition, right_node is the leftmost child
+                    // of its parent, key < right_node.get_keys()[0]
+                    right_node.insert_no_split_with_idx(0, key, value)
+                } else {
+                    leaf.move_right::<false>(&mut right_node, cap - 1, 1);
+                    leaf.insert_no_split(key, value)
+                };
+                self.get_cache().move_right();
+                self.update_parent_key(right_node);
+                return val_p;
+            }
+        }
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
         self.propagate_split(split_key, leaf.get_ptr(), new_leaf.get_ptr());
@@ -375,7 +370,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let cache = self.get_cache();
         let mut height = 0;
         // If we have parent nodes in cache, process them iteratively
-        while let Some((mut parent, _idx)) = cache.pop(&promote_key, self.get_root_unwrap()) {
+        while let Some((mut parent, _idx)) = cache.pop() {
             if !parent.is_full().is_ok() {
                 parent.insert_no_split(promote_key, right_ptr);
                 return;

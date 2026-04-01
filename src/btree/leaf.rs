@@ -224,26 +224,31 @@ impl<K, V> LeafNode<K, V> {
         Self::LAYOUT.0
     }
 
-    /// move items to the tail of left_node
-    pub fn move_left(&mut self, left_node: &mut Self, start_idx: u32, move_count: u32) {
-        debug_assert!(start_idx + move_count <= self.count());
+    /// move items at the begining of this node to the tail of left_node
+    pub fn move_left(&mut self, left_node: &mut Self, move_count: u32) {
+        let count = self.count();
+        let left_count = left_node.count();
+        debug_assert!(move_count <= count);
         debug_assert!(left_node.count() + move_count <= Self::cap());
 
         unsafe {
-            let left_count = left_node.count();
-
             // Move keys using bulk copy
-            let src_key = self.key_ptr(start_idx);
+            let first_key = self.key_ptr(0);
             let dst_key = left_node.key_ptr(left_count);
-            ptr::copy_nonoverlapping(src_key, dst_key, move_count as usize);
+            ptr::copy_nonoverlapping(first_key, dst_key, move_count as usize);
 
             // Move values using bulk copy
-            let src_val = self.value_ptr(start_idx);
+            let first_val = self.value_ptr(0);
             let dst_val = left_node.value_ptr(left_count);
-            ptr::copy_nonoverlapping(src_val, dst_val, move_count as usize);
+            ptr::copy_nonoverlapping(first_val, dst_val, move_count as usize);
 
+            let cur_node_left = count - move_count;
+            if move_count < count {
+                ptr::copy(self.key_ptr(move_count), first_key, cur_node_left as usize);
+                ptr::copy(self.value_ptr(move_count), first_val, cur_node_left as usize);
+            }
             // Update counts
-            self.get_header_mut().count -= move_count;
+            self.get_header_mut().count = cur_node_left;
             left_node.get_header_mut().count += move_count;
         }
     }

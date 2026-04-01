@@ -233,9 +233,6 @@ impl<K: Ord, V> InterNode<K, V> {
             let right_count = right_node.count();
             // Move keys using bulk copy
             let src_key = self.key_ptr(start_idx) as *mut K;
-            println!(
-                "copy right start_idx {start_idx} right_count {right_count}, copy {copy_count}"
-            );
             let dst_key = right_node.key_ptr(right_count) as *mut K;
             ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
@@ -283,13 +280,11 @@ impl<K: Ord, V> InterNode<K, V> {
                 self.insert_no_split_with_idx(idx, key, child_ptr);
             } else {
                 if idx > split_idx + 1 {
-                    println!("copy_right {}", split_idx + 1);
                     self.copy_right(&mut new_node, split_idx + 1, idx - split_idx - 1);
                 }
                 // because split_idx is promote_key, skip it
                 new_node.insert_no_split_with_idx(idx - split_idx - 1, key, child_ptr);
                 if idx < cap {
-                    println!("copy_right {idx} to {}", new_node.count());
                     self.copy_right(&mut new_node, idx, cap - idx);
                 }
                 self.get_header_mut().count = split_idx;

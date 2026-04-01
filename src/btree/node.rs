@@ -205,6 +205,15 @@ pub(crate) enum Node<K, V> {
 
 impl<K: Ord, V> Node<K, V> {
     #[inline]
+    pub fn as_inter(&self) -> &InterNode<K, V> {
+        if let Node::Inter(node) = &self {
+            &node
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[inline]
     pub fn find_leaf(&self, key: &K) -> LeafNode<K, V> {
         match self {
             Node::Leaf(node) => return node.clone(),
@@ -248,36 +257,20 @@ impl<K: Ord, V> Node<K, V> {
     pub fn find_child_with_cache(
         &self, cache: &mut PathCache<K, V>, key: &K, mut depth: u32,
     ) -> InterNode<K, V> {
-        if let Node::Inter(node) = &self {
-            let mut cur = node.clone();
-            while depth > 0 {
-                depth -= 1;
-                let idx = cur.search_child(key);
-                cache.push(cur.clone(), idx);
-                cur = cur.get_child_as_inter(idx);
-            }
-            cur
-        } else {
-            unreachable!();
+        let mut cur = self.as_inter().clone();
+        while depth > 0 {
+            depth -= 1;
+            let idx = cur.search_child(key);
+            cache.push(cur.clone(), idx);
+            cur = cur.get_child_as_inter(idx);
         }
+        cur
     }
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
-#[repr(u8)]
-pub(super) enum PathState {
-    Current,
-    // the cursor has been moved left, so cache content is to the right brother of leaf cursor
-    Left,
-    // the cursor has been moved right, so cache content is to the left brother of leaf cursor
-    Right,
-    // the cache content should be ignore
-    Stale,
-}
-
 pub(super) struct PathCache<K, V> {
-    pub state: PathState,
-    pub depth: u32,
+    /// < 0 means the cursor move left N times, > 0 means the cursor move right N times
+    pos: usize,
     // Various<ptr> has 13 cap, which is quite enough for btree
     pub inner: Various<(InterNode<K, V>, u32)>,
 }
@@ -285,55 +278,103 @@ pub(super) struct PathCache<K, V> {
 impl<K: Ord, V> PathCache<K, V> {
     #[inline]
     pub fn new() -> Self {
-        Self { inner: Various::new(), state: PathState::Current, depth: 0 }
+        Self { inner: Various::new(), pos: 0 }
     }
 
     #[inline]
     pub fn clear(&mut self) {
         self.inner.clear();
-        self.depth = 0;
+        self.pos = 0;
     }
 
     #[inline]
-    pub fn move_left(&mut self) {
-        let state = match self.state {
-            PathState::Current => PathState::Left,
-            PathState::Right => PathState::Current,
-            _ => {
-                let _ = self.inner.take();
-                PathState::Stale
+    fn _move_left(&mut self) -> usize {
+        self.pos += 1;
+        if let Some((parent, idx)) = self.inner.pop() {
+            if idx > 0 {
+                self.inner.push((parent, idx - 1)); // have common parent
+                return self.pos;
             }
-        };
-        self.state = state;
+            let mut depth = 0;
+            let (mut grand_parent, mut idx);
+            loop {
+                (grand_parent, idx) = self.inner.pop().unwrap();
+                if idx == 0 {
+                    depth += 1;
+                } else {
+                    break;
+                }
+            }
+            let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx - 1) };
+            let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+            self.inner.push((grand_parent, idx - 1));
+            depth -= 1;
+            grand_parent = parent.clone();
+            idx = parent.count();
+            self.inner.push((parent, idx));
+            while depth > 0 {
+                depth -= 1;
+                let idx = grand_parent.count();
+                let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx) };
+                let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+                grand_parent = parent.clone();
+                self.inner.push((parent, idx));
+            }
+        }
+        self.pos
     }
 
     #[inline]
-    pub fn move_right(&mut self) {
-        let state = match self.state {
-            PathState::Current => PathState::Right,
-            PathState::Left => PathState::Current,
-            _ => {
-                let _ = self.inner.take();
-                PathState::Stale
+    fn _move_right(&mut self) -> usize {
+        self.pos -= 1;
+        if let Some((mut parent, idx)) = self.inner.pop() {
+            if idx < parent.count() {
+                self.inner.push((parent, idx + 1)); // have common parent
+                return self.pos;
             }
-        };
-        self.state = state;
+            let mut depth = 0;
+            let (mut grand_parent, mut idx);
+            loop {
+                (grand_parent, idx) = self.inner.pop().unwrap();
+                if idx == grand_parent.count() {
+                    // the last
+                    depth += 1;
+                    parent = grand_parent;
+                } else {
+                    break;
+                }
+            }
+            println!("depth {}", depth);
+            let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx + 1) };
+            parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+            self.inner.push((grand_parent, idx + 1));
+            grand_parent = parent.clone();
+            self.inner.push((parent, 0));
+            depth -= 1;
+            while depth > 0 {
+                depth -= 1;
+                let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(0) };
+                parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
+                grand_parent = parent.clone();
+                self.inner.push((parent, 0));
+            }
+        }
+        self.pos
     }
 
     #[inline(always)]
-    pub fn change_state(&mut self, state: PathState) {
-        match state {
-            PathState::Current => {}
-            PathState::Left => self.move_left(),
-            PathState::Right => self.move_right(),
-            PathState::Stale => self.state = PathState::Stale,
-        }
+    pub fn move_left(&mut self) {
+        self.pos -= 1;
+    }
+
+    #[inline(always)]
+    pub fn move_right(&mut self) {
+        self.pos += 1;
     }
 
     #[inline(always)]
     pub fn push(&mut self, inter: InterNode<K, V>, idx: u32) {
         self.inner.push((inter, idx));
-        self.depth += 1;
     }
 
     /// pop parent and its idx from cache, if we need new_root, return None
@@ -341,56 +382,20 @@ impl<K: Ord, V> PathCache<K, V> {
     /// If the cache has no acurrate infomation, fallback search top-down from
     /// root or upper level.
     #[inline(always)]
-    pub fn pop(&mut self, key: &K, root: &Node<K, V>) -> Option<(InterNode<K, V>, u32)> {
-        match self.state {
-            PathState::Stale => {
-                if self.depth == 0 {
-                    return None;
-                }
-                let depth = self.depth - 1;
-                self.depth = depth;
-                let mut new_cache = Self::new();
-                root.find_child_with_cache(&mut new_cache, key, depth);
-                let res = new_cache.pop(key, root);
-                self.inner = new_cache.inner.take();
-                res
-            }
-            PathState::Current => {
-                if let Some((node, idx)) = self.inner.pop() {
-                    self.depth -= 1;
-                    Some((node, idx))
-                } else if self.depth == 0 {
-                    None
-                } else {
-                    unreachable!();
+    pub fn pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
+        if self.pos < 0 {
+            loop {
+                if self._move_left() == 0 {
+                    break;
                 }
             }
-            PathState::Left => {
-                let depth = self.depth;
-                if depth == 0 {
-                    return None;
+        } else if self.pos > 0 {
+            loop {
+                if self._move_right() == 0 {
+                    break;
                 }
-                let (node, idx) = self.inner.pop().unwrap();
-                self.depth = depth - 1;
-                if idx > 0 {
-                    return Some((node, idx)); // have common parent
-                }
-                todo!();
-                // iterate top to find a common ancestor
-            }
-            PathState::Right => {
-                let depth = self.depth;
-                if depth == 0 {
-                    return None;
-                }
-                let (node, idx) = self.inner.pop().unwrap();
-                self.depth = depth - 1;
-                if idx + 1 < InterNode::<K, V>::cap() as u32 {
-                    return Some((node, idx)); // have common parent
-                }
-                todo!();
-                // iterate top to find a common ancestor
             }
         }
+        if let Some((parent, idx)) = self.inner.pop() { Some((parent, idx)) } else { None }
     }
 }
