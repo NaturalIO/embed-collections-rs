@@ -95,7 +95,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
             let val = (*val_ptr).assume_init_read();
 
             // Shift remaining elements
-            let count = self.node.count() as u32;
+            let count = self.node.key_count() as u32;
             for i in self.idx..count - 1 {
                 let src_key = self.node.key_ptr(i + 1);
                 let dst_key = self.node.key_ptr(i);
@@ -113,7 +113,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
             self.map.len -= 1;
 
             // TODO: Check for underflow and handle merge/borrow
-            // let new_count = self.node.count();
+            // let new_count = self.node.key_count();
             // let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
             // if new_count < min_count && self.map.root.is_some() {
             //     // Get cache from map to find parent
@@ -194,7 +194,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
         map.len += 1;
         // Get the leaf node where we should insert
         let mut leaf = self.node.expect("VacantEntry should have a node when root is not None");
-        let count = leaf.count() as u32;
+        let count = leaf.key_count() as u32;
         // Check if leaf has space
         let value_p = if count < LeafNode::<K, V>::cap() as u32 {
             leaf.insert_no_split_with_idx(idx, key, value)

@@ -40,7 +40,7 @@ fn test_leaf_node_search() {
         for k in 10..(cap + 10) {
             leaf.insert_no_split(k * 2, k * 2);
         }
-        assert_eq!(leaf.count(), cap as u32);
+        assert_eq!(leaf.key_count(), cap as u32);
         // Test search - existing key
         for k in 10..(cap + 10) {
             let (idx, found) = leaf.search(&(k * 2));
@@ -93,8 +93,8 @@ fn test_leaf_node_split_insert_at_split_idx_left() {
             leaf.insert_with_split(insert_idx, new_key as i32, new_value as i32);
 
         // Verify the split
-        let left_count = leaf.count();
-        let right_count = new_leaf.count();
+        let left_count = leaf.key_count();
+        let right_count = new_leaf.key_count();
 
         assert_eq!(left_count, split_idx + 1, "Left node should have keys");
         assert_eq!(left_count, insert_idx + 3, "Left node should have keys");
@@ -169,8 +169,8 @@ fn test_leaf_node_split_insert_at_split_idx_right() {
             leaf.insert_with_split(insert_idx, new_key as i32, new_value as i32);
 
         // Verify the split
-        let left_count = leaf.count();
-        let right_count = new_leaf.count();
+        let left_count = leaf.key_count();
+        let right_count = new_leaf.key_count();
         assert_eq!(left_count, split_idx, "Left node should have keys");
         assert!(right_count > 0, "Right node should have keys");
         assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
@@ -222,8 +222,8 @@ fn test_leaf_node_split_insert_at_end() {
         assert_eq!(*_ptr_v, new_value);
 
         // Verify the split
-        let left_count = leaf.count();
-        let right_count = new_leaf.count();
+        let left_count = leaf.key_count();
+        let right_count = new_leaf.key_count();
 
         assert_eq!(left_count, cap, "Left node keys unchanged");
         assert_eq!(right_count, 1, "Right node should have keys");
@@ -344,7 +344,7 @@ fn test_btree_split_leaf_verify_structure() {
 
     // Now manually traverse the tree to verify structure
     if let Some(Node::Inter(root)) = &map.root {
-        println!("Root has {} children", root.count() + 1);
+        println!("Root has {} children", root.key_count() + 1);
 
         unsafe {
             // Check first child
@@ -353,13 +353,13 @@ fn test_btree_split_leaf_verify_structure() {
 
             // Try to access it as leaf
             let leaf0 = LeafNode::<i32, i32>::from_header(NonNull::new_unchecked(child0_ptr));
-            println!("Leaf 0 has {} items", leaf0.count());
+            println!("Leaf 0 has {} items", leaf0.key_count());
 
             // Check second child
             let child1_ptr = *root.child_ptr(1);
             if !child1_ptr.is_null() {
                 let leaf1 = LeafNode::<i32, i32>::from_header(NonNull::new_unchecked(child1_ptr));
-                println!("Leaf 1 has {} items", leaf1.count());
+                println!("Leaf 1 has {} items", leaf1.key_count());
             }
         }
     }

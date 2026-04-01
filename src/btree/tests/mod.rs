@@ -1,6 +1,6 @@
 mod api;
 mod borrow;
-mod cache;
+mod inter;
 mod leaf;
 mod merge;
 mod split;

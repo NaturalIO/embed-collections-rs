@@ -23,9 +23,9 @@ The Layout:
 #[repr(C)]
 pub(super) struct NodeHeader {
     /// Height of the node (0 = leaf, >0 = internal)
-    pub(crate) height: u32,
+    pub height: u32,
     /// Count of items in the node
-    pub(crate) count: u32,
+    pub count: u32,
 }
 
 impl NodeHeader {
@@ -102,7 +102,7 @@ impl NodeBase {
 
     /// Get count of items in the node
     #[inline(always)]
-    pub fn count(&self) -> u32 {
+    pub fn key_count(&self) -> u32 {
         self.get_header().count
     }
 
@@ -145,7 +145,7 @@ impl NodeBase {
         }
 
         unsafe {
-            let count = self.count();
+            let count = self.key_count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
             let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
             if count > first_line_limit
@@ -180,7 +180,7 @@ impl NodeBase {
     pub unsafe fn _insert<K, V>(
         &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
     ) -> *mut V {
-        let count = self.count() as u32;
+        let count = self.key_count() as u32;
         unsafe {
             let key_p = self.item_ptr::<K>(key_header_offset, idx);
             if idx < count {
@@ -319,12 +319,12 @@ impl<K: Ord, V> PathCache<K, V> {
             self.inner.push((grand_parent, idx - 1));
             depth -= 1;
             grand_parent = parent.clone();
-            idx = parent.count();
+            idx = parent.key_count();
             self.inner.push((parent, idx));
             // push the right mode branch again
             while depth > 0 {
                 depth -= 1;
-                let idx = grand_parent.count();
+                let idx = grand_parent.key_count();
                 let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx) };
                 let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
                 grand_parent = parent.clone();
@@ -347,7 +347,7 @@ impl<K: Ord, V> PathCache<K, V> {
         while let Some((parent, mut idx)) = self.inner.pop() {
             debug_assert!(self.pos > 0);
             let move_step = self.pos as u32;
-            let right_count = parent.count() + 1 - idx;
+            let right_count = parent.key_count() - idx;
             if right_count > 0 {
                 if right_count < move_step {
                     self.pos -= right_count as isize;
@@ -379,12 +379,12 @@ impl<K: Ord, V> PathCache<K, V> {
                     return;
                 }
             }
+            depth -= 1;
             let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx + 1) };
             let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             self.inner.push((grand_parent, idx + 1));
             grand_parent = parent.clone();
             self.inner.push((parent, 0));
-            depth -= 1;
             // push the left most branch again
             while depth > 0 {
                 depth -= 1;

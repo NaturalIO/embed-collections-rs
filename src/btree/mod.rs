@@ -333,13 +333,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         match node {
             Node::Leaf(leaf) => {
                 print!("{:indent$}", "", indent = depth * 2);
-                println!("{:?}", leaf);
+                println!("{}", leaf);
             }
             Node::Inter(inter) => {
                 print!("{:indent$}", "", indent = depth * 2);
-                println!("{:?}", inter);
+                println!("{}", inter);
                 // Dump children
-                let count = inter.count() as u32;
+                let count = inter.key_count() as u32;
                 for i in 0..=count {
                     unsafe {
                         let child_ptr = *inter.child_ptr(i);
@@ -368,7 +368,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // TODO: Implement underflow handling with proper pointer-based parent tracking
         // For now, this is a placeholder to avoid compilation errors
         //        unsafe {
-        //            let leaf_count = leaf.count();
+        //            let leaf_count = leaf.key_count();
         //            let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
         //            if leaf_count >= min_count {
         //                return; // No underflow
@@ -383,7 +383,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         //                if !left_sibling_ptr.is_null() {
         //                    let mut left_sibling =
         //                        LeafNode::<K, V>::from_header(NonNull::new_unchecked(left_sibling_ptr));
-        //                    let sibling_count = left_sibling.count();
+        //                    let sibling_count = left_sibling.key_count();
         //
         //                    if sibling_count > min_count {
         //                        // Borrow from left sibling
@@ -404,13 +404,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         //            }
         //
         //            // Try right sibling
-        //            let parent_count = parent.count() as u32;
+        //            let parent_count = parent.key_count() as u32;
         //            if leaf_idx < parent_count {
         //                let right_sibling_ptr = *parent.child_ptr(leaf_idx + 1);
         //                if !right_sibling_ptr.is_null() {
         //                    let mut right_sibling =
         //                        LeafNode::<K, V>::from_header(NonNull::new_unchecked(right_sibling_ptr));
-        //                    let sibling_count = right_sibling.count();
+        //                    let sibling_count = right_sibling.key_count();
         //                    let mut parent_mut = parent.clone();
         //
         //                    if sibling_count > min_count {
@@ -435,14 +435,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //        &mut self, left_sibling: &mut LeafNode<K, V>, leaf: &mut LeafNode<K, V>,
     //    ) {
     //        unsafe {
-    //            let sibling_count = left_sibling.count() as u32;
+    //            let sibling_count = left_sibling.key_count() as u32;
     //
     //            // Move last element from left sibling to front of leaf
     //            let key_to_move = (*left_sibling.key_ptr(sibling_count - 1)).assume_init_read();
     //            let val_to_move = (*left_sibling.value_ptr(sibling_count - 1)).assume_init_read();
     //
     //            // Shift leaf elements right
-    //            let leaf_count = leaf.count() as u32;
+    //            let leaf_count = leaf.key_count() as u32;
     //            for i in (0..leaf_count).rev() {
     //                let src_key = leaf.key_ptr(i);
     //                let dst_key = leaf.key_ptr(i + 1);
@@ -474,12 +474,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //            let key_to_move = (*right_sibling.key_ptr(0)).assume_init_read();
     //            let val_to_move = (*right_sibling.value_ptr(0)).assume_init_read();
     //
-    //            let leaf_count = leaf.count() as u32;
+    //            let leaf_count = leaf.key_count() as u32;
     //            (*leaf.key_ptr(leaf_count)).write(key_to_move);
     //            (*leaf.value_ptr(leaf_count)).write(val_to_move);
     //
     //            // Shift right sibling elements left
-    //            let sibling_count = right_sibling.count() as u32;
+    //            let sibling_count = right_sibling.key_count() as u32;
     //            for i in 0..sibling_count - 1 {
     //                let src_key = right_sibling.key_ptr(i + 1);
     //                let dst_key = right_sibling.key_ptr(i);
@@ -504,8 +504,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //        parent: &mut InterNode<K, V>, parent_key_idx: u32,
     //    ) {
     //        unsafe {
-    //            let left_count = left_sibling.count() as u32;
-    //            let leaf_count = leaf.count() as u32;
+    //            let left_count = left_sibling.key_count() as u32;
+    //            let leaf_count = leaf.key_count() as u32;
     //
     //            // Move all elements from leaf to left sibling
     //            for i in 0..leaf_count {
@@ -545,8 +545,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //        parent: &mut InterNode<K, V>, parent_key_idx: u32,
     //    ) {
     //        unsafe {
-    //            let leaf_count = leaf.count() as u32;
-    //            let right_count = right_sibling.count() as u32;
+    //            let leaf_count = leaf.key_count() as u32;
+    //            let right_count = right_sibling.key_count() as u32;
     //
     //            // Move all elements from right sibling to leaf
     //            for i in 0..right_count {
@@ -583,7 +583,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //    /// Remove a child from parent after merge
     //    unsafe fn remove_child_from_parent(&mut self, parent: &mut InterNode<K, V>, key_idx: u32) {
     //        unsafe {
-    //            let count = parent.count() as u32;
+    //            let count = parent.key_count() as u32;
     //
     //            // Shift keys left
     //            for i in key_idx..count - 1 {
@@ -642,6 +642,8 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
         while let Some((parent, idx)) =
             cache.move_right_and_pop_l1(|mut node| unsafe { node.dealloc() })
         {
+            println!("cache push {:?} idx {idx } again", parent);
+            cache.push(parent.clone(), idx);
             if let Node::Leaf(mut leaf) = parent.get_child(idx) {
                 unsafe { leaf.dealloc() };
             } else {

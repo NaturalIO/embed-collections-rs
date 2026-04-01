@@ -46,7 +46,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         // will promote
         println!("insert_key {insert_key}");
         let insert_value = insert_key * 2 * 10 - 1;
-        assert!(insert_key > left_leaf.get_keys()[left_leaf.count() as usize - 1]);
+        assert!(insert_key > left_leaf.get_keys()[left_leaf.key_count() as usize - 1]);
         let middle_first_key = middle_leaf.get_keys()[0];
         let right_first_key = right_leaf.get_keys()[0];
         assert!(insert_key < middle_first_key);
@@ -62,7 +62,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         root.insert_no_split(insert_key, middle_leaf.get_ptr());
         root.insert_no_split(right_first_key, right_leaf.get_ptr());
         assert!(insert_key < middle_first_key);
-        assert!(insert_key > left_leaf.get_keys()[left_leaf.count() as usize - 1]);
+        assert!(insert_key > left_leaf.get_keys()[left_leaf.key_count() as usize - 1]);
         assert!(middle_first_key < right_first_key);
 
         // Create BTreeMap with this structure
@@ -89,7 +89,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         // Verify tree structure is still valid
         let root = map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 2);
+        assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
         // verify the spliter of middle_leaf has not changed
         assert_eq!(root.get_keys()[0], middle_first_key);
@@ -184,7 +184,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
         // Verify tree structure is still valid
         let root = &map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 2);
+        assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
         // verify the spliter of middle_leaf has changed
         assert_eq!(root.get_keys()[0], old_middle_leaf_key1);
@@ -238,7 +238,7 @@ fn test_borrow_from_right_height_2_not_last() {
         root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
         root.insert_no_split(right_first_key, right_leaf.get_ptr());
 
-        let middle_last_key = middle_leaf.get_keys()[middle_leaf.count() as usize - 1];
+        let middle_last_key = middle_leaf.get_keys()[middle_leaf.key_count() as usize - 1];
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<i32, i32> {
@@ -271,7 +271,7 @@ fn test_borrow_from_right_height_2_not_last() {
         // Verify tree structure is still valid
         let root = &map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 2);
+        assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
         // verify the spliter of right_leaf has changed
         assert_eq!(root.get_keys()[1], middle_last_key);
@@ -359,7 +359,7 @@ fn test_borrow_from_right_height_2_last() {
         // Verify tree structure is still valid
         let root = &map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 2);
+        assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
         // verify the spliter of right_leaf has changed
         assert_eq!(root.get_keys()[1], insert_key);
@@ -408,7 +408,7 @@ fn test_borrow_from_left_insert_first_height_3() {
         // the leaf_2 first key will promote to root
         println!("insert_key {insert_key}");
         let insert_value = insert_key * 2 * 10 - 1;
-        assert!(insert_key > leaf_1.get_keys()[leaf_1.count() as usize - 1]);
+        assert!(insert_key > leaf_1.get_keys()[leaf_1.key_count() as usize - 1]);
         assert!(insert_key < leaf_2.get_keys()[0]);
         let (insert_idx, is_equal) = leaf_2.search(&insert_key);
         assert!(!is_equal);
@@ -451,11 +451,12 @@ fn test_borrow_from_left_insert_first_height_3() {
         assert_eq!(map.height(), 3);
         let root = map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 1);
+        assert_eq!(root.key_count(), 1);
         // the root key has changed
         assert_eq!(root.get_keys()[0], leaf_2.get_keys()[0]);
-        assert_eq!(internal_left.count(), 1);
-        assert_eq!(internal_right.count(), 1);
+        assert_eq!(internal_left.key_count(), 1);
+        assert_eq!(internal_right.key_count(), 1);
+        map.dump();
 
         // Cleanup
         drop(map);
@@ -501,7 +502,7 @@ fn test_borrow_from_left_insert_mid_height_3() {
         // the insert_key will promote to root
         println!("insert_key {insert_key}");
         let insert_value = insert_key * 2 * 10 - 1;
-        assert!(insert_key > leaf_1.get_keys()[leaf_1.count() as usize - 1]);
+        assert!(insert_key > leaf_1.get_keys()[leaf_1.key_count() as usize - 1]);
         let old_leaf_2_first = leaf_2.get_keys()[0];
         assert!(insert_key > old_leaf_2_first);
         let (insert_idx, is_equal) = leaf_2.search(&insert_key);
@@ -545,11 +546,11 @@ fn test_borrow_from_left_insert_mid_height_3() {
         assert_eq!(map.height(), 3);
         let root = map.get_root_unwrap().as_inter();
         // no split
-        assert_eq!(root.count(), 1);
+        assert_eq!(root.key_count(), 1);
         // the root key has changed
         assert_eq!(root.get_keys()[0], insert_key);
-        assert_eq!(internal_left.count(), 1);
-        assert_eq!(internal_right.count(), 1);
+        assert_eq!(internal_left.key_count(), 1);
+        assert_eq!(internal_right.key_count(), 1);
 
         // Cleanup
         drop(map);
@@ -590,7 +591,7 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         (*leaf_2.brothers()).next = leaf_3.get_ptr();
         (*leaf_3.brothers()).prev = leaf_2.get_ptr();
 
-        let old_leaf_1_last = leaf_1.get_keys()[leaf_1.count() as usize - 1];
+        let old_leaf_1_last = leaf_1.get_keys()[leaf_1.key_count() as usize - 1];
         let insert_key = old_leaf_1_last - 1;
         // Insert into leaf_1 (which is full) - this will trigger borrow space from leaf_2,
         // but the moved key to leaf_2 will be promoted
@@ -643,10 +644,10 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         // Verify tree height is still 3
         assert_eq!(map.height(), 3);
         // no split
-        assert_eq!(root.count(), 1);
+        assert_eq!(root.key_count(), 1);
         // the root key has changed
-        assert_eq!(internal_left.count(), 1);
-        assert_eq!(internal_right.count(), 1);
+        assert_eq!(internal_left.key_count(), 1);
+        assert_eq!(internal_right.key_count(), 1);
 
         // Cleanup
         drop(map);
@@ -687,7 +688,7 @@ fn test_borrow_from_right_insert_last_height_3() {
         (*leaf_2.brothers()).next = leaf_3.get_ptr();
         (*leaf_3.brothers()).prev = leaf_2.get_ptr();
 
-        let old_leaf_1_last = leaf_1.get_keys()[leaf_1.count() as usize - 1];
+        let old_leaf_1_last = leaf_1.get_keys()[leaf_1.key_count() as usize - 1];
         let insert_key = old_leaf_1_last + 1;
         // Insert into leaf_1 (which is full) - this will trigger borrow space from leaf_2,
         // but the insert_key insert into leaf_2, and insert_key will be promoted
@@ -740,10 +741,10 @@ fn test_borrow_from_right_insert_last_height_3() {
         // Verify tree height is still 3
         assert_eq!(map.height(), 3);
         // no split
-        assert_eq!(root.count(), 1);
+        assert_eq!(root.key_count(), 1);
         // the root key has changed
-        assert_eq!(internal_left.count(), 1);
-        assert_eq!(internal_right.count(), 1);
+        assert_eq!(internal_left.key_count(), 1);
+        assert_eq!(internal_right.key_count(), 1);
 
         // Cleanup
         drop(map);

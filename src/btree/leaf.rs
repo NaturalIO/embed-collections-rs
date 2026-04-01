@@ -96,7 +96,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline(always)]
     pub unsafe fn dealloc(&mut self) {
-        let count = self.count();
+        let count = self.key_count();
         unsafe {
             if needs_drop::<K>() {
                 for i in 0..count as u32 {
@@ -114,7 +114,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline(always)]
     pub fn is_full(&self) -> Result<(), u32> {
-        let avail = Self::cap() - self.count();
+        let avail = Self::cap() - self.key_count();
         if avail == 0 { Ok(()) } else { Err(avail as u32) }
     }
 
@@ -189,7 +189,7 @@ impl<K, V> LeafNode<K, V> {
     /// Uses copy_within pattern for efficient shifting
     #[inline]
     pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
-        debug_assert!(self.count() < Self::cap());
+        debug_assert!(self.key_count() < Self::cap());
         unsafe {
             self.base._insert::<K, V>(LEAF_HEAD_SIZE, AREA_SIZE + LEAF_HEAD_SIZE, idx, key, value)
         }
@@ -202,7 +202,7 @@ impl<K, V> LeafNode<K, V> {
     where
         K: Ord,
     {
-        debug_assert!(self.count() < Self::cap());
+        debug_assert!(self.key_count() < Self::cap());
         let (idx, is_equal) = self.search(&key);
         debug_assert!(!is_equal);
         self.insert_no_split_with_idx(idx, key, value)
@@ -210,7 +210,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline]
     pub fn remove_no_borrow(&mut self, idx: u32) -> (K, V) {
-        let left = self.count() as u32 - 1;
+        let left = self.key_count() as u32 - 1;
         unsafe {
             let key = self.base._remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
             let value = self.base._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
@@ -226,10 +226,10 @@ impl<K, V> LeafNode<K, V> {
 
     /// move items at the begining of this node to the tail of left_node
     pub fn move_left(&mut self, left_node: &mut Self, move_count: u32) {
-        let count = self.count();
-        let left_count = left_node.count();
+        let count = self.key_count();
+        let left_count = left_node.key_count();
         debug_assert!(move_count <= count);
-        debug_assert!(left_node.count() + move_count <= Self::cap());
+        debug_assert!(left_count + move_count <= Self::cap());
 
         unsafe {
             // Move keys using bulk copy
@@ -273,12 +273,12 @@ impl<K, V> LeafNode<K, V> {
     pub fn copy_right<const APPEND: bool>(
         &mut self, right_node: &mut Self, start_idx: u32, copy_count: u32,
     ) {
-        debug_assert!(start_idx + copy_count <= self.count());
-        debug_assert!(right_node.count() + copy_count <= Self::cap());
+        let right_count = right_node.key_count();
+        debug_assert!(start_idx + copy_count <= self.key_count());
+        debug_assert!(right_count + copy_count <= Self::cap());
         unsafe {
             if APPEND {
                 // Append to tail of right_node
-                let right_count = right_node.count();
 
                 // Move keys using bulk copy
                 let src_key = self.key_ptr(start_idx);
@@ -291,8 +291,6 @@ impl<K, V> LeafNode<K, V> {
                 ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             } else {
                 // Prepend to head of right_node
-                let right_count = right_node.count() as u32;
-
                 // Shift existing elements in right_node to make space
                 if right_count > 0 {
                     let src_key = right_node.key_ptr(0);
@@ -319,7 +317,7 @@ impl<K, V> LeafNode<K, V> {
 
     pub fn insert_with_split(&mut self, idx: u32, key: K, value: V) -> (Self, *mut V) {
         let mut new_leaf = unsafe { LeafNode::<K, V>::alloc() };
-        let count = self.count() as u32;
+        let count = self.key_count() as u32;
         unsafe {
             if let Some(right) = self.get_right_node() {
                 (*right.brothers()).prev = new_leaf.get_ptr();
@@ -359,10 +357,16 @@ impl<K, V> LeafNode<K, V> {
     }
 }
 
-impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for LeafNode<K, V> {
+impl<K, V> fmt::Debug for LeafNode<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let count = self.count();
-        write!(f, "LeafNode {{ count: {}, keys: [", count)?;
+        write!(f, "LeafNode({:p} count: {})", self.base.header, self.key_count())
+    }
+}
+
+impl<K: fmt::Debug, V: fmt::Debug> fmt::Display for LeafNode<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.key_count();
+        write!(f, "LeafNode({:p} count: {}, keys: [", self.base.header, count)?;
         for i in 0..count {
             unsafe {
                 let key = (*self.key_ptr(i as u32)).assume_init_ref();
@@ -373,6 +377,6 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for LeafNode<K, V> {
                 write!(f, "{:?}: {:?}", key, val)?;
             }
         }
-        write!(f, "] }}")
+        write!(f, "])")
     }
 }
