@@ -124,13 +124,13 @@ impl<K, V> BTreeMap<K, V> {
         (inter_cap, leaf_cap)
     }
 
-    /// When root is leaf, returns 0, otherwise return the number of layers of inter node
+    /// When root is leaf, returns 1, otherwise return the number of layers of inter node
     #[inline(always)]
     pub fn height(&self) -> u32 {
         if let Some(Node::Inter(node)) = &self.root {
-            return node.height();
+            return node.height() + 1;
         }
-        0
+        1
     }
 }
 
@@ -327,6 +327,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if let Err(_) = left_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
                     debug_assert!(!_is_equal);
+                    println!("borrow left {}", idx);
                     let val_p = if idx == 0 {
                         // leaf is not change, but since the insert pos is leftest, mean parent
                         // separate_key <= key, need to update its separate_key
@@ -342,6 +343,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             if let Some(mut right_node) = leaf.get_right_node() {
                 if let Err(_) = right_node.is_full() {
                     let (idx, _is_equal) = leaf.search(&key);
+                    println!("borrow right {}", idx);
                     debug_assert!(!_is_equal);
                     let val_p = if idx == cap {
                         // leaf is not change, in this condition, right_node is the leftmost child
@@ -358,6 +360,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else {
             // insert into empty new node, left is probably full, right is probably none
         }
+        println!("split");
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
         self.propagate_split(split_key, leaf.get_ptr(), new_leaf.get_ptr());
