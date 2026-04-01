@@ -18,14 +18,14 @@ test-all: test test-release test-leak
 
 .PHONY: test
 test: init
-	cargo test ${ARGS} -F full --  --nocapture --test-threads=1
+	RUST_BACKTRACE=1 cargo test ${ARGS} -F full --  --nocapture --test-threads=1
 
 .PHONY: test_release
 test-release: init
-	cargo test ${ARGS} --release -F full --  --nocapture --test-threads=1
+	RUST_BACKTRACE=1 cargo test ${ARGS} --release -F full --  --nocapture --test-threads=1
 
 test-leak:
-	RUSTFLAGS="-Zsanitizer=leak" cargo +nightly test ${ARGS} -F full --release --  --nocapture --test-threads=1
+	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly test ${ARGS} -F full --release --  --nocapture --test-threads=1
 
 .PHONY: build
 build: init
