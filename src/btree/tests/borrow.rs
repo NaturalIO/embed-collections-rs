@@ -1,4 +1,5 @@
 use super::super::{inter::*, leaf::*, node::*, *};
+use super::TestStats;
 use core::cell::UnsafeCell;
 
 /// Test borrowing from left sibling in a height=2 tree (root is InterNode, children are LeafNode)
@@ -66,10 +67,11 @@ fn test_borrow_from_left_insert_first_height_2() {
         assert!(middle_first_key < right_first_key);
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         // Verify middle leaf is full before insert
@@ -150,10 +152,11 @@ fn test_borrow_from_left_insert_mid_height_2() {
         assert!(middle_first_key < right_first_key);
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         // Insert into middle leaf (which is full) - this will trigger either borrowing or split
@@ -242,10 +245,11 @@ fn test_borrow_from_right_height_2_not_last() {
         let middle_last_key = middle_leaf.get_keys()[middle_leaf.key_count() as usize - 1];
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.get_root_unwrap().as_inter().get_keys()[1], right_leaf.get_keys()[0]);
@@ -328,10 +332,11 @@ fn test_borrow_from_right_height_2_last() {
         root.insert_no_split(right_first_key, right_leaf.get_ptr());
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.get_root_unwrap().as_inter().get_keys()[1], right_leaf.get_keys()[0]);
@@ -435,10 +440,11 @@ fn test_borrow_from_left_insert_first_height_3() {
         root.insert_no_split(insert_key, internal_right.get_ptr());
 
         // Create BTreeMap with height=2 structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.height(), 3);
@@ -530,10 +536,11 @@ fn test_borrow_from_left_insert_mid_height_3() {
         root.insert_no_split(old_leaf_2_first, internal_right.get_ptr());
 
         // Create BTreeMap with height=2 structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.height(), 3);
@@ -625,10 +632,11 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         println!("old_leaf_2_first {old_leaf_2_first}");
 
         // Create BTreeMap with height=2 structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.height(), 3);
@@ -722,10 +730,11 @@ fn test_borrow_from_right_insert_last_height_3() {
         println!("old_leaf_2_first {old_leaf_2_first}");
 
         // Create BTreeMap with height=2 structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.height(), 3);
@@ -815,10 +824,11 @@ fn test_borrow_two_level_internal_nodes() {
         let total_elements = leaf_count as u32 * leaf_cap;
 
         // Create BTreeMap
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<i32, i32, TestStats> {
             root: Some(Node::Inter(root)),
             len: total_elements as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            state: UnsafeCell::new(TestStats::with_counts(3, 1)),
         };
 
         assert_eq!(map.height(), 2);

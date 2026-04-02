@@ -1,10 +1,11 @@
-use super::super::*;
+use super::{TestBTreeMap, TestStats};
+use crate::btree::*;
 
 #[test]
 fn test_simple() {
-    let (inter_cap, leaf_cap) = BTreeMap::<i32, &'static str>::cap();
+    let (inter_cap, leaf_cap) = TestBTreeMap::<i32, &'static str>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
-    let mut map: BTreeMap<i32, &'static str> = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &'static str> = BTreeMap::new_with_state(TestStats::new());
     assert!(map.is_empty());
     assert_eq!(map.len(), 0);
     assert_eq!(map.get(&1), None);
@@ -30,7 +31,7 @@ fn test_simple() {
 
 #[test]
 fn test_multiple_inserts() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     map.insert(3, "c");
     map.validate();
     map.insert(1, "a");
@@ -45,7 +46,7 @@ fn test_multiple_inserts() {
 
 #[test]
 fn test_entry_occupied() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     map.insert(1, "a");
     map.validate();
     match map.entry(1) {
@@ -58,7 +59,7 @@ fn test_entry_occupied() {
 
 #[test]
 fn test_occupied_entry_remove() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     map.insert(1, "a");
     map.validate();
     match map.entry(1) {
@@ -73,7 +74,7 @@ fn test_occupied_entry_remove() {
 
 #[test]
 fn test_entry_vacant() {
-    let mut map: BTreeMap<i32, &str> = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     match map.entry(1) {
         Entry::Vacant(entry) => {
             assert_eq!(entry.key(), &1);
@@ -84,7 +85,7 @@ fn test_entry_vacant() {
 
 #[test]
 fn test_entry_or_insert() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     let val = map.entry(1).or_insert("a");
     assert_eq!(*val, "a");
     map.validate();
@@ -95,7 +96,7 @@ fn test_entry_or_insert() {
 
 #[test]
 fn test_entry_and_modify() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, i32> = BTreeMap::new_with_state(TestStats::new());
     map.insert(1, 10);
     map.validate();
     map.entry(1).and_modify(|v| *v = 20);
@@ -105,7 +106,7 @@ fn test_entry_and_modify() {
 
 #[test]
 fn test_remove() {
-    let mut map = BTreeMap::new();
+    let mut map: TestBTreeMap<i32, &str> = BTreeMap::new_with_state(TestStats::new());
     map.insert(1, "a");
     map.validate();
     map.insert(2, "b");

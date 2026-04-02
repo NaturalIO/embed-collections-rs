@@ -1,27 +1,27 @@
 use super::*;
 
 /// Entry for an existing key-value pair in the map
-pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized> {
-    pub(super) map: &'a mut BTreeMap<K, V>,
+pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> {
+    pub(super) map: &'a mut BTreeMap<K, V, S>,
     pub(super) node: LeafNode<K, V>,
     pub(super) idx: u32,
 }
 
 /// Entry for a vacant key position in the map
-pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized> {
-    pub(super) map: &'a mut BTreeMap<K, V>,
+pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> {
+    pub(super) map: &'a mut BTreeMap<K, V, S>,
     pub(super) node: Option<LeafNode<K, V>>,
     pub(super) key: K,
     pub(super) idx: u32,
 }
 
 /// Entry into a BTreeMap for in-place manipulation
-pub enum Entry<'a, K: Ord + Clone + Sized, V: Sized> {
-    Occupied(OccupiedEntry<'a, K, V>),
-    Vacant(VacantEntry<'a, K, V>),
+pub enum Entry<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> {
+    Occupied(OccupiedEntry<'a, K, V, S>),
+    Vacant(VacantEntry<'a, K, V, S>),
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> Entry<'a, K, V, S> {
     /// Ensures a value is in the entry by inserting the default if empty,
     /// and returns a mutable reference to the value in the entry.
     pub fn or_insert(self, default: V) -> &'a mut V
@@ -71,7 +71,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default>
+    OccupiedEntry<'a, K, V, S>
+{
     /// Get a reference to the key
     pub fn key(&self) -> &K {
         unsafe {
@@ -160,7 +162,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
+impl<'a, K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> VacantEntry<'a, K, V, S> {
     /// Get a reference to the key
     pub fn key(&self) -> &K {
         &self.key

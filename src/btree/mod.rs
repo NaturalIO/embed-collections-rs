@@ -75,23 +75,144 @@ use leaf::*;
 #[cfg(test)]
 mod tests;
 
+/// Trait for tracking BTree state changes (node counts, splits, merges)
+pub trait BTreeState<K, V> {
+    /// Called when a new leaf node is allocated
+    fn on_leaf_alloc(&mut self) {}
+    /// Called when a leaf node is deallocated
+    fn on_leaf_dealloc(&mut self) {}
+    /// Called when a new internal node is allocated
+    fn on_inter_alloc(&mut self) {}
+    /// Called when a leaf split occurs (1 leaf -> 2 leaves, delta = +1)
+    fn on_leaf_split(&mut self) {}
+    /// Called when a leaf merge occurs
+    /// delta: number of leaf nodes being removed (e.g., 2 leaves merged into 1, delta = 1)
+    fn on_leaf_merge(&mut self, _delta: usize) {}
+    /// Called when an internal split occurs
+    fn on_inter_split(&mut self) {}
+    /// Called when internal nodes are merged/removed
+    /// delta: number of internal nodes being removed
+    fn on_inter_merge(&mut self, _delta: usize) {}
+    /// Get current leaf node count
+    fn leaf_count(&self) -> usize {
+        0
+    }
+    /// Get current internal node count
+    fn inter_count(&self) -> usize {
+        0
+    }
+    /// Get total node count (leaf + internal)
+    fn total_nodes(&self) -> usize {
+        self.leaf_count() + self.inter_count()
+    }
+}
+
+/// Dummy implementation that does nothing (default)
+#[derive(Default)]
+pub struct Dummy;
+
+impl<K, V> BTreeState<K, V> for Dummy {}
+
+/// Implementation that tracks node counts for testing
+#[derive(Default, Debug)]
+pub struct NodeStats {
+    pub leaf_count: usize,
+    pub inter_count: usize,
+}
+
+impl NodeStats {
+    pub fn new() -> Self {
+        Self { leaf_count: 0, inter_count: 0 }
+    }
+    pub fn total(&self) -> usize {
+        self.leaf_count + self.inter_count
+    }
+}
+
+impl<K, V> BTreeState<K, V> for NodeStats {
+    fn on_leaf_alloc(&mut self) {
+        self.leaf_count += 1;
+    }
+    fn on_leaf_dealloc(&mut self) {
+        self.leaf_count -= 1;
+    }
+    fn on_inter_alloc(&mut self) {
+        self.inter_count += 1;
+    }
+    fn on_inter_merge(&mut self, delta: usize) {
+        self.inter_count -= delta;
+    }
+    fn on_leaf_split(&mut self) {
+        // Split: 1 leaf -> 2 leaves, net +1
+        self.leaf_count += 1;
+    }
+    fn on_leaf_merge(&mut self, delta: usize) {
+        // Merge removes delta leaves
+        self.leaf_count -= delta;
+    }
+    fn on_inter_split(&mut self) {
+        // Split: 1 inter -> 2 inters, net +1
+        self.inter_count += 1;
+    }
+    fn leaf_count(&self) -> usize {
+        self.leaf_count
+    }
+    fn inter_count(&self) -> usize {
+        self.inter_count
+    }
+}
+
 /// B+Tree Map for single-threaded use
-pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
+pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default = Dummy> {
     /// Root node (may be null for empty tree)
     root: Option<Node<K, V>>,
     /// Number of elements in the tree
     len: usize,
     // use unsafe to avoid borrow problems
     cache: UnsafeCell<PathCache<K, V>>,
+    /// State tracker for node statistics
+    state: UnsafeCell<S>,
 }
 
-unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Send for BTreeMap<K, V> {}
-unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Sync for BTreeMap<K, V> {}
+unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send, S: BTreeState<K, V> + Default + Send>
+    Send for BTreeMap<K, V, S>
+{
+}
+unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send, S: BTreeState<K, V> + Default + Sync>
+    Sync for BTreeMap<K, V, S>
+{
+}
 
-impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
+impl<K: Ord + Sized + Clone, V: Sized, S: BTreeState<K, V> + Default> BTreeMap<K, V, S> {
     /// Create a new empty BTreeMap
     pub fn new() -> Self {
-        Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::<K, V>::new()) }
+        Self {
+            root: None,
+            len: 0,
+            cache: UnsafeCell::new(PathCache::<K, V>::new()),
+            state: UnsafeCell::new(S::default()),
+        }
+    }
+
+    /// Create a new empty BTreeMap with explicit state (for testing with stats)
+    pub fn new_with_state(state: S) -> Self {
+        Self {
+            root: None,
+            len: 0,
+            cache: UnsafeCell::new(PathCache::<K, V>::new()),
+            state: UnsafeCell::new(state),
+        }
+    }
+
+    /// Get mutable reference to state
+    #[inline(always)]
+    fn get_state(&self) -> &mut S {
+        unsafe { &mut *self.state.get() }
+    }
+
+    /// Get reference to state for reading stats
+    pub fn state(&self) -> &S {
+        unsafe { &*self.state.get() }
     }
 
     /// Returns the number of elements in the map
@@ -132,7 +253,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Returns an entry to the key in the map
-    pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V, S> {
         let cache = self.get_cache();
         cache.clear();
         let leaf = match &self.root {
@@ -272,6 +393,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
         }
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
+        self.get_state().on_leaf_split();
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
         self.propagate_split(split_key, leaf.get_ptr(), new_leaf.get_ptr());
         ptr_v
@@ -293,6 +415,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             height += 1;
             // Parent is full, need to split internal node
             let (right, _promote_key) = parent.insert_split(promote_key, right_ptr);
+            self.get_state().on_inter_split();
             promote_key = _promote_key;
             right_ptr = right.get_ptr();
             left_ptr = parent.get_ptr();
@@ -407,6 +530,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if left_count + leaf_count <= cap {
                     // Merge current into left sibling
                     left_sibling.merge(leaf);
+                    self.get_state().on_leaf_merge(1); // 1 leaf removed (merged into left)
                     leaf.unlink();
 
                     // Remove the child pointer from parent
@@ -438,6 +562,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if leaf_count + right_count <= cap {
                     // Merge right into current
                     leaf.merge(&mut right_sibling);
+                    self.get_state().on_leaf_merge(1); // 1 leaf removed (right merged into current)
                     right_sibling.unlink();
 
                     // Remove the child pointer from parent
@@ -465,6 +590,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             // Merge all into left sibling
                             left_sibling.merge(leaf);
                             left_sibling.merge(&mut right_sibling);
+                            self.get_state().on_leaf_merge(2); // 2 leaves removed (current and right merged into left)
                             leaf.unlink();
                             right_sibling.unlink();
 
@@ -506,6 +632,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         self.root = Some(Node::Inter(inter));
                     }
                 }
+                self.get_state().on_inter_merge(1); // 1 internal node removed (root replaced by child)
                 unsafe { node.dealloc() };
                 return;
             }
@@ -514,6 +641,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // For non-root internal nodes, try to merge or redistribute
         // This is a simplified version - full implementation would be similar to leaf underflow
         if node.key_count() == 0 {
+            self.get_state().on_inter_merge(1); // 1 internal node removed
             unsafe { node.dealloc() };
         }
     }
@@ -633,13 +761,15 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> Default
+    for BTreeMap<K, V, S>
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized, S: BTreeState<K, V> + Default> Drop for BTreeMap<K, V, S> {
     fn drop(&mut self) {
         let root = match self.root.take() {
             None => return,
