@@ -288,8 +288,8 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 
     #[inline]
-    fn _move_left(&mut self) {
-        while let Some((parent, idx)) = self.inner.pop() {
+    fn _move_left_and_pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
+        while let Some((parent, mut idx)) = self.inner.pop() {
             debug_assert!(self.pos < 0);
             let move_step = (-self.pos) as u32;
             if idx > 0 {
@@ -298,12 +298,11 @@ impl<K: Ord, V> PathCache<K, V> {
                 } else {
                     debug_assert_eq!(self.pos, 0);
                     self.pos += move_step as isize;
-                    self.inner.push((parent, idx - move_step)); // have common parent
-                    return;
+                    return Some((parent, idx - move_step)); // have common parent
                 }
             }
             let mut depth = 0;
-            let (mut grand_parent, mut idx);
+            let mut grand_parent;
             loop {
                 // Safety:
                 // this is for entry API, we already know there is a previous node, unwrap is safe.
@@ -314,32 +313,34 @@ impl<K: Ord, V> PathCache<K, V> {
                     break;
                 }
             }
+            // only move 1 since we change the branch, should call this function again
+            self.pos += 1;
+            depth -= 1;
             let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx - 1) };
             let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             self.inner.push((grand_parent, idx - 1));
-            depth -= 1;
             grand_parent = parent.clone();
             idx = parent.key_count();
-            self.inner.push((parent, idx));
             // push the right mode branch again
-            while depth > 0 {
+            while depth > 1 {
                 depth -= 1;
-                let idx = grand_parent.key_count();
+                self.inner.push((grand_parent.clone(), idx));
+                idx = grand_parent.key_count();
                 let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx) };
-                let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
-                grand_parent = parent.clone();
-                self.inner.push((parent, idx));
+                grand_parent =
+                    unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             }
-            // only move 1 since we change the branch, should call this function again
-            self.pos += 1;
             if self.pos == 0 {
-                return;
+                return Some((grand_parent, idx));
             }
+            self.inner.push((grand_parent, idx));
         }
+        None
     }
 
+    /// Return the last parent
     #[inline]
-    fn _move_right<F>(&mut self, post_callback: F)
+    fn _move_right_and_pop<F>(&mut self, post_callback: F) -> Option<(InterNode<K, V>, u32)>
     where
         F: Fn(InterNode<K, V>),
     {
@@ -354,8 +355,7 @@ impl<K: Ord, V> PathCache<K, V> {
                 } else {
                     self.pos -= move_step as isize;
                     debug_assert_eq!(self.pos, 0);
-                    self.inner.push((parent, idx + move_step)); // have common parent
-                    return;
+                    return Some((parent, idx + move_step)); // have common parent
                 }
             }
             // parent idx reach the end, will not visit again
@@ -374,31 +374,32 @@ impl<K: Ord, V> PathCache<K, V> {
                         break;
                     }
                 } else {
-                    // not possible to move further, reach the end at root
+                    // For dropping scenario, cannot move further, reach the end at root
                     self.pos -= 1;
-                    return;
+                    return None;
                 }
             }
+            // only move 1 since we changed the branch, should call again if not enough
+            // push the left most branch again
+            self.pos -= 1;
             depth -= 1;
             let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(idx + 1) };
             let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             self.inner.push((grand_parent, idx + 1));
             grand_parent = parent.clone();
-            self.inner.push((parent, 0));
-            // push the left most branch again
-            while depth > 0 {
+            while depth > 1 {
+                self.inner.push((grand_parent.clone(), 0));
                 depth -= 1;
                 let parent_ptr: *mut NodeHeader = unsafe { *grand_parent.child_ptr(0) };
-                let parent = unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
-                grand_parent = parent.clone();
-                self.inner.push((parent, 0));
+                grand_parent =
+                    unsafe { InterNode::from_header(NonNull::new_unchecked(parent_ptr)) };
             }
-            // only move 1 since we changed the branch, should call again if not enough
-            self.pos -= 1;
             if self.pos == 0 {
-                return;
+                return Some((grand_parent, 0));
             }
+            self.inner.push((grand_parent, 0));
         }
+        None
     }
 
     /// For moving the Entry position
@@ -424,11 +425,12 @@ impl<K: Ord, V> PathCache<K, V> {
     #[inline(always)]
     pub fn pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
         if self.pos < 0 {
-            self._move_left();
+            self._move_left_and_pop()
         } else if self.pos > 0 {
-            self._move_right(|_node| {});
+            self._move_right_and_pop(|_node| {})
+        } else {
+            self.inner.pop()
         }
-        self.inner.pop()
     }
 
     // for dropping the tree, post order visit, `post_callback` should dealloc on the node
@@ -438,7 +440,6 @@ impl<K: Ord, V> PathCache<K, V> {
         F: Fn(InterNode<K, V>),
     {
         self.pos += 1;
-        self._move_right(post_callback);
-        self.inner.pop()
+        self._move_right_and_pop(post_callback)
     }
 }

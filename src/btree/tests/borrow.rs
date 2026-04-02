@@ -75,7 +75,6 @@ fn test_borrow_from_left_insert_first_height_2() {
         // Verify middle leaf is full before insert
         assert!(middle_leaf.is_full().is_ok());
         assert!(left_leaf.is_full().is_err()); // left has space
-        let old_middle_leaf_key1 = middle_leaf.get_keys()[1];
 
         assert!(!map.contains_key(&insert_key));
         // Perform insert
@@ -376,7 +375,6 @@ fn test_borrow_from_right_height_2_last() {
 fn test_borrow_from_left_insert_first_height_3() {
     unsafe {
         let leaf_cap = LeafNode::<i32, i32>::cap();
-        let inter_cap = InterNode::<i32, i32>::cap();
 
         // Create leaf nodes for left branch
         let mut leaf_0 = LeafNode::<i32, i32>::alloc();
@@ -470,7 +468,6 @@ fn test_borrow_from_left_insert_first_height_3() {
 fn test_borrow_from_left_insert_mid_height_3() {
     unsafe {
         let leaf_cap = LeafNode::<i32, i32>::cap();
-        let inter_cap = InterNode::<i32, i32>::cap();
 
         // Create leaf nodes for left branch
         let mut leaf_0 = LeafNode::<i32, i32>::alloc();
@@ -564,7 +561,6 @@ fn test_borrow_from_left_insert_mid_height_3() {
 fn test_borrow_from_right_insert_not_last_height_3() {
     unsafe {
         let leaf_cap = LeafNode::<i32, i32>::cap();
-        let inter_cap = InterNode::<i32, i32>::cap();
 
         // Create leaf nodes for left branch
         let mut leaf_0 = LeafNode::<i32, i32>::alloc();
@@ -661,7 +657,6 @@ fn test_borrow_from_right_insert_not_last_height_3() {
 fn test_borrow_from_right_insert_last_height_3() {
     unsafe {
         let leaf_cap = LeafNode::<i32, i32>::cap();
-        let inter_cap = InterNode::<i32, i32>::cap();
 
         // Create leaf nodes for left branch
         let mut leaf_0 = LeafNode::<i32, i32>::alloc();

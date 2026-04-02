@@ -206,12 +206,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let key = unsafe { (*leaf.key_ptr(0)).assume_init_ref().clone() };
         while let Some((parent, parent_idx)) = self.get_cache().pop() {
             if parent_idx > 0 {
-                println!("update_parent_key to {:?}", parent);
                 let parent_key = unsafe { (*parent.key_ptr(parent_idx - 1)).assume_init_mut() };
                 *parent_key = key;
                 return;
             }
-            println!("update_parent_key {:?} is just leftmost parent, continue", parent);
             // if parent_idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
             // split key
         }
@@ -642,7 +640,6 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
         while let Some((parent, idx)) =
             cache.move_right_and_pop_l1(|mut node| unsafe { node.dealloc() })
         {
-            println!("cache push {:?} idx {idx } again", parent);
             cache.push(parent.clone(), idx);
             if let Node::Leaf(mut leaf) = parent.get_child(idx) {
                 unsafe { leaf.dealloc() };
