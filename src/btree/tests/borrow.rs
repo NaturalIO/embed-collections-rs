@@ -79,6 +79,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         assert!(!map.contains_key(&insert_key));
         // Perform insert
         map.insert(insert_key, insert_value);
+        map.validate();
         // middle_leaf is not changed
         assert_eq!(middle_leaf.get_keys()[0], middle_first_key);
 
@@ -172,6 +173,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
         assert!(!map.contains_key(&insert_key));
         // Perform insert
         map.insert(insert_key, insert_value);
+        map.validate();
         assert!(middle_leaf.get_keys()[0] != middle_first_key);
         assert_eq!(middle_leaf.get_keys()[0], old_middle_leaf_key1);
         println!("middle_leaf keys[0] {}", middle_leaf.get_keys()[0]);
@@ -263,6 +265,7 @@ fn test_borrow_from_right_height_2_not_last() {
 
         // Perform insert
         assert!(map.insert(insert_key, insert_value).is_none());
+        map.validate();
         // Verify the insert succeeded
         assert_eq!(map.get(&insert_key), Some(&insert_value));
         assert_eq!(map.len(), 3 * leaf_cap as usize);
@@ -351,6 +354,7 @@ fn test_borrow_from_right_height_2_last() {
 
         // Perform insert
         assert!(map.insert(insert_key, insert_value).is_none());
+        map.validate();
         // Verify the insert succeeded
         assert_eq!(map.get(&insert_key), Some(&insert_value));
         assert_eq!(map.len(), 3 * leaf_cap as usize);
@@ -440,6 +444,7 @@ fn test_borrow_from_left_insert_first_height_3() {
         assert_eq!(map.height(), 3);
 
         map.insert(insert_key, insert_value);
+        map.validate();
 
         // Verify insertion succeeded
         assert_eq!(map.get(&insert_key), Some(&insert_value));
@@ -534,6 +539,7 @@ fn test_borrow_from_left_insert_mid_height_3() {
         assert_eq!(map.height(), 3);
 
         map.insert(insert_key, insert_value);
+        map.validate();
 
         // Verify insertion succeeded
         assert_eq!(map.get(&insert_key), Some(&insert_value));
@@ -628,6 +634,7 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         assert_eq!(map.height(), 3);
 
         map.insert(insert_key, insert_value);
+        map.validate();
 
         assert_eq!(leaf_2.get_keys()[0], old_leaf_1_last);
         let root = map.get_root_unwrap().as_inter();
@@ -724,6 +731,7 @@ fn test_borrow_from_right_insert_last_height_3() {
         assert_eq!(map.height(), 3);
 
         map.insert(insert_key, insert_value);
+        map.validate();
 
         assert_eq!(leaf_2.get_keys()[0], insert_key);
         let root = map.get_root_unwrap().as_inter();

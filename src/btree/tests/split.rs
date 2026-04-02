@@ -9,6 +9,7 @@ fn test_btree_large_tree_split_seq() {
     // Insert many values to create multi-level tree
     for i in 0..100 {
         assert_eq!(map.insert(i, i * 2), None);
+        map.validate();
     }
     assert_eq!(map.len(), 100);
     println!("tree height {}", map.height());
@@ -34,6 +35,7 @@ fn test_btree_random_inserts() {
     ];
     for (k, v) in &values {
         map.insert(*k, *v);
+        map.validate();
     }
     for (k, v) in &values {
         assert_eq!(map.get(k), Some(v));

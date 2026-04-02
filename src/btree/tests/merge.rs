@@ -7,10 +7,12 @@ fn test_delete_and_merge() {
     // Fill node to capacity
     for i in 0..cap {
         map.insert(i as i32, i as i32 * 10);
+        map.validate();
     }
     // Delete most elements to trigger merge
     for i in 0..cap - 2 {
         assert!(map.remove(&(i as i32)).is_some());
+        map.validate();
     }
     // Verify remaining elements
     for i in cap - 2..cap {
@@ -24,15 +26,18 @@ fn test_delete_all_and_reinsert() {
     // Insert some values
     for i in 0..20 {
         map.insert(i, i * 10);
+        map.validate();
     }
     // Delete all
     for i in 0..20 {
         assert!(map.remove(&i).is_some());
+        map.validate();
     }
     assert!(map.is_empty());
     // Reinsert
     for i in 0..20 {
         map.insert(i, i * 100);
+        map.validate();
     }
     // Verify
     for i in 0..20 {

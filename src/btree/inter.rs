@@ -357,3 +357,34 @@ impl<K: fmt::Debug, V> fmt::Display for InterNode<K, V> {
         write!(f, "])")
     }
 }
+
+impl<K: Ord + fmt::Debug, V: fmt::Debug> InterNode<K, V> {
+    /// Validate internal node structure
+    #[cfg(test)]
+    pub fn validate(&self) {
+        let count = self.key_count() as usize;
+
+        // Validate count is within bounds
+        assert!(count > 0, "Internal node should have at least 1 key");
+        assert!(
+            count as u32 <= Self::cap(),
+            "Internal node has too many keys: {} > {}",
+            count,
+            Self::cap()
+        );
+
+        // Validate keys are sorted
+        unsafe {
+            for i in 1..count {
+                let prev_key = (*self.key_ptr((i - 1) as u32)).assume_init_ref();
+                let curr_key = (*self.key_ptr(i as u32)).assume_init_ref();
+                assert!(
+                    prev_key < curr_key,
+                    "Internal node keys not sorted: {:?} >= {:?}",
+                    prev_key,
+                    curr_key
+                );
+            }
+        }
+    }
+}

@@ -251,6 +251,7 @@ fn test_btree_split_leaf_simple() {
     // First, fill exactly to capacity
     for i in 0..cap {
         assert_eq!(map.insert(i as i32, i as i32 * 10), None);
+        map.validate();
     }
     assert_eq!(map.len(), cap);
 
@@ -261,6 +262,7 @@ fn test_btree_split_leaf_simple() {
 
     // Now insert one more to trigger split - insert at the end
     assert_eq!(map.insert(cap as i32, cap as i32 * 10), None);
+    map.validate();
     assert_eq!(map.len(), cap + 1);
 
     println!("verify after split");
@@ -280,10 +282,12 @@ fn test_btree_split_leaf_insert_at_beginning() {
     // Fill to capacity
     for i in 0..cap {
         assert_eq!(map.insert(i as i32, i as i32 * 10), None);
+        map.validate();
     }
 
     // Insert at the beginning (should trigger split and move to left)
     assert_eq!(map.insert(-1, -10), None);
+    map.validate();
     assert_eq!(map.len(), cap + 1);
 
     // Verify the new key
@@ -302,11 +306,13 @@ fn test_btree_split_leaf_insert_in_middle() {
     // Fill with even numbers: 0, 2, 4, 6, ...
     for i in 0..cap {
         assert_eq!(map.insert((i * 2) as i32, (i * 20) as i32), None);
+        map.validate();
     }
 
     // Insert an odd number in the middle (cap - 1 is odd and not in the sequence)
     let insert_key = (cap - 1) as i32;
     assert_eq!(map.insert(insert_key, insert_key * 10), None);
+    map.validate();
     assert_eq!(map.len(), cap + 1);
 
     // Verify the new key
@@ -325,6 +331,7 @@ fn test_btree_split_leaf_seq() {
     // Insert just enough to trigger one split
     for i in 0..(cap + 1) {
         map.insert(i as i32, i as i32 * 10);
+        map.validate();
     }
     assert_eq!(map.len(), cap + 1);
 }
@@ -338,6 +345,7 @@ fn test_btree_split_leaf_verify_structure() {
     let total = cap + 5;
     for i in 0..total {
         map.insert(i as i32, i as i32 * 10);
+        map.validate();
     }
 
     assert_eq!(map.len(), total);

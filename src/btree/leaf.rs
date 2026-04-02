@@ -380,3 +380,51 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Display for LeafNode<K, V> {
         write!(f, "])")
     }
 }
+
+impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
+    /// Validate leaf node structure
+    /// Returns the number of keys in this node
+    #[cfg(test)]
+    pub fn validate(&self, min_key: Option<&K>, max_key: Option<&K>) -> usize {
+        let count = self.key_count() as usize;
+
+        // Validate count is within bounds
+        assert!(
+            count as u32 <= Self::cap(),
+            "Leaf node has too many keys: {} > {}",
+            count,
+            Self::cap()
+        );
+
+        if count == 0 {
+            return 0;
+        }
+
+        unsafe {
+            // Validate keys are sorted
+            for i in 1..count {
+                let prev_key = (*self.key_ptr((i - 1) as u32)).assume_init_ref();
+                let curr_key = (*self.key_ptr(i as u32)).assume_init_ref();
+                assert!(
+                    prev_key < curr_key,
+                    "Leaf node keys not sorted: {:?} >= {:?}",
+                    prev_key,
+                    curr_key
+                );
+            }
+
+            // Validate keys are within parent bounds
+            let first_key = (*self.key_ptr(0)).assume_init_ref();
+            let last_key = (*self.key_ptr((count - 1) as u32)).assume_init_ref();
+
+            if let Some(min) = min_key {
+                assert!(min <= first_key, "Leaf first key {:?} < parent min {:?}", first_key, min);
+            }
+            if let Some(max) = max_key {
+                assert!(last_key < max, "Leaf last key {:?} >= parent max {:?}", last_key, max);
+            }
+        }
+
+        count
+    }
+}

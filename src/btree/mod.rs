@@ -615,6 +615,122 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     //    }
 }
 
+impl<K: Ord + Clone + Sized, V: Sized> BTreeMap<K, V> {
+    /// Validate the entire tree structure
+    /// Uses the same traversal logic as Drop to avoid recursion
+    #[cfg(test)]
+    pub fn validate(&self)
+    where
+        K: core::fmt::Debug + Clone,
+        V: core::fmt::Debug,
+    {
+        if self.root.is_none() {
+            assert_eq!(self.len, 0, "Empty tree should have len 0");
+            return;
+        }
+
+        let mut total_keys = 0usize;
+        let mut prev_leaf_max: Option<K> = None;
+
+        match &self.root {
+            Some(Node::Leaf(leaf)) => {
+                total_keys += leaf.validate(None, None);
+            }
+            Some(Node::Inter(inter)) => {
+                // Do not use btree internal PathCache (might distrupt test scenario)
+                let mut cache = PathCache::new();
+                let mut cur = inter.clone();
+                loop {
+                    cache.push(cur.clone(), 0);
+                    cur.validate();
+                    match cur.get_child(0) {
+                        Node::Leaf(leaf) => {
+                            // Validate first leaf with no min/max bounds from parent
+                            let min_key: Option<K> = None;
+                            let max_key = if inter.key_count() > 0 {
+                                unsafe { Some((*inter.key_ptr(0)).assume_init_ref().clone()) }
+                            } else {
+                                None
+                            };
+                            total_keys += leaf.validate(min_key.as_ref(), max_key.as_ref());
+                            if let Some(ref prev_max) = prev_leaf_max {
+                                let first_key = unsafe { (*leaf.key_ptr(0)).assume_init_ref() };
+                                assert!(
+                                    prev_max < first_key,
+                                    "Leaf keys not in order: prev max {:?} >= current min {:?}",
+                                    prev_max,
+                                    first_key
+                                );
+                            }
+                            prev_leaf_max = unsafe {
+                                Some(
+                                    (*leaf.key_ptr(leaf.key_count() as u32 - 1))
+                                        .assume_init_ref()
+                                        .clone(),
+                                )
+                            };
+                            break;
+                        }
+                        Node::Inter(child_inter) => {
+                            cur = child_inter;
+                        }
+                    }
+                }
+
+                // Continue traversal like Drop does
+                while let Some((parent, idx)) =
+                    cache.move_right_and_pop_l1(|_node| { /* post-visit callback */ })
+                {
+                    cache.push(parent.clone(), idx);
+                    if let Node::Leaf(leaf) = parent.get_child(idx) {
+                        // Calculate bounds for this leaf
+                        let min_key = if idx > 0 {
+                            unsafe {
+                                Some((*parent.key_ptr((idx - 1) as u32)).assume_init_ref().clone())
+                            }
+                        } else {
+                            None
+                        };
+                        let max_key = if (idx as u32) < parent.key_count() {
+                            unsafe { Some((*parent.key_ptr(idx as u32)).assume_init_ref().clone()) }
+                        } else {
+                            None
+                        };
+                        total_keys += leaf.validate(min_key.as_ref(), max_key.as_ref());
+
+                        // Check ordering with previous leaf
+                        if let Some(ref prev_max) = prev_leaf_max {
+                            let first_key = unsafe { (*leaf.key_ptr(0)).assume_init_ref() };
+                            assert!(
+                                prev_max < first_key,
+                                "Leaf keys not in order: prev max {:?} >= current min {:?}",
+                                prev_max,
+                                first_key
+                            );
+                        }
+                        prev_leaf_max = unsafe {
+                            Some(
+                                (*leaf.key_ptr(leaf.key_count() as u32 - 1))
+                                    .assume_init_ref()
+                                    .clone(),
+                            )
+                        };
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
+            None => unreachable!(),
+        }
+
+        assert_eq!(
+            total_keys, self.len,
+            "Total keys in tree ({}) doesn't match len ({})",
+            total_keys, self.len
+        );
+    }
+}
+
 impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
     fn default() -> Self {
         Self::new()
