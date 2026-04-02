@@ -62,6 +62,7 @@
 */
 
 use core::cell::UnsafeCell;
+use core::ptr::NonNull;
 pub mod entry;
 use entry::*;
 mod node;
@@ -370,8 +371,161 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         }
     }
 
-    /// Handle leaf node underflow by borrowing from or merging with sibling
-    unsafe fn handle_leaf_underflow(&mut self, _leaf: &mut LeafNode<K, V>) {}
+    /// Handle leaf node underflow by merging with sibling
+    /// Uses PathCache to accelerate parent lookup
+    /// Following the merge strategy from Designer Notes:
+    /// - Try merge with left sibling (if left + current <= cap)
+    /// - Try merge with right sibling (if current + right <= cap)
+    /// - Try 3-node merge (if left + current + right <= 2 * cap)
+    pub(crate) fn handle_leaf_underflow(&mut self, leaf: &mut LeafNode<K, V>) {
+        let leaf_count = leaf.key_count();
+        let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
+
+        // No underflow
+        if leaf_count >= min_count {
+            return;
+        }
+
+        // Get parent from cache
+        let Some((mut parent, leaf_idx)) = self.get_cache().pop() else {
+            // No parent (leaf is root), nothing to do
+            return;
+        };
+
+        let cap = LeafNode::<K, V>::cap();
+
+        // Try merge with left sibling first
+        if leaf_idx > 0 {
+            let left_sibling_ptr = unsafe { *parent.child_ptr(leaf_idx - 1) };
+            if !left_sibling_ptr.is_null() {
+                let mut left_sibling = unsafe {
+                    LeafNode::<K, V>::from_header(NonNull::new_unchecked(left_sibling_ptr))
+                };
+                let left_count = left_sibling.key_count();
+
+                // Check if we can merge left + current
+                if left_count + leaf_count <= cap {
+                    // Merge current into left sibling
+                    left_sibling.merge(leaf);
+                    leaf.unlink();
+
+                    // Remove the child pointer from parent
+                    parent.remove_child_by_idx(leaf_idx);
+
+                    // Update len
+                    self.len -= leaf_count as usize;
+
+                    // Propagate underflow if needed
+                    if parent.key_count() == 0 {
+                        // Parent is empty, make left sibling the new root or handle underflow
+                        self.handle_internal_underflow(parent);
+                    }
+
+                    unsafe { leaf.dealloc() };
+                    return;
+                }
+            }
+        }
+
+        // Try merge with right sibling
+        let parent_count = parent.key_count();
+        if (leaf_idx as u32) < parent_count {
+            let right_sibling_ptr = unsafe { *parent.child_ptr(leaf_idx + 1) };
+            if !right_sibling_ptr.is_null() {
+                let mut right_sibling = unsafe {
+                    LeafNode::<K, V>::from_header(NonNull::new_unchecked(right_sibling_ptr))
+                };
+                let right_count = right_sibling.key_count();
+
+                // Check if we can merge current + right
+                if leaf_count + right_count <= cap {
+                    // Merge right into current
+                    leaf.merge(&mut right_sibling);
+                    right_sibling.unlink();
+
+                    // Remove the child pointer from parent
+                    parent.remove_child_by_idx(leaf_idx + 1);
+
+                    // Update len
+                    self.len -= right_count as usize;
+
+                    // Propagate underflow if needed
+                    if parent.key_count() == 0 {
+                        self.handle_internal_underflow(parent);
+                    }
+
+                    unsafe { right_sibling.dealloc() };
+                    return;
+                }
+
+                // Try 3-way merge: left + current + right
+                if leaf_idx > 0 {
+                    let left_sibling_ptr = unsafe { *parent.child_ptr(leaf_idx - 1) };
+                    if !left_sibling_ptr.is_null() {
+                        let mut left_sibling = unsafe {
+                            LeafNode::<K, V>::from_header(NonNull::new_unchecked(left_sibling_ptr))
+                        };
+                        let left_count = left_sibling.key_count();
+
+                        if left_count + leaf_count + right_count <= 2 * cap {
+                            // Merge all into left sibling
+                            left_sibling.merge(leaf);
+                            left_sibling.merge(&mut right_sibling);
+                            leaf.unlink();
+                            right_sibling.unlink();
+
+                            // Remove two child pointers from parent
+                            parent.remove_child_by_idx(leaf_idx);
+                            parent.remove_child_by_idx(leaf_idx);
+
+                            // Update len
+                            self.len -= (leaf_count + right_count) as usize;
+
+                            // Propagate underflow if needed
+                            if parent.key_count() == 0 {
+                                self.handle_internal_underflow(parent);
+                            }
+
+                            unsafe {
+                                leaf.dealloc();
+                                right_sibling.dealloc();
+                            }
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cannot merge, leave as is (will be handled by later operations)
+    }
+
+    /// Handle internal node underflow after merge
+    fn handle_internal_underflow(&mut self, mut node: InterNode<K, V>) {
+        // If this is the root and it's empty, replace it with its only child
+        if let Some(Node::Inter(root)) = &self.root {
+            if root.get_ptr() == node.get_ptr() {
+                // Get the only child
+                let only_child = node.get_child(0);
+                match only_child {
+                    Node::Leaf(leaf) => {
+                        self.root = Some(Node::Leaf(leaf));
+                    }
+                    Node::Inter(inter) => {
+                        self.root = Some(Node::Inter(inter));
+                    }
+                }
+                unsafe { node.dealloc() };
+                return;
+            }
+        }
+
+        // For non-root internal nodes, try to merge or redistribute
+        // This is a simplified version - full implementation would be similar to leaf underflow
+        if node.key_count() == 0 {
+            unsafe { node.dealloc() };
+        }
+    }
 
     /// Validate the entire tree structure
     /// Uses the same traversal logic as Drop to avoid recursion

@@ -355,6 +355,67 @@ impl<K, V> LeafNode<K, V> {
             (new_leaf, ptr_v)
         }
     }
+
+    /// Merge all elements from `right` node into this node
+    /// This node must have enough space to hold all elements from `right`
+    /// After merge, the sibling pointers are updated but `right` is not deallocated
+    /// Returns the number of elements merged
+    pub fn merge(&mut self, right: &mut Self) -> u32 {
+        let self_count = self.key_count();
+        let right_count = right.key_count();
+        debug_assert!(
+            self_count + right_count <= Self::cap(),
+            "Not enough space to merge: {} + {} > {}",
+            self_count,
+            right_count,
+            Self::cap()
+        );
+
+        unsafe {
+            // Move all keys and values from right to self
+            ptr::copy_nonoverlapping(
+                right.key_ptr(0),
+                self.key_ptr(self_count),
+                right_count as usize,
+            );
+            ptr::copy_nonoverlapping(
+                right.value_ptr(0),
+                self.value_ptr(self_count),
+                right_count as usize,
+            );
+
+            // Update count
+            self.get_header_mut().count = self_count + right_count;
+
+            // Update sibling pointers: self <-> right.next
+            let right_next = (*right.brothers()).next;
+            (*self.brothers()).next = right_next;
+            if !right_next.is_null() {
+                (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(right_next)).brothers())
+                    .prev = self.get_ptr();
+            }
+        }
+
+        right_count
+    }
+
+    /// Unlink this node from the sibling chain
+    /// This is called when the node is being removed from the tree
+    pub fn unlink(&mut self) {
+        unsafe {
+            let prev = (*self.brothers()).prev;
+            let next = (*self.brothers()).next;
+
+            if !prev.is_null() {
+                (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(prev)).brothers()).next =
+                    next;
+            }
+            if !next.is_null() {
+                (*LeafNode::<K, V>::from_header(NonNull::new_unchecked(next)).brothers()).prev =
+                    prev;
+            }
+        }
+    }
 }
 
 impl<K, V> fmt::Debug for LeafNode<K, V> {

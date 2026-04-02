@@ -321,6 +321,44 @@ impl<K: Ord, V> InterNode<K, V> {
         }
         self.get_header_mut().count = count - 1;
     }
+
+    /// Remove child at the given index
+    /// idx 0 means the leftmost child (pointed by left_ptr)
+    /// idx > 0 means the child pointed by keys[idx-1]
+    pub fn remove_child_by_idx(&mut self, idx: u32) {
+        let count = self.key_count() as u32;
+        debug_assert!(idx <= count, "Child index out of bounds");
+
+        unsafe {
+            if idx == 0 {
+                // Remove leftmost child, shift everything left
+                // Move child 1 to left_ptr position
+                let child1 = *self.child_ptr(1);
+                self.set_left_ptr(child1);
+
+                // Shift keys and remaining children
+                if count > 0 {
+                    // Shift keys left: key[0] is removed, key[1..] -> key[0..]
+                    ptr::copy(self.key_ptr(1), self.key_ptr(0), (count - 1) as usize);
+                    // Shift children left: child[2..] -> child[1..]
+                    ptr::copy(self.child_ptr(2), self.child_ptr(1), (count - 1) as usize);
+                }
+            } else {
+                // Remove child at idx > 0
+                // The key at idx-1 needs to be removed
+                // The child at idx needs to be removed
+                // Shift keys: keys[idx..] -> keys[idx-1..]
+                if idx < count {
+                    ptr::copy(self.key_ptr(idx), self.key_ptr(idx - 1), (count - idx) as usize);
+                    // Shift children: children[idx+1..] -> children[idx..]
+                    ptr::copy(self.child_ptr(idx + 1), self.child_ptr(idx), (count - idx) as usize);
+                }
+                // If idx == count, we just remove the last key and there's no child to shift
+            }
+        }
+
+        self.get_header_mut().count = count - 1;
+    }
 }
 
 impl<K, V> fmt::Debug for InterNode<K, V> {
