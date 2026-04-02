@@ -25,9 +25,7 @@
  Target scenario:  To maintain slab tree for disk, lets say 1 billion nodes, this design is aim for high fan-out.
 
  Since There're no parent pointer, no fence keys. So we maintain a cache to accellerate the look
- up for parent nodes. In the worst case, cache might obsolete and we need to fallback to traverse from the top,
- when it comes to joining of the nodes.
-
+ up for parent nodes.
  Since we support combinding cursor moving in Entry API (try to merge with previous or next adjacent
  node). But user can call `remove()` on moved cursor.
 
@@ -42,6 +40,19 @@
   - To find parent for Node A
     - If idx > 0, then A and B has common parent.
     - otherwise A and B have no common parent. Should continue interation to upper PathCache. There will be common ancestor until idx > 0
+
+## Rebalance
+
+- When insert on a full LeafNode, we try to move items to left/right brother, to delay split operation.
+
+- One entry remvoved, current node usage < 50% (the threshold can be adjust according to tree size)
+
+  - we don't need to borrow data from brothers (to avoid trashing), and we have already done borrowing on insert.
+
+  - try to merge data, with left + current < cap, or current + right < cap, or left + current + right < 2 * cap
+
+  - No need to mere 3 -> 1, because before reaching 30% average usage, we aleady checked 3 -> 2.
+
 
 ## Future ideas
 
