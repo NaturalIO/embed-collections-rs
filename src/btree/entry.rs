@@ -112,21 +112,13 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
             self.node.get_header_mut().count -= 1;
             self.map.len -= 1;
 
-            // TODO: Check for underflow and handle merge/borrow
-            // let new_count = self.node.key_count();
-            // let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
-            // if new_count < min_count && self.map.root.is_some() {
-            //     // Get cache from map to find parent
-            //     let cache = self.map.get_cache();
-            //     // Re-find the path to get fresh cache
-            //     if let Some(root) = &self.map.root {
-            //         let _leaf = root.find_leaf_with_cache(cache, &key);
-            //         if !cache.is_empty() {
-            //             let parent = cache[cache.len() - 1].clone();
-            //             self.map.handle_leaf_underflow(parent, &mut self.node);
-            //         }
-            //     }
-            // }
+            // Check for underflow and handle merge
+            let new_count = self.node.key_count();
+            let min_count = (LeafNode::<K, V>::cap() + 1) / 2;
+            if new_count < min_count && self.map.root.is_some() {
+                // The cache should already contain the path from the entry lookup
+                self.map.handle_leaf_underflow(&mut self.node);
+            }
 
             (key, val)
         }

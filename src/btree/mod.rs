@@ -412,9 +412,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     // Remove the child pointer from parent
                     parent.remove_child_by_idx(leaf_idx);
 
-                    // Update len
-                    self.len -= leaf_count as usize;
-
                     // Propagate underflow if needed
                     if parent.key_count() == 0 {
                         // Parent is empty, make left sibling the new root or handle underflow
@@ -446,9 +443,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     // Remove the child pointer from parent
                     parent.remove_child_by_idx(leaf_idx + 1);
 
-                    // Update len
-                    self.len -= right_count as usize;
-
                     // Propagate underflow if needed
                     if parent.key_count() == 0 {
                         self.handle_internal_underflow(parent);
@@ -477,9 +471,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             // Remove two child pointers from parent
                             parent.remove_child_by_idx(leaf_idx);
                             parent.remove_child_by_idx(leaf_idx);
-
-                            // Update len
-                            self.len -= (leaf_count + right_count) as usize;
 
                             // Propagate underflow if needed
                             if parent.key_count() == 0 {
