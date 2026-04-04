@@ -574,7 +574,7 @@ impl<'a, T> Iterator for SegListIter<'a, T> {
             self.cur_idx = _idx + 1;
             _idx
         };
-        return Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_ref() });
+        Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_ref() })
     }
 }
 
@@ -607,7 +607,7 @@ impl<'a, T> Iterator for SegListIterMut<'a, T> {
             self.cur_idx += 1;
             _idx
         };
-        return Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_mut() });
+        Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_mut() })
     }
 }
 
