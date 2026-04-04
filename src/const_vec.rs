@@ -471,6 +471,17 @@ impl<T, const N: usize> core::ops::IndexMut<usize> for ConstVec<T, N> {
     }
 }
 
+impl<T, const N: usize> Drop for ConstVec<T, N> {
+    fn drop(&mut self) {
+        // Drop all initialized elements
+        for i in 0..self.len {
+            unsafe {
+                self.data[i].assume_init_drop();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -849,15 +860,24 @@ mod tests {
         let iter_mut = vec.iter_mut();
         assert_eq!(iter_mut.len(), 3);
     }
-}
 
-impl<T, const N: usize> Drop for ConstVec<T, N> {
-    fn drop(&mut self) {
-        // Drop all initialized elements
-        for i in 0..self.len {
-            unsafe {
-                self.data[i].assume_init_drop();
-            }
+    #[test]
+    fn test_rev_iter() {
+        let mut vec: ConstVec<i32, 5> = ConstVec::new();
+        vec.push(1).expect("push failed");
+        vec.push(2).expect("push failed");
+        vec.push(3).expect("push failed");
+
+        // Test rev() on immutable iterator (slice's DoubleEndedIterator)
+        let collected: Vec<i32> = vec.iter().rev().copied().collect();
+        assert_eq!(collected, vec![3, 2, 1]);
+
+        // Test rev() on mutable iterator
+        for elem in vec.iter_mut().rev() {
+            *elem *= 10;
         }
+        assert_eq!(vec.get(0), Some(&10));
+        assert_eq!(vec.get(1), Some(&20));
+        assert_eq!(vec.get(2), Some(&30));
     }
 }
