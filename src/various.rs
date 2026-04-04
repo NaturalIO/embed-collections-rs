@@ -61,24 +61,6 @@ enum VariousInner<T> {
     More(SegList<T>),
 }
 
-macro_rules! match_iter {
-    ($self: expr, $iter_type: tt, $f: tt $($m: tt)*) =>{
-        match $self.inner {
-            VariousInner::One($($m)* s)=>$iter_type::One(s.$f()),
-            VariousInner::More($($m)* s)=>$iter_type::More(s.$f()),
-        }
-    }
-}
-
-macro_rules! match_call {
-    ($self: expr, $cls: tt, $call: tt) => {
-        match $self {
-            $cls::One(i) => i.$call(),
-            $cls::More(i) => i.$call(),
-        }
-    };
-}
-
 impl<T> Default for Various<T> {
     fn default() -> Self {
         Self::new()
@@ -148,12 +130,20 @@ impl<T> Various<T> {
     }
 
     #[inline]
-    pub fn iter<'a>(&'a self) -> VariousIter<'a, T> {
-        match_iter!(self, VariousIter, iter ref)
+    pub fn iter(&self) -> VariousIter<'_, T> {
+        let inner = match &self.inner {
+            VariousInner::One(s) => VariousIterInner::One(s.iter()),
+            VariousInner::More(s) => VariousIterInner::More(s.iter()),
+        };
+        VariousIter { inner }
     }
 
-    pub fn iter_mut<'a>(&'a mut self) -> VariousIterMut<'a, T> {
-        match_iter!(self, VariousIterMut, iter_mut ref mut)
+    pub fn iter_mut(&mut self) -> VariousIterMut<'_, T> {
+        let inner = match &mut self.inner {
+            VariousInner::One(s) => VariousIterMutInner::One(s.iter_mut()),
+            VariousInner::More(s) => VariousIterMutInner::More(s.iter_mut()),
+        };
+        VariousIterMut { inner }
     }
 
     #[inline]
@@ -177,6 +167,26 @@ impl<T> Various<T> {
             VariousInner::More(ref mut s) => s.last_mut(),
             VariousInner::One(ref mut s) => s.as_mut(),
         }
+    }
+
+    /// Returns a reverse iterator over the elements
+    #[inline]
+    pub fn iter_rev(&self) -> VariousIter<'_, T> {
+        let inner = match &self.inner {
+            VariousInner::One(s) => VariousIterInner::One(s.iter()),
+            VariousInner::More(s) => VariousIterInner::More(s.iter_rev()),
+        };
+        VariousIter { inner }
+    }
+
+    /// Returns a mutable reverse iterator over the elements
+    #[inline]
+    pub fn iter_mut_rev(&mut self) -> VariousIterMut<'_, T> {
+        let inner = match &mut self.inner {
+            VariousInner::One(s) => VariousIterMutInner::One(s.iter_mut()),
+            VariousInner::More(s) => VariousIterMutInner::More(s.iter_mut_rev()),
+        };
+        VariousIterMut { inner }
     }
 
     /// Take the content out and leave and empty option inside, freeing inner memory
@@ -204,7 +214,23 @@ impl<T> IntoIterator for Various<T> {
     type IntoIter = VariousIntoIter<T>;
 
     fn into_iter(self) -> VariousIntoIter<T> {
-        match_iter!(self, VariousIntoIter, into_iter)
+        let inner = match self.inner {
+            VariousInner::One(s) => VariousIntoIterInner::One(s.into_iter()),
+            VariousInner::More(s) => VariousIntoIterInner::More(s.drain()),
+        };
+        VariousIntoIter { inner }
+    }
+}
+
+impl<T> Various<T> {
+    /// Returns a reverse consuming iterator
+    #[inline]
+    pub fn into_rev(self) -> VariousIntoIter<T> {
+        let inner = match self.inner {
+            VariousInner::One(s) => VariousIntoIterInner::One(s.into_iter()),
+            VariousInner::More(s) => VariousIntoIterInner::More(s.into_rev()),
+        };
+        VariousIntoIter { inner }
     }
 }
 
@@ -214,11 +240,15 @@ impl<'a, T> IntoIterator for &'a Various<T> {
     type IntoIter = VariousIter<'a, T>;
 
     fn into_iter(self) -> VariousIter<'a, T> {
-        match_iter!(self, VariousIter, iter ref)
+        self.iter()
     }
 }
 
-pub enum VariousIter<'a, T> {
+pub struct VariousIter<'a, T> {
+    inner: VariousIterInner<'a, T>,
+}
+
+enum VariousIterInner<'a, T> {
     One(core::option::Iter<'a, T>),
     More(crate::seg_list::SegListIter<'a, T>),
 }
@@ -227,11 +257,18 @@ impl<'a, T> core::iter::Iterator for VariousIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match_call!(self, VariousIter, next)
+        match &mut self.inner {
+            VariousIterInner::One(i) => i.next(),
+            VariousIterInner::More(i) => i.next(),
+        }
     }
 }
 
-pub enum VariousIterMut<'a, T> {
+pub struct VariousIterMut<'a, T> {
+    inner: VariousIterMutInner<'a, T>,
+}
+
+enum VariousIterMutInner<'a, T> {
     One(core::option::IterMut<'a, T>),
     More(crate::seg_list::SegListIterMut<'a, T>),
 }
@@ -240,11 +277,18 @@ impl<'a, T> core::iter::Iterator for VariousIterMut<'a, T> {
     type Item = &'a mut T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match_call!(self, VariousIterMut, next)
+        match &mut self.inner {
+            VariousIterMutInner::One(i) => i.next(),
+            VariousIterMutInner::More(i) => i.next(),
+        }
     }
 }
 
-pub enum VariousIntoIter<T> {
+pub struct VariousIntoIter<T> {
+    inner: VariousIntoIterInner<T>,
+}
+
+enum VariousIntoIterInner<T> {
     One(core::option::IntoIter<T>),
     More(crate::seg_list::SegListDrain<T>),
 }
@@ -253,7 +297,10 @@ impl<T> core::iter::Iterator for VariousIntoIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match_call!(self, VariousIntoIter, next)
+        match &mut self.inner {
+            VariousIntoIterInner::One(i) => i.next(),
+            VariousIntoIterInner::More(i) => i.next(),
+        }
     }
 }
 
@@ -344,5 +391,82 @@ mod tests {
             total += i;
         }
         assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn test_iter_rev_one() {
+        // Test reverse iterator with single element
+        let mut s = Various::new();
+        s.push(42);
+
+        let collected: Vec<i32> = s.iter_rev().copied().collect();
+        assert_eq!(collected, vec![42]);
+
+        // Test mutable reverse iterator
+        for i in s.iter_mut_rev() {
+            *i *= 10;
+        }
+        assert_eq!(s.first(), Some(&420));
+    }
+
+    #[test]
+    fn test_iter_rev_more() {
+        // Test reverse iterator with multiple elements
+        let mut s = Various::new();
+        s.push(1);
+        s.push(2);
+        s.push(3);
+
+        let collected: Vec<i32> = s.iter_rev().copied().collect();
+        assert_eq!(collected, vec![3, 2, 1]);
+
+        // Test mutable reverse iterator
+        for i in s.iter_mut_rev() {
+            *i *= 10;
+        }
+        let collected: Vec<i32> = s.iter().copied().collect();
+        assert_eq!(collected, vec![10, 20, 30]);
+    }
+
+    #[test]
+    fn test_iter_rev_empty() {
+        // Test reverse iterator with empty Various
+        let s: Various<i32> = Various::new();
+        let collected: Vec<i32> = s.iter_rev().copied().collect();
+        assert!(collected.is_empty());
+
+        let mut s_mut: Various<i32> = Various::new();
+        let count = s_mut.iter_mut_rev().count();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_into_rev_one() {
+        // Test reverse consuming iterator with single element
+        let mut s = Various::new();
+        s.push(42);
+
+        let collected: Vec<i32> = s.into_rev().collect();
+        assert_eq!(collected, vec![42]);
+    }
+
+    #[test]
+    fn test_into_rev_more() {
+        // Test reverse consuming iterator with multiple elements
+        let mut s = Various::new();
+        s.push(1);
+        s.push(2);
+        s.push(3);
+
+        let collected: Vec<i32> = s.into_rev().collect();
+        assert_eq!(collected, vec![3, 2, 1]);
+    }
+
+    #[test]
+    fn test_into_rev_empty() {
+        // Test reverse consuming iterator with empty Various
+        let s: Various<i32> = Various::new();
+        let collected: Vec<i32> = s.into_rev().collect();
+        assert!(collected.is_empty());
     }
 }
