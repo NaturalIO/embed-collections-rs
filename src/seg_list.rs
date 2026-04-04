@@ -205,9 +205,24 @@ impl<T> SegList<T> {
     pub fn iter(&self) -> SegListIter<'_, T> {
         let first_seg = unsafe { Segment::from_raw(self.first_ptr()) };
         SegListIter {
-            cur: first_seg,
-            cur_idx: 0,
-            remaining: self.count,
+            base: IterBase { cur: first_seg, cur_idx: 0, remaining: self.count, forward: true },
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Returns a reverse iterator over the list
+    #[inline]
+    pub fn iter_rev(&self) -> SegListIter<'_, T> {
+        let tail_seg = unsafe { Segment::from_raw(self.tail) };
+        let tail_header = tail_seg.get_header();
+        let start_idx = if tail_header.count > 0 { tail_header.count as usize - 1 } else { 0 };
+        SegListIter {
+            base: IterBase {
+                cur: tail_seg,
+                cur_idx: start_idx,
+                remaining: self.count,
+                forward: false,
+            },
             _marker: core::marker::PhantomData,
         }
     }
@@ -217,9 +232,24 @@ impl<T> SegList<T> {
     pub fn iter_mut(&mut self) -> SegListIterMut<'_, T> {
         let first_seg = unsafe { Segment::from_raw(self.first_ptr()) };
         SegListIterMut {
-            cur: first_seg,
-            cur_idx: 0,
-            remaining: self.count,
+            base: IterBase { cur: first_seg, cur_idx: 0, remaining: self.count, forward: true },
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Returns a mutable reverse iterator over the list
+    #[inline]
+    pub fn iter_mut_rev(&mut self) -> SegListIterMut<'_, T> {
+        let tail_seg = unsafe { Segment::from_raw(self.tail) };
+        let tail_header = tail_seg.get_header();
+        let start_idx = if tail_header.count > 0 { tail_header.count as usize - 1 } else { 0 };
+        SegListIterMut {
+            base: IterBase {
+                cur: tail_seg,
+                cur_idx: start_idx,
+                remaining: self.count,
+                forward: false,
+            },
             _marker: core::marker::PhantomData,
         }
     }
@@ -227,10 +257,37 @@ impl<T> SegList<T> {
     /// Returns a draining iterator that consumes the list and yields elements from head to tail
     pub fn drain(mut self) -> SegListDrain<T> {
         // Break the cycle and get the first segment
-        let first = self.break_first_node();
+        let mut first = self.break_first_node();
+        let cur = if self.count == 0 {
+            unsafe {
+                first.dealloc();
+            }
+            None
+        } else {
+            Some(first)
+        };
         // To prevent drop from being called
         core::mem::forget(self);
-        SegListDrain { cur: Some(first), cur_idx: 0 }
+        SegListDrain { cur, cur_idx: 0, forward: true }
+    }
+
+    /// Returns a draining iterator that consumes the list and yields elements from tail to head
+    pub fn into_rev(mut self) -> SegListDrain<T> {
+        // break the cycle
+        let mut first = self.break_first_node();
+        let (cur, start_idx) = if self.count == 0 {
+            unsafe {
+                first.dealloc();
+            }
+            (None, 0)
+        } else {
+            let tail_seg = unsafe { Segment::from_raw(self.tail) };
+            let tail_header = tail_seg.get_header();
+            let start_idx = if tail_header.count > 0 { tail_header.count as usize - 1 } else { 0 };
+            (Some(tail_seg), start_idx)
+        };
+        core::mem::forget(self);
+        SegListDrain { cur, cur_idx: start_idx, forward: false }
     }
 
     /// Returns a reference to the first element in the list
@@ -545,11 +602,65 @@ impl<T> Segment<T> {
     }
 }
 
-/// Immutable iterator over SegList
-pub struct SegListIter<'a, T> {
+/// Base iterator implementation shared by immutable and mutable iterators.
+/// Manages iteration state and returns raw pointers to elements.
+/// `forward` is true for forward iteration, false for backward iteration.
+struct IterBase<T> {
     cur: Segment<T>,
     cur_idx: usize,
     remaining: usize,
+    forward: bool,
+}
+
+impl<T> IterBase<T> {
+    /// Advances the iterator and returns a pointer to the next element's MaybeUninit.
+    #[inline]
+    fn next(&mut self) -> Option<*mut MaybeUninit<T>> {
+        if self.remaining == 0 {
+            return None;
+        }
+        self.remaining -= 1;
+
+        if self.forward {
+            let cur_header = self.cur.get_header();
+            let idx = if self.cur_idx >= cur_header.count as usize {
+                let next = cur_header.next;
+                self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
+                self.cur_idx = 1;
+                0
+            } else {
+                let _idx = self.cur_idx;
+                self.cur_idx = _idx + 1;
+                _idx
+            };
+            Some(self.cur.item_ptr(idx))
+        } else {
+            let idx = self.cur_idx;
+            let item_ptr = self.cur.item_ptr(idx);
+            if self.cur_idx == 0 {
+                let cur_header = self.cur.get_header();
+                if !cur_header.prev.is_null() {
+                    self.cur =
+                        unsafe { Segment::from_raw(NonNull::new_unchecked(cur_header.prev)) };
+                    let prev_header = self.cur.get_header();
+                    self.cur_idx = prev_header.count as usize - 1;
+                }
+            } else {
+                self.cur_idx -= 1;
+            }
+            Some(item_ptr)
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+}
+
+/// Immutable iterator over SegList
+pub struct SegListIter<'a, T> {
+    base: IterBase<T>,
     _marker: core::marker::PhantomData<&'a T>,
 }
 
@@ -558,31 +669,20 @@ impl<'a, T> Iterator for SegListIter<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let cur_header = self.cur.get_header();
-        self.remaining -= 1;
-        let idx = if self.cur_idx >= cur_header.count as usize {
-            let next = cur_header.next;
-            // In circular list, next is never null, but we use remaining to limit iteration
-            self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
-            self.cur_idx = 1;
-            0
-        } else {
-            let _idx = self.cur_idx;
-            self.cur_idx = _idx + 1;
-            _idx
-        };
-        Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_ref() })
+        self.base.next().map(|ptr| unsafe { (*ptr).assume_init_ref() })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.base.size_hint()
     }
 }
 
+impl<'a, T> ExactSizeIterator for SegListIter<'a, T> {}
+
 /// Mutable iterator over SegList
 pub struct SegListIterMut<'a, T> {
-    cur: Segment<T>,
-    cur_idx: usize,
-    remaining: usize,
+    base: IterBase<T>,
     _marker: core::marker::PhantomData<&'a mut T>,
 }
 
@@ -591,31 +691,23 @@ impl<'a, T> Iterator for SegListIterMut<'a, T> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.remaining == 0 {
-            return None;
-        }
-        let cur_header = self.cur.get_header();
-        self.remaining -= 1;
-        let idx = if self.cur_idx >= cur_header.count as usize {
-            let next = cur_header.next;
-            // In circular list, next is never null, but we use remaining to limit iteration
-            self.cur = unsafe { Segment::from_raw(NonNull::new_unchecked(next)) };
-            self.cur_idx = 1;
-            0
-        } else {
-            let _idx = self.cur_idx;
-            self.cur_idx += 1;
-            _idx
-        };
-        Some(unsafe { (*self.cur.item_ptr(idx)).assume_init_mut() })
+        self.base.next().map(|ptr| unsafe { (*ptr).assume_init_mut() })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.base.size_hint()
     }
 }
 
+impl<'a, T> ExactSizeIterator for SegListIterMut<'a, T> {}
+
 /// Draining iterator over SegList
-/// Consumes elements from head to tail (FIFO order)
+/// Consumes elements from head to tail (FIFO order) or tail to head (LIFO order)
 pub struct SegListDrain<T> {
     cur: Option<Segment<T>>,
     cur_idx: usize,
+    forward: bool,
 }
 
 impl<T> Iterator for SegListDrain<T> {
@@ -626,46 +718,86 @@ impl<T> Iterator for SegListDrain<T> {
         let cur_seg = self.cur.as_mut()?;
         unsafe {
             let item = (*cur_seg.item_ptr(self.cur_idx)).assume_init_read();
-            let next_idx = self.cur_idx + 1;
             let header = cur_seg.get_header();
-            // Check if we've exhausted this segment
-            if next_idx >= header.count as usize {
-                let next = header.next;
+            if self.forward {
+                let next_idx = self.cur_idx + 1;
+                if next_idx >= header.count as usize {
+                    let next = header.next;
+                    cur_seg.dealloc();
+                    if next.is_null() {
+                        self.cur = None;
+                    } else {
+                        self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
+                        self.cur_idx = 0;
+                    }
+                } else {
+                    self.cur_idx = next_idx;
+                }
+            } else if self.cur_idx == 0 {
+                let prev = header.prev;
                 cur_seg.dealloc();
-                if next.is_null() {
+                if prev.is_null() {
                     self.cur = None;
                 } else {
-                    self.cur = Some(Segment::from_raw(NonNull::new_unchecked(next)));
-                    self.cur_idx = 0;
+                    let _cur = Segment::from_raw(NonNull::new_unchecked(prev));
+                    self.cur_idx = _cur.get_header().count as usize - 1;
+                    self.cur = Some(_cur);
                 }
             } else {
-                self.cur_idx = next_idx;
+                self.cur_idx -= 1;
             }
             Some(item)
         }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = if let Some(_cur) = &self.cur {
+            // Estimate remaining elements - this is approximate for backward iteration
+            // across multiple segments, but sufficient for size_hint
+            1 // At least one element if cur is Some
+        } else {
+            0
+        };
+        (remaining, None)
     }
 }
 
 impl<T> Drop for SegListDrain<T> {
     fn drop(&mut self) {
-        let mut next: *mut SegHeader<T>;
         if let Some(mut cur) = self.cur.take() {
             unsafe {
-                // Save next pointer before dealloc
-                let header = cur.get_header();
-                next = header.next;
-                // Drop remaining elements in this segment (from current index to end)
-                if core::mem::needs_drop::<T>() {
-                    for i in self.cur_idx..header.count as usize {
-                        (*cur.item_ptr(i)).assume_init_drop();
-                    }
-                }
-                cur.dealloc();
-                while !next.is_null() {
-                    cur = Segment::from_raw(NonNull::new_unchecked(next));
+                if self.forward {
+                    // Save next pointer before dealloc
                     let header = cur.get_header();
-                    next = header.next;
-                    cur.dealloc_with_items();
+                    let mut next = header.next;
+                    // Drop remaining elements in this segment (from current index to end)
+                    if core::mem::needs_drop::<T>() {
+                        for i in self.cur_idx..header.count as usize {
+                            (*cur.item_ptr(i)).assume_init_drop();
+                        }
+                    }
+                    cur.dealloc();
+                    while !next.is_null() {
+                        cur = Segment::from_raw(NonNull::new_unchecked(next));
+                        next = cur.get_header().next;
+                        cur.dealloc_with_items();
+                    }
+                } else {
+                    // Save prev pointer before dealloc
+                    let mut prev = cur.get_header().prev;
+                    // Drop remaining elements in this segment (from start to current index)
+                    if core::mem::needs_drop::<T>() {
+                        for i in 0..=self.cur_idx {
+                            (*cur.item_ptr(i)).assume_init_drop();
+                        }
+                    }
+                    cur.dealloc();
+                    while !prev.is_null() {
+                        cur = Segment::from_raw(NonNull::new_unchecked(prev));
+                        prev = cur.get_header().prev;
+                        cur.dealloc_with_items();
+                    }
                 }
             }
         }
@@ -1070,5 +1202,162 @@ mod tests {
         assert!(list.is_empty());
         assert_eq!(list.len(), 0);
         assert_eq!(list.pop(), None);
+    }
+
+    #[test]
+    fn test_iter_rev_single_segment() {
+        // Test with small number of elements (single segment)
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..10 {
+            list.push(i);
+        }
+
+        // Test reverse iterator
+        let collected: Vec<i32> = list.iter_rev().copied().collect();
+        let expected: Vec<i32> = (0..10).rev().collect();
+        assert_eq!(collected, expected);
+
+        // Test mutable reverse iterator
+        for item in list.iter_mut_rev() {
+            *item *= 10;
+        }
+
+        // Verify modification
+        assert_eq!(list.first(), Some(&0));
+        assert_eq!(list.last(), Some(&90));
+
+        let collected: Vec<i32> = list.iter().copied().collect();
+        let expected: Vec<i32> = vec![0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn test_iter_rev_multi_segment() {
+        // Test with many elements (multiple segments)
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..200 {
+            list.push(i);
+        }
+
+        // Test reverse iterator across multiple segments
+        let collected: Vec<i32> = list.iter_rev().copied().collect();
+        let expected: Vec<i32> = (0..200).rev().collect();
+        assert_eq!(collected, expected);
+
+        // Test mutable reverse iterator across multiple segments
+        for item in list.iter_mut_rev() {
+            *item += 1000;
+        }
+
+        // Verify modification
+        assert_eq!(list.first(), Some(&1000));
+        assert_eq!(list.last(), Some(&1199));
+
+        let collected: Vec<i32> = list.iter().copied().collect();
+        let expected: Vec<i32> = (0..200).map(|i| i + 1000).collect();
+        assert_eq!(collected, expected);
+    }
+
+    #[test]
+    fn test_iter_rev_empty() {
+        let list: SegList<i32> = SegList::new();
+
+        let collected: Vec<i32> = list.iter_rev().copied().collect();
+        assert!(collected.is_empty());
+
+        let mut list_mut: SegList<i32> = SegList::new();
+        let count = list_mut.iter_mut_rev().count();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_iter_rev_exact_size() {
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..50 {
+            list.push(i);
+        }
+
+        // Test ExactSizeIterator on reverse iterator
+        let iter = list.iter_rev();
+        assert_eq!(iter.len(), 50);
+
+        let mut iter = list.iter_rev();
+        assert_eq!(iter.len(), 50);
+        iter.next();
+        assert_eq!(iter.len(), 49);
+        iter.next();
+        assert_eq!(iter.len(), 48);
+
+        // Test ExactSizeIterator on mutable reverse iterator
+        let mut iter_mut = list.iter_mut_rev();
+        assert_eq!(iter_mut.len(), 50);
+        iter_mut.next();
+        assert_eq!(iter_mut.len(), 49);
+    }
+
+    #[test]
+    fn test_into_rev_single_segment() {
+        // Test with small number of elements (single segment)
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..10 {
+            list.push(i);
+        }
+
+        // Test into_rev - should yield elements in LIFO order
+        let drained: Vec<i32> = list.into_rev().collect();
+        let expected: Vec<i32> = (0..10).rev().collect();
+        assert_eq!(drained, expected);
+    }
+
+    #[test]
+    fn test_into_rev_multi_segment() {
+        // Test with many elements (multiple segments)
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..200 {
+            list.push(i);
+        }
+
+        // Test into_rev - should yield elements in LIFO order across segments
+        let drained: Vec<i32> = list.into_rev().collect();
+        let expected: Vec<i32> = (0..200).rev().collect();
+        assert_eq!(drained, expected);
+    }
+
+    #[test]
+    fn test_into_rev_empty() {
+        let list: SegList<i32> = SegList::new();
+
+        let drained: Vec<i32> = list.into_rev().collect();
+        assert!(drained.is_empty());
+    }
+
+    #[test]
+    fn test_into_rev_partial() {
+        // Test partial consumption of into_rev
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..50 {
+            list.push(i);
+        }
+
+        // Only drain half
+        let mut drain = list.into_rev();
+        let mut drained = Vec::new();
+        for _ in 0..25 {
+            if let Some(item) = drain.next() {
+                drained.push(item);
+            }
+        }
+        // Drop drain - remaining elements should be dropped properly
+        drop(drain);
+
+        // Verify we got the last 25 elements in reverse order
+        let expected: Vec<i32> = (25..50).rev().collect();
+        assert_eq!(drained, expected);
     }
 }
