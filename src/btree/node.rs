@@ -1,6 +1,7 @@
 use super::{inter::*, leaf::*};
 use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
+use core::fmt;
 use core::ops::Bound;
 use core::ptr::{self, NonNull};
 
@@ -181,6 +182,15 @@ impl NodeBase {
 pub(crate) enum Node<K, V> {
     Inter(InterNode<K, V>),
     Leaf(LeafNode<K, V>),
+}
+
+impl<K, V> fmt::Debug for Node<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Inter(node) => node.fmt(f),
+            Self::Leaf(node) => node.fmt(f),
+        }
+    }
 }
 
 impl<K: Ord, V> Clone for Node<K, V> {

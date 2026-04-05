@@ -222,10 +222,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             .get_cache()
             .move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
         {
-            println!("update_ancestor_sep_key {:?} {}", parent, parent_idx - 1);
+            //println!("update_ancestor_sep_key {:?} {}", parent, parent_idx - 1);
             parent.change_key(parent_idx - 1, sep_key);
         } else {
-            println!("no ancestor");
+            //println!("no ancestor");
         }
     }
 
@@ -376,7 +376,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
     fn handle_leaf_underflow(&mut self, mut leaf: LeafNode<K, V>) {
-        println!("handle_leaf_underflow {:?}", leaf);
+        //println!("handle_leaf_underflow {:?}", leaf);
         debug_assert!(!self.get_root_unwrap().is_leaf());
         let cur_count = leaf.key_count();
         let cap = LeafNode::<K, V>::cap();
@@ -391,7 +391,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if !can_unlink && let Some(mut left_node) = leaf.get_left_node() {
             let left_count = left_node.key_count();
             if left_count + cur_count <= cap {
-                println!("merge left");
+                //println!("merge left");
                 leaf.copy_left(&mut left_node, cur_count);
                 can_unlink = true;
                 merge_state = MERGE_LEFT;
@@ -402,7 +402,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if !can_unlink && let Some(mut right_node) = leaf.get_right_node() {
             let right_count = right_node.key_count();
             if right_count + cur_count <= cap {
-                println!("merge right");
+                //println!("merge right");
                 leaf.copy_right::<false>(&mut right_node, 0, cur_count);
                 can_unlink = true;
                 merge_state = MERGE_RIGHT;
@@ -414,7 +414,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // merge, only either triggering merge left or merge right.
         if !can_unlink && left_avail > 0 && right_avail > 0 && left_avail + right_avail == cur_count
         {
-            println!("3-2 merge");
+            //println!("3-2 merge");
             let mut left_node = leaf.get_left_node().unwrap();
             let mut right_node = leaf.get_right_node().unwrap();
             debug_assert!(left_avail < cur_count);
@@ -435,7 +435,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let no_right = leaf.unlink().is_null();
         leaf.dealloc::<true>();
         let (parent, idx) = self.get_cache().pop().unwrap();
-        println!("pop before {:?}", parent);
+        //println!("pop before {:?}", parent);
         self.remove_child_from_inter(parent, idx, right_sep, no_right);
     }
 
@@ -445,32 +445,30 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         &mut self, mut node: InterNode<K, V>, mut delete_idx: u32, right_sep: Option<K>,
         _no_right: bool,
     ) {
+        //println!("remove child {delete_idx} of {:?}", node);
         self.get_cache().assert_center();
-        let node_keys = node.key_count();
+        let mut node_keys = node.key_count();
         let root_height = self.get_root_unwrap().height();
-        let delete_node = node_keys == 0;
-        if delete_node {
-            println!("move_to_ancenstor");
+        if node.key_count() == 0 {
             if let Some((parent, idx)) = self.get_cache().move_to_ancenstor(
                 |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
                 InterNode::<K, V>::dealloc,
             ) {
-                println!("find ancestor {:?}{idx} of empty node {:?}", parent, node);
+                //println!("find ancestor {:?}{idx} of empty node {:?}", parent, node);
                 node.dealloc();
                 node = parent;
                 delete_idx = idx;
             } else {
-                println!("empty root");
                 node.dealloc();
-                // we are empty, my ancestor for all empty, then the tree is empty
+                // we are empty, my ancestor are all empty and delete by move_to_ancenstor
                 self.root = None;
                 return;
             }
         }
         let node_height = node.height();
         let at_root = node_height == root_height;
-        if delete_idx == node_keys {
-            println!("delete last {delete_idx} from {:?}", node);
+        if delete_idx == node.key_count() {
+            //println!("delete last {delete_idx} from {:?}", node);
             // delete the last child of this node
             node.remove_last_child(delete_idx);
             if let Some(key) = right_sep {
@@ -479,24 +477,24 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         node.key_count() > idx
                     })
                 {
-                    println!("peak_ancenstor {:?} {grand_idx} for right ", grand_parent);
+                    //println!("peak_ancenstor {:?} {grand_idx} for right ", grand_parent);
                     // key idx = child idx - 1
                     grand_parent.change_key(grand_idx, key);
                 }
-            } else if node_keys > 1 {
+            } else if node.key_count() > 1 {
                 // TODO minminum threshold
                 return;
             }
         } else if delete_idx > 0 {
-            println!("delete mid {delete_idx} from {:?}", node);
+            //println!("delete mid {delete_idx} from {:?}", node);
             node.remove_mid_child(delete_idx);
             if let Some(key) = right_sep {
-                println!("change_key {:?} {delete_idx}", node);
+                //println!("change_key {:?} {delete_idx}", node);
                 node.change_key(delete_idx - 1, key);
             }
             // TODO optionally check node underflow
         } else {
-            println!("delete first from {:?}", node);
+            //println!("delete first from {:?}", node);
             // delete_idx is the first but not the last
             let mut sep_key = node.remove_first_child();
             if let Some(key) = right_sep {
@@ -506,8 +504,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // TODO optionally check node underflow
         }
         if node.key_count() == 0 && at_root {
-            println!("replace root to its only child");
-            self.root.replace(unsafe { Node::from_header(*node.child_ptr(0)) });
+            // only one child ptr left
+            let old_root =
+                self.root.replace(unsafe { Node::from_header(*node.child_ptr(0)) }).unwrap();
+            old_root.into_inter().dealloc();
         }
     }
 
@@ -529,7 +529,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
         match &self.root {
             Some(Node::Leaf(leaf)) => {
-                println!("visit {:?}", leaf);
+                //println!("visit {:?}", leaf);
                 total_keys += leaf.validate(None, None);
             }
             Some(Node::Inter(inter)) => {
@@ -541,7 +541,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     cur.validate();
                     match cur.get_child(0) {
                         Node::Leaf(leaf) => {
-                            println!("visit {:?}", leaf);
+                            //println!("visit {:?}", leaf);
                             // Validate first leaf with no min/max bounds from parent
                             let min_key: Option<K> = None;
                             let max_key = if inter.key_count() > 0 {
@@ -570,7 +570,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             break;
                         }
                         Node::Inter(child_inter) => {
-                            println!("visit {:?}", inter);
+                            //println!("visit {:?}", inter);
                             cur = child_inter;
                         }
                     }
@@ -580,10 +580,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 while let Some((parent, idx)) =
                     cache.move_right_and_pop_l1(dummy_post_callback::<K, V>)
                 {
-                    println!("move_right_and_pop_l1 {:?} {idx}", parent);
+                    //println!("move_right_and_pop_l1 {:?} {idx}", parent);
                     cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
-                        println!("visit child {idx} {:?}", leaf);
+                        //println!("visit child {idx} {:?}", leaf);
                         // Calculate bounds for this leaf
                         let min_key = if idx > 0 {
                             unsafe {

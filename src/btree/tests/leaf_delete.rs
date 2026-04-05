@@ -501,6 +501,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
         };
         assert_eq!(map.height(), 2);
         map.validate();
+        //map.dump();
 
         // Record rightmost key that will remain after removals
         let right_remaining_key = right_leaf.get_keys()[0];
@@ -629,7 +630,7 @@ fn test_leaf_del_merge_with_left_height_3() {
         };
         map.validate();
         assert_eq!(map.height(), 3);
-        map.dump();
+        //map.dump();
 
         // Record the key that will remain in leaf_1 after removals
         let leaf_1_remaining_key = leaf_1.get_keys()[0];
@@ -784,7 +785,7 @@ fn test_leaf_del_merge_with_right_height_3() {
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
         };
-        map.dump();
+        // map.dump();
         //map.validate();
         assert_eq!(map.height(), 3);
 
@@ -796,7 +797,7 @@ fn test_leaf_del_merge_with_right_height_3() {
         println!("delete_key = {}", delete_key);
         assert!(map.remove(&delete_key).is_some());
 
-        map.dump();
+        // map.dump();
         map.validate();
 
         // Verify structure after merge
