@@ -16,11 +16,15 @@ dlist = []
 avl = []
 full = ["slist", "dlist", "avl"]
 
+## For profiling symbol
+#[profile.release]
+#debug = true
+
 [dependencies]
 
 [dev-dependencies]
 rstest = "0"
-rand = "0.8.5"
+fastrand = "2.3"
 criterion2 = { version="3.0.2"}
 
 [[bench]]
@@ -30,6 +34,14 @@ required-features = ["avl"]
 
 [[bench]]
 name = "seg_list"
+harness = false
+
+[[bench]]
+name = "btree"
+harness = false
+
+[[bench]]
+name = "btree_std"
 harness = false
 
 [package.metadata.docs.rs]
