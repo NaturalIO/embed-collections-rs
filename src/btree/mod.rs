@@ -64,6 +64,9 @@
 */
 
 use core::cell::UnsafeCell;
+#[cfg(test)]
+use core::fmt::Debug;
+use core::ops::RangeBounds;
 pub mod entry;
 use entry::*;
 mod node;
@@ -72,6 +75,11 @@ mod inter;
 use inter::*;
 mod leaf;
 use leaf::*;
+pub mod iter;
+use iter::RangeBase;
+pub use iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
+// IntoIter is temporarily disabled
+// pub use iter::IntoIter;
 
 #[cfg(test)]
 mod tests;
@@ -194,10 +202,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Remove a key from the map, returning the value if it existed
-    pub fn remove(&mut self, key: &K) -> Option<V>
-    where
-        K: Clone,
-    {
+    pub fn remove(&mut self, key: &K) -> Option<V> {
         //TODO fix it
         match self.entry(key.clone()) {
             Entry::Occupied(entry) => Some(entry.remove()),
@@ -320,8 +325,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[cfg(test)]
     pub fn dump(&self)
     where
-        K: core::fmt::Debug,
-        V: core::fmt::Debug,
+        K: Debug,
+        V: Debug,
     {
         println!("=== BTreeMap Dump ===");
         println!("Length: {}", self.len());
@@ -336,8 +341,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[cfg(test)]
     fn dump_node(&self, node: &Node<K, V>, depth: usize)
     where
-        K: core::fmt::Debug,
-        V: core::fmt::Debug,
+        K: Debug,
+        V: Debug,
     {
         match node {
             Node::Leaf(leaf) => {
@@ -513,8 +518,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[cfg(test)]
     pub fn validate(&self)
     where
-        K: core::fmt::Debug + Clone,
-        V: core::fmt::Debug,
+        K: Debug,
+        V: Debug,
     {
         if self.root.is_none() {
             assert_eq!(self.len, 0, "Empty tree should have len 0");
@@ -627,6 +632,73 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             total_keys, self.len
         );
     }
+
+    /// Returns an iterator over the map's entries
+    #[inline]
+    pub fn iter(&self) -> Iter<'_, K, V> {
+        Iter::new(self.find_first_and_last_leaf(), self.len)
+    }
+
+    /// Returns a mutable iterator over the map's entries
+    #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
+        IterMut::new(self.find_first_and_last_leaf(), self.len)
+    }
+
+    /// Returns an iterator over the map's keys
+    #[inline]
+    pub fn keys(&self) -> Keys<'_, K, V> {
+        Keys::new(self.iter())
+    }
+
+    /// Returns an iterator over the map's values
+    #[inline]
+    pub fn values(&self) -> Values<'_, K, V> {
+        Values::new(self.iter())
+    }
+
+    /// Returns a mutable iterator over the map's values
+    #[inline]
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+        ValuesMut::new(self.iter_mut())
+    }
+
+    #[inline]
+    fn find_first_and_last_leaf(&self) -> Option<(LeafNode<K, V>, LeafNode<K, V>)> {
+        let root = self.root.as_ref()?;
+        Some((root.find_first_leaf(), root.find_last_leaf()))
+    }
+
+    /// Internal helper to find range bounds
+    /// Returns (front_leaf, front_idx, back_leaf, back_idx) where both leaves are Some or both are None
+    #[inline]
+    fn find_range_bounds<R>(&self, range: R) -> Option<RangeBase<'_, K, V>>
+    where
+        R: RangeBounds<K>,
+    {
+        let root = self.root.as_ref()?;
+        let (front_leaf, front_idx) = root.find_leaf_with_bound(range.start_bound(), true);
+        let (back_leaf, back_idx) = root.find_leaf_with_bound(range.end_bound(), false);
+        Some(RangeBase::new(front_leaf, front_idx, back_leaf, back_idx))
+    }
+
+    /// Returns an iterator over a sub-range of entries in the map
+    #[inline]
+    pub fn range<R>(&self, range: R) -> Range<'_, K, V>
+    where
+        R: RangeBounds<K>,
+    {
+        Range::new(self.find_range_bounds(range))
+    }
+
+    /// Returns a mutable iterator over a sub-range of entries in the map
+    #[inline]
+    pub fn range_mut<R>(&mut self, range: R) -> RangeMut<'_, K, V>
+    where
+        R: RangeBounds<K>,
+    {
+        RangeMut::new(self.find_range_bounds(range))
+    }
 }
 
 impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
@@ -670,5 +742,39 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
                 unreachable!();
             }
         }
+    }
+}
+
+/*
+impl<K: Ord + Clone + Sized, V: Sized> IntoIterator for BTreeMap<K, V> {
+    type Item = (K, V);
+    type IntoIter = IntoIter<K, V>;
+
+    #[inline]
+    fn into_iter(mut self) -> Self::IntoIter {
+        let len = self.len;
+        // Take ownership of the root so Drop doesn't deallocate
+        let root = self.root.take();
+        IntoIter::new(root, len, false)
+    }
+}
+*/
+impl<'a, K: Ord + Clone + Sized, V: Sized> IntoIterator for &'a BTreeMap<K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = Iter<'a, K, V>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, K: Ord + Clone + Sized, V: Sized> IntoIterator for &'a mut BTreeMap<K, V> {
+    type Item = (&'a K, &'a mut V);
+    type IntoIter = IterMut<'a, K, V>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }

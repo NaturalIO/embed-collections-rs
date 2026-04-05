@@ -43,6 +43,13 @@ impl<K, V> DerefMut for LeafNode<K, V> {
     }
 }
 
+impl<K, V> PartialEq for LeafNode<K, V> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.get_ptr() == other.get_ptr()
+    }
+}
+
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
     const LAYOUT: (u32, Layout) = Self::cal_layout();

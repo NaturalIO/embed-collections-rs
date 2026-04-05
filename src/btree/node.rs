@@ -1,6 +1,7 @@
 use super::{inter::*, leaf::*};
 use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
+use core::ops::Bound;
 use core::ptr::{self, NonNull};
 
 /// Key area size: first 128 bytes (2 cache lines)
@@ -182,14 +183,24 @@ pub(crate) enum Node<K, V> {
     Leaf(LeafNode<K, V>),
 }
 
+impl<K: Ord, V> Clone for Node<K, V> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        match self {
+            Self::Inter(node) => Self::Inter(node.clone()),
+            Self::Leaf(node) => Self::Leaf(node.clone()),
+        }
+    }
+}
+
 impl<K: Ord, V> Node<K, V> {
     #[inline(always)]
     pub unsafe fn from_header(header: *mut NodeHeader) -> Self {
         unsafe {
             if (*header).is_leaf() {
-                Node::Leaf(LeafNode::<K, V>::from_header(header))
+                Self::Leaf(LeafNode::<K, V>::from_header(header))
             } else {
-                Node::Inter(InterNode::<K, V>::from_header(header))
+                Self::Inter(InterNode::<K, V>::from_header(header))
             }
         }
     }
@@ -212,7 +223,7 @@ impl<K: Ord, V> Node<K, V> {
 
     #[inline]
     pub fn as_inter(&self) -> &InterNode<K, V> {
-        if let Node::Inter(node) = &self {
+        if let Self::Inter(node) = &self {
             node
         } else {
             unreachable!();
@@ -221,7 +232,7 @@ impl<K: Ord, V> Node<K, V> {
 
     #[inline]
     pub fn into_inter(self) -> InterNode<K, V> {
-        if let Node::Inter(node) = self {
+        if let Self::Inter(node) = self {
             node
         } else {
             unreachable!();
@@ -231,8 +242,8 @@ impl<K: Ord, V> Node<K, V> {
     #[inline]
     pub fn find_leaf(&self, key: &K) -> LeafNode<K, V> {
         match self {
-            Node::Leaf(node) => node.clone(),
-            Node::Inter(node) => {
+            Self::Leaf(node) => node.clone(),
+            Self::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
@@ -253,16 +264,16 @@ impl<K: Ord, V> Node<K, V> {
         K: Clone,
     {
         match self {
-            Node::Inter(node) => node.clone_first_key(),
-            Node::Leaf(node) => node.clone_first_key(),
+            Self::Inter(node) => node.clone_first_key(),
+            Self::Leaf(node) => node.clone_first_key(),
         }
     }
 
     #[inline]
     pub fn find_leaf_with_cache(&self, cache: &mut PathCache<K, V>, key: &K) -> LeafNode<K, V> {
         match &self {
-            Node::Leaf(node) => node.clone(),
-            Node::Inter(node) => {
+            Self::Leaf(node) => node.clone(),
+            Self::Inter(node) => {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
@@ -273,6 +284,79 @@ impl<K: Ord, V> Node<K, V> {
                             cur = inter;
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// is_start: true for start_bound, false for end_bound
+    ///
+    /// return value:
+    /// - leaf node contains the bound
+    /// - idx: regardless include or exclude, idx always return idx|0 for start_bound,
+    ///   retrun (idx + 1) | key_count() for end_bound
+    #[inline]
+    pub fn find_leaf_with_bound(&self, bound: Bound<&K>, is_start: bool) -> (LeafNode<K, V>, u32) {
+        let key = borrow_key_from_bound::<K>(bound);
+        let mut cur = self.clone();
+        loop {
+            match cur {
+                Self::Leaf(node) => {
+                    let idx = if let Some(k) = key.as_ref() {
+                        let (idx, is_equal) = node.search(k);
+                        if is_start {
+                            if let Bound::Excluded(_) = bound {
+                                if is_equal { idx + 1 } else { idx }
+                            } else {
+                                idx
+                            }
+                        } else {
+                            if let Bound::Excluded(_) = bound {
+                                idx
+                            } else {
+                                if is_equal { idx + 1 } else { idx }
+                            }
+                        }
+                    } else {
+                        if is_start { 0 } else { node.key_count() }
+                    };
+                    return (node, idx);
+                }
+                Self::Inter(node) => {
+                    let idx = if let Some(k) = key.as_ref() {
+                        node.search_child(k)
+                    } else {
+                        if is_start { 0 } else { node.key_count() - 1 }
+                    };
+                    cur = node.get_child(idx);
+                }
+            }
+        }
+    }
+
+    /// Find the first leaf node
+    #[inline]
+    pub fn find_first_leaf(&self) -> LeafNode<K, V> {
+        let mut cur: Self = self.clone();
+        loop {
+            match cur {
+                Self::Leaf(leaf) => return leaf,
+                Self::Inter(inter) => {
+                    cur = inter.get_child(0);
+                }
+            }
+        }
+    }
+
+    /// Find the last leaf node
+    #[inline]
+    pub fn find_last_leaf(&self) -> LeafNode<K, V> {
+        let mut cur: Self = self.clone();
+        loop {
+            match cur {
+                Self::Leaf(leaf) => return leaf,
+                Self::Inter(inter) => {
+                    cur = inter.get_child(inter.key_count());
                 }
             }
         }
@@ -492,3 +576,12 @@ pub(super) const MERGE_LEFT: u8 = 1;
 pub(super) const MERGE_RIGHT: u8 = 2;
 
 pub(super) fn dummy_post_callback<K, V>(_node: InterNode<K, V>) {}
+
+#[inline(always)]
+pub(super) fn borrow_key_from_bound<K>(bound: Bound<&K>) -> Option<&K> {
+    match bound {
+        Bound::Unbounded => None,
+        Bound::Included(key) => Some(key),
+        Bound::Excluded(key) => Some(key),
+    }
+}
