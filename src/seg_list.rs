@@ -4,16 +4,16 @@
 //! It does not support random access.
 //!
 //! Each segment's capacity is calculated at runtime based on T's size
-//! to fit within a cache line. (The first segment is CACHE_LINE_SIZE, the subsequent allocation
-//! use CACHE_LINE_SIZE * 2)
+//! to fit within a cache line. (The first segment is 2* CACHE_LINE_SIZE, the subsequent allocation
+//! use CACHE_LINE_SIZE * 4)
 //!
 //! It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
 //! during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
 //!
 //! # NOTE
 //!
-//! T is allow to larger than `CACHE_LINE_SIZE`, in this case `SegList` will ensure at least 2
-//! items in one segment. But it's not efficient when T larger than 128B, you should consider put T into Box.
+//! T is allow to larger than `2 * CACHE_LINE_SIZE`, in this case `SegList` will ensure at least 2
+//! items in one segment. But it's not efficient when T larger than 64B, you should consider put T into Box.
 //!
 //! # Example
 //!
@@ -57,26 +57,11 @@
 //! assert_eq!(drained, vec![10, 20, 30]);
 //! ```
 
+use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
 use core::mem::{MaybeUninit, align_of, size_of};
 use core::ptr::{NonNull, null_mut};
-
-/// Cache line size in bytes
-#[cfg(any(
-    target_arch = "x86_64",
-    target_arch = "aarch64",
-    target_arch = "arm64ec",
-    target_arch = "powerpc64",
-))]
-pub const CACHE_LINE_SIZE: usize = 128;
-#[cfg(not(any(
-    target_arch = "x86_64",
-    target_arch = "aarch64",
-    target_arch = "arm64ec",
-    target_arch = "powerpc64",
-)))]
-pub const CACHE_LINE_SIZE: usize = 64;
 
 /// Segmented list with cache-friendly segment sizes.
 ///
@@ -84,15 +69,15 @@ pub const CACHE_LINE_SIZE: usize = 64;
 /// It does not support random access.
 ///
 /// Each segment's capacity is calculated at runtime based on T's size
-/// to fit within a cache line. (The first segment is CACHE_LINE_SIZE, the subsequent allocation
-/// use CACHE_LINE_SIZE * 2)
+/// to fit within a cache line. (The first segment is 2 * CACHE_LINE_SIZE, the subsequent allocation
+/// use CACHE_LINE_SIZE * 4)
 ///
 /// It's faster than Vec when the number of items is small (1~64), because it does not re-allocate
 /// during `push()`. It's slower than Vec when the number is very large (due to pointer dereference cost).
 ///
 /// # NOTE
 ///
-/// T is allow to larger than `CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
+/// T is allow to larger than `2 * CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
 /// items in one segment. But it's not efficient when T larger than 128B, you should consider put T into Box.
 ///
 /// Refer to [module level](crate::seg_list) doc for examples.
@@ -418,11 +403,11 @@ impl<T> Segment<T> {
 
     // Pre-calculate layout for cacheline-sized segment (first segment)
     // (cap, layout)
-    const BASE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE);
+    const BASE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE * 2);
 
     // Pre-calculate layout for cacheline*2-sized segment (subsequent segments)
     // (cap, layout)
-    const LARGE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE * 2);
+    const LARGE_LAYOUT: (usize, Layout) = Self::calc_layout_const(CACHE_LINE_SIZE * 4);
 
     /// Const fn to calculate data offset (same for all segments)
     const fn calc_data_offset() -> usize {
