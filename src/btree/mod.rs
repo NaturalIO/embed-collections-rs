@@ -73,8 +73,8 @@ use inter::*;
 mod leaf;
 use leaf::*;
 
-//#[cfg(test)]
-//mod tests;
+#[cfg(test)]
+mod tests;
 
 /// B+Tree Map for single-threaded use
 pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
