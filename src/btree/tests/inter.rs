@@ -1,4 +1,5 @@
 use super::super::{inter::*, node::*};
+use super::{CounterI32, alive_count, reset_alive_count};
 use core::mem::align_of;
 
 #[test]
@@ -51,17 +52,21 @@ fn test_inter_insert_and_search() {
 
 #[test]
 fn test_inter_split_insert_left() {
-    let cap = InterNode::<i32, i32>::cap();
-    println!("InterNode<i32> cap {}", cap);
+    reset_alive_count();
+    let cap = InterNode::<CounterI32, CounterI32>::cap();
+    println!("InterNode<CounterI32> cap {}", cap);
     // TODO should test split_idx == count ?  cap = 2
     unsafe {
         // Test Case 2: Insert key before split_idx (should go to left node)
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
             //println!("idx={i} {}", i*10);
-            node.insert_no_split((i * 10) as i32, (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
+            node.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
         }
         assert_eq!(*node.child_ptr(0), 0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -70,7 +75,8 @@ fn test_inter_split_insert_left() {
         }
 
         let split_idx = cap >> 1;
-        let insert_key = (split_idx * 10 - 15) as i32; // Key before split_idx
+        let insert_key: CounterI32 = ((split_idx * 10 - 15) as i32).into(); // Key before split_idx
+        let insert_key_value = insert_key.value;
         let insert_child = 0x5000 as *mut NodeHeader;
         let insert_idx = node.search_key(&insert_key);
         assert!(insert_idx < split_idx);
@@ -94,15 +100,15 @@ fn test_inter_split_insert_left() {
             println!("check idx {i}={}", i * 10);
             let idx = node.search_child(&((i * 10) as i32));
             assert_eq!(idx, i + 1);
-            assert_eq!((*node.key_ptr(i)).assume_init_read(), (i * 10) as i32);
+            assert_eq!((*node.key_ptr(i)).assume_init_ref(), (i * 10) as i32);
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
-        let idx = node.search_child(&(insert_key));
-        println!("insert_idx {insert_idx} ={}", (*node.key_ptr(insert_idx)).assume_init_read());
+        let idx = node.search_child(&insert_key_value);
+        println!("insert_idx {insert_idx} ={}", (*node.key_ptr(insert_idx)).assume_init_ref());
         assert_eq!(idx, insert_idx + 1);
         assert_eq!(*node.child_ptr(idx), insert_child);
         // the last one in the left
-        assert_eq!((*node.key_ptr(insert_idx + 1)).assume_init_read(), ((insert_idx) * 10) as i32);
+        assert_eq!((*node.key_ptr(insert_idx + 1)).assume_init_ref(), ((insert_idx) * 10) as i32);
         assert_eq!(
             *node.child_ptr(insert_idx + 2),
             (0x1000 + (insert_idx + 1) * 0x100) as *mut NodeHeader
@@ -111,10 +117,7 @@ fn test_inter_split_insert_left() {
         // the split_idx key is promoted and (split_idx+1) child is left child in new_node
         assert_eq!(*new_node.child_ptr(0), (0x1000 + (split_idx + 1) * 0x100) as *mut NodeHeader);
         for i in 0..cap - split_idx - 1 {
-            assert_eq!(
-                (*new_node.key_ptr(i)).assume_init_read(),
-                ((split_idx + 1 + i) * 10) as i32
-            );
+            assert_eq!((*new_node.key_ptr(i)).assume_init_ref(), ((split_idx + 1 + i) * 10) as i32);
             assert_eq!(
                 *new_node.child_ptr(i + 1),
                 (0x1000 + (split_idx + i + 2) * 0x100) as *mut NodeHeader
@@ -124,33 +127,39 @@ fn test_inter_split_insert_left() {
         node.dealloc();
         println!("Test Case 2 completed successfully");
     }
+    assert_eq!(alive_count(), 0);
 }
 
 #[test]
 fn test_inter_split_insert_at_promote() {
+    reset_alive_count();
     // Insert key at split_idx position (will be promoted, not inserted)
     unsafe {
-        let cap = InterNode::<i32, i32>::cap();
+        let cap = InterNode::<CounterI32, CounterI32>::cap();
 
         println!("=== Test Internal Node Split Basic ===");
         println!("cap = {}", cap);
 
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
-            node.insert_no_split((i * 10) as i32, (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
+            node.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
         }
 
         let split_idx = cap >> 1;
-        let insert_key = (split_idx * 10 - 5) as i32; // Key between split_idx-1 and split_idx
+        let insert_key: CounterI32 = ((split_idx * 10 - 5) as i32).into(); // Key between split_idx-1 and split_idx
+        let insert_key_value = insert_key.value;
         let insert_child = 0x5000 as *mut NodeHeader;
         let insert_idx = node.search_key(&insert_key);
         assert!(insert_idx == split_idx);
 
         println!(
             "split_idx = {}, insert_key = {}, insert_child = {:?}",
-            split_idx, insert_key, insert_child
+            split_idx, insert_key_value, insert_child
         );
 
         let (new_node, promote_key) = node.insert_split(insert_key, insert_child);
@@ -159,7 +168,7 @@ fn test_inter_split_insert_at_promote() {
             "After split: left count = {}, right count = {}, promote_key = {}",
             node.key_count(),
             new_node.key_count(),
-            promote_key
+            promote_key,
         );
         println!("left ptr = {:?}, right ptr = {:?}", node.get_ptr(), new_node.get_ptr());
 
@@ -175,16 +184,16 @@ fn test_inter_split_insert_at_promote() {
             cap,
             "Total keys should be cap when insert_key == promote_key"
         );
-        assert_eq!(promote_key, insert_key, "Promoted key should be the inserted key");
+        assert_eq!(promote_key, insert_key_value, "Promoted key should be the inserted key");
 
         for i in 0..split_idx {
-            assert_eq!((*node.key_ptr(i)).assume_init_read(), ((i) * 10) as i32);
+            assert_eq!((*node.key_ptr(i)).assume_init_ref(), ((i) * 10) as i32);
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
         assert_eq!(*new_node.child_ptr(0), insert_child);
 
         for i in 0..cap - split_idx {
-            assert_eq!((*new_node.key_ptr(i)).assume_init_read(), ((split_idx + i) * 10) as i32);
+            assert_eq!((*new_node.key_ptr(i)).assume_init_ref(), ((split_idx + i) * 10) as i32);
             assert_eq!(
                 *new_node.child_ptr(i + 1),
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
@@ -194,24 +203,30 @@ fn test_inter_split_insert_at_promote() {
         node.dealloc();
         println!("Test Case 1 completed successfully");
     }
+    assert_eq!(alive_count(), 0);
 }
 
 #[test]
 fn test_inter_split_insert_right_begin() {
-    let cap = InterNode::<i32, i32>::cap() as u32;
+    reset_alive_count();
+    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
-            node.insert_no_split((i * 10) as i32, (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
+            node.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
         }
         node.get_header_mut().count = cap;
 
         let split_idx = cap >> 1;
-        let insert_key = (split_idx * 10 + 5) as i32; // Key after split_idx
+        let insert_key: CounterI32 = ((split_idx * 10 + 5) as i32).into(); // Key after split_idx
+        let insert_key_value = insert_key.value;
         let insert_child = 0x5000 as *mut NodeHeader;
         let insert_idx = node.search_key(&insert_key);
         assert_eq!(insert_idx, split_idx + 1);
@@ -233,16 +248,16 @@ fn test_inter_split_insert_right_begin() {
         );
 
         for i in 0..split_idx {
-            assert_eq!((*node.key_ptr(i)).assume_init_read(), ((i) * 10) as i32);
+            assert_eq!((*node.key_ptr(i)).assume_init_ref(), ((i) * 10) as i32);
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
         assert_eq!(*new_node.child_ptr(0), (0x1000 + (split_idx + 1) * 0x100) as *mut NodeHeader);
 
-        assert_eq!((*new_node.key_ptr(0)).assume_init_read(), insert_key);
+        assert_eq!((*new_node.key_ptr(0)).assume_init_ref(), insert_key_value);
         assert_eq!((*new_node.child_ptr(1)), insert_child);
 
         for i in 1..cap - split_idx {
-            assert_eq!((*new_node.key_ptr(i)).assume_init_read(), ((split_idx + i) * 10) as i32);
+            assert_eq!((*new_node.key_ptr(i)).assume_init_ref(), ((split_idx + i) * 10) as i32);
             assert_eq!(
                 *new_node.child_ptr(i + 1),
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
@@ -252,31 +267,37 @@ fn test_inter_split_insert_right_begin() {
         node.dealloc();
         println!("Test Case 3 completed successfully");
     }
+    assert_eq!(alive_count(), 0);
 }
 
 #[test]
 fn test_inter_split_insert_right_mid() {
-    let cap = InterNode::<i32, i32>::cap() as u32;
+    reset_alive_count();
+    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
-            node.insert_no_split((i * 10) as i32, (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
+            node.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
         }
         node.get_header_mut().count = cap;
 
         let split_idx = cap >> 1;
-        let insert_key = (split_idx * 11 + 5) as i32; // Key after split_idx + 1
+        let insert_key: CounterI32 = ((split_idx * 11 + 5) as i32).into(); // Key after split_idx + 1
+        let insert_key_value = insert_key.value;
         let insert_child = 0x5000 as *mut NodeHeader;
         let insert_idx = node.search_key(&insert_key);
         assert_eq!(insert_idx, split_idx + 2);
         println!("cap {cap} split_idx {split_idx} insert_idx {insert_idx}");
 
         let (new_node, promote_key) = node.insert_split(insert_key, insert_child);
-        assert_eq!(promote_key, (split_idx * 10) as i32);
+        assert_eq!(promote_key.value, (split_idx * 10) as i32);
 
         // Verify counts
         let left_count = node.key_count() as u32;
@@ -291,20 +312,20 @@ fn test_inter_split_insert_right_mid() {
         );
 
         for i in 0..split_idx {
-            assert_eq!((*node.key_ptr(i)).assume_init_read(), ((i) * 10) as i32);
+            assert_eq!((*node.key_ptr(i)).assume_init_ref(), ((i) * 10) as i32);
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
         assert_eq!(*new_node.child_ptr(0), (0x1000 + (split_idx + 1) * 0x100) as *mut NodeHeader);
 
-        assert_eq!((*new_node.key_ptr(0)).assume_init_read(), ((split_idx + 1) * 10) as i32);
+        assert_eq!((*new_node.key_ptr(0)).assume_init_ref(), ((split_idx + 1) * 10) as i32);
         assert_eq!(
             *new_node.child_ptr(1),
             (0x1000 + (split_idx + 1 + 1) * 0x100) as *mut NodeHeader
         );
-        assert_eq!((*new_node.key_ptr(1)).assume_init_read(), insert_key);
+        assert_eq!((*new_node.key_ptr(1)).assume_init_ref(), insert_key_value);
         assert_eq!((*new_node.child_ptr(2)), insert_child);
         for i in 2..cap - split_idx {
-            assert_eq!((*new_node.key_ptr(i)).assume_init_read(), ((split_idx + i) * 10) as i32);
+            assert_eq!((*new_node.key_ptr(i)).assume_init_ref(), ((split_idx + i) * 10) as i32);
             assert_eq!(
                 *new_node.child_ptr(i + 1),
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
@@ -314,30 +335,36 @@ fn test_inter_split_insert_right_mid() {
         node.dealloc();
         println!("Test Case 3 completed successfully");
     }
+    assert_eq!(alive_count(), 0);
 }
 
 #[test]
 fn test_inter_split_insert_at_end() {
-    let cap = InterNode::<i32, i32>::cap() as u32;
+    reset_alive_count();
+    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
-            node.insert_no_split((i * 10) as i32, (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
+            node.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
         }
         node.get_header_mut().count = cap;
 
-        let insert_key = (cap + 1) as i32 * 10; // Key after split_idx + 1
+        let insert_key: CounterI32 = (((cap + 1) as i32) * 10).into(); // Key after split_idx + 1
+        let insert_key_value = insert_key.value;
         let insert_child = 0x5000 as *mut NodeHeader;
         let insert_idx = node.search_key(&insert_key);
         assert_eq!(insert_idx, cap);
         println!("cap {cap} insert_idx {insert_idx}");
 
         let (new_node, promote_key) = node.insert_split(insert_key, insert_child);
-        assert_eq!(promote_key, insert_key);
+        assert_eq!(promote_key.value, insert_key_value);
 
         // Verify counts
         let left_count = node.key_count() as u32;
@@ -347,7 +374,7 @@ fn test_inter_split_insert_at_end() {
         assert_eq!(right_count, 0, "Right node should have cap - split_idx keys");
 
         for i in 0..cap {
-            assert_eq!((*node.key_ptr(i)).assume_init_read(), ((i) * 10) as i32);
+            assert_eq!((*node.key_ptr(i)).assume_init_ref(), ((i) * 10) as i32);
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
         assert_eq!(*new_node.child_ptr(0), insert_child);
@@ -355,4 +382,5 @@ fn test_inter_split_insert_at_end() {
         node.dealloc();
         println!("Test Case 3 completed successfully");
     }
+    assert_eq!(alive_count(), 0);
 }

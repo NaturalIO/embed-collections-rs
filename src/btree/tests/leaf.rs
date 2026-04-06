@@ -1,4 +1,5 @@
 use super::super::{leaf::*, *};
+use super::{CounterI32, alive_count, reset_alive_count};
 
 #[test]
 fn test_leaf_align() {
@@ -369,5 +370,189 @@ fn test_btree_split_leaf_verify_structure() {
                 println!("Leaf 1 has {} items", leaf1.key_count());
             }
         }
+    }
+}
+
+#[test]
+fn test_remove_pair_no_borrow_basic() {
+    reset_alive_count();
+    unsafe {
+        let mut leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+
+        // Insert 5 pairs: (0,0), (10,100), (20,200), (30,300), (40,400)
+        for i in 0..5 {
+            leaf.insert_no_split((i * 10).into(), (i * 100).into());
+        }
+        assert_eq!(leaf.key_count(), 5);
+        assert_eq!(alive_count(), 10);
+
+        // Remove middle pair at index 2: removes (20, 200)
+        let (k1, v1) = leaf.remove_pair_no_borrow(2);
+        assert_eq!(k1, 20);
+        assert_eq!(v1, 200);
+        assert_eq!(leaf.key_count(), 4);
+        assert_eq!(alive_count(), 10);
+        // Verify remaining keys and values: [0, 10, 30, 40] and [0, 100, 300, 400]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 0);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 0);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(2)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(2)).assume_init_ref(), 300);
+        assert_eq!(*(*leaf.key_ptr(3)).assume_init_ref(), 40);
+        assert_eq!(*(*leaf.value_ptr(3)).assume_init_ref(), 400);
+
+        // Remove first pair: removes (0, 0)
+        let (k2, v2) = leaf.remove_pair_no_borrow(0);
+        assert_eq!(k2, 0);
+        assert_eq!(v2, 0);
+        assert_eq!(leaf.key_count(), 3);
+        assert_eq!(alive_count(), 10);
+        // Verify remaining: [10, 30, 40] and [100, 300, 400]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 300);
+        assert_eq!(*(*leaf.key_ptr(2)).assume_init_ref(), 40);
+        assert_eq!(*(*leaf.value_ptr(2)).assume_init_ref(), 400);
+
+        // Remove last pair at index 2: removes (40, 400)
+        let (k3, v3) = leaf.remove_pair_no_borrow(2);
+        assert_eq!(k3, 40);
+        assert_eq!(v3, 400);
+        assert_eq!(leaf.key_count(), 2);
+        assert_eq!(alive_count(), 10);
+        // Verify remaining: [10, 30] and [100, 300]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 300);
+
+        // Drop removed pairs (alive = 4)
+        drop(k1);
+        drop(v1);
+        drop(k2);
+        drop(v2);
+        drop(k3);
+        drop(v3);
+        assert_eq!(alive_count(), 4);
+
+        // Dealloc leaf drops remaining 2 pairs (alive = 0)
+        leaf.dealloc::<true>();
+        assert_eq!(alive_count(), 0);
+    }
+}
+
+#[test]
+fn test_remove_pair_no_borrow_single_element() {
+    reset_alive_count();
+    unsafe {
+        let mut leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+
+        leaf.insert_no_split(42.into(), 420.into());
+        assert_eq!(leaf.key_count(), 1);
+        assert_eq!(alive_count(), 2);
+
+        let (k, v) = leaf.remove_pair_no_borrow(0);
+        assert_eq!(k, 42);
+        assert_eq!(v, 420);
+        assert_eq!(leaf.key_count(), 0);
+        assert_eq!(alive_count(), 2); // Moved out
+
+        drop(k);
+        drop(v);
+        assert_eq!(alive_count(), 0);
+
+        leaf.dealloc::<true>();
+        assert_eq!(alive_count(), 0);
+    }
+}
+
+#[test]
+fn test_remove_value_no_borrow_basic() {
+    reset_alive_count();
+    unsafe {
+        let mut leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+
+        // Insert 5 pairs: (0,0), (10,100), (20,200), (30,300), (40,400)
+        for i in 0..5 {
+            leaf.insert_no_split((i * 10).into(), (i * 100).into());
+        }
+        assert_eq!(leaf.key_count(), 5);
+        assert_eq!(alive_count(), 10);
+
+        // Remove value at index 2 - key 20 dropped, value 200 returned (alive = 9)
+        let v1 = leaf.remove_value_no_borrow(2);
+        assert_eq!(v1, 200);
+        assert_eq!(leaf.key_count(), 4);
+        assert_eq!(alive_count(), 9);
+        // Verify remaining keys and values: [0, 10, 30, 40] and [0, 100, 300, 400]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 0);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 0);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(2)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(2)).assume_init_ref(), 300);
+        assert_eq!(*(*leaf.key_ptr(3)).assume_init_ref(), 40);
+        assert_eq!(*(*leaf.value_ptr(3)).assume_init_ref(), 400);
+
+        // Remove value at index 0 - key 0 dropped (alive = 8)
+        let v2 = leaf.remove_value_no_borrow(0);
+        assert_eq!(v2, 0);
+        assert_eq!(leaf.key_count(), 3);
+        assert_eq!(alive_count(), 8);
+        // Verify remaining: [10, 30, 40] and [100, 300, 400]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 300);
+        assert_eq!(*(*leaf.key_ptr(2)).assume_init_ref(), 40);
+        assert_eq!(*(*leaf.value_ptr(2)).assume_init_ref(), 400);
+
+        // Remove value at index 2 - key 40 dropped (alive = 7)
+        let v3 = leaf.remove_value_no_borrow(2);
+        assert_eq!(v3, 400);
+        assert_eq!(leaf.key_count(), 2);
+        assert_eq!(alive_count(), 7);
+        // Verify remaining: [10, 30] and [100, 300]
+        assert_eq!(*(*leaf.key_ptr(0)).assume_init_ref(), 10);
+        assert_eq!(*(*leaf.value_ptr(0)).assume_init_ref(), 100);
+        assert_eq!(*(*leaf.key_ptr(1)).assume_init_ref(), 30);
+        assert_eq!(*(*leaf.value_ptr(1)).assume_init_ref(), 300);
+
+        // Drop returned values (alive = 4)
+        drop(v1);
+        drop(v2);
+        drop(v3);
+        assert_eq!(alive_count(), 4);
+
+        // Dealloc remaining 2 pairs (alive = 0)
+        leaf.dealloc::<true>();
+        assert_eq!(alive_count(), 0);
+    }
+}
+
+#[test]
+fn test_remove_value_no_borrow_single_element() {
+    reset_alive_count();
+    unsafe {
+        let mut leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+
+        leaf.insert_no_split(42.into(), 420.into());
+        assert_eq!(leaf.key_count(), 1);
+        assert_eq!(alive_count(), 2);
+
+        // Remove value - key dropped, value returned (alive = 1)
+        let v = leaf.remove_value_no_borrow(0);
+        assert_eq!(v, 420);
+        assert_eq!(leaf.key_count(), 0);
+        assert_eq!(alive_count(), 1);
+
+        // Drop value (alive = 0)
+        drop(v);
+        assert_eq!(alive_count(), 0);
+
+        leaf.dealloc::<true>();
+        assert_eq!(alive_count(), 0);
     }
 }

@@ -1,4 +1,5 @@
 use super::super::{inter::*, leaf::*, node::*, *};
+use super::{CounterI32, alive_count, reset_alive_count};
 use core::cell::UnsafeCell;
 
 /// Test: Merge middle leaf with left sibling in height=2 tree
@@ -15,31 +16,32 @@ use core::cell::UnsafeCell;
 /// - change_key skip as right node does not change
 #[test]
 fn test_leaf_del_merge_with_left_height_2() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create three leaf nodes
-        let mut left_leaf = LeafNode::<i32, i32>::alloc();
-        let mut middle_leaf = LeafNode::<i32, i32>::alloc();
-        let mut right_leaf = LeafNode::<i32, i32>::alloc();
+        let mut left_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut middle_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut right_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
 
         // Fill left leaf to min_count (can accept merge)
         for i in 0..min_count {
-            left_leaf.insert_no_split(i as i32 * 2, i as i32 * 10);
+            left_leaf.insert_no_split((i as i32 * 2).into(), (i as i32 * 10).into());
         }
 
         // Fill middle leaf to just above underflow threshold
         for i in 0..min_count {
             let key = (min_count + i) as i32 * 2;
-            middle_leaf.insert_no_split(key, (min_count + i) as i32 * 10);
+            middle_leaf.insert_no_split(key.into(), ((min_count + i) as i32 * 10).into());
         }
 
         // Fill right leaf to min_count
         for i in 0..leaf_cap {
             let key = (2 * min_count + i) as i32 * 2;
-            right_leaf.insert_no_split(key, (2 * min_count + i) as i32 * 10);
+            right_leaf.insert_no_split(key.into(), ((2 * min_count + i) as i32 * 10).into());
         }
 
         // Link leaf nodes
@@ -48,21 +50,21 @@ fn test_leaf_del_merge_with_left_height_2() {
         (*middle_leaf.brothers()).next = right_leaf.get_ptr();
         (*right_leaf.brothers()).prev = middle_leaf.get_ptr();
 
-        let middle_first_key = middle_leaf.get_keys()[0];
-        let right_first_key = right_leaf.get_keys()[0];
-        let left_last_key = left_leaf.get_keys()[left_leaf.key_count() as usize - 1];
+        let middle_first_key = middle_leaf.get_keys()[0].clone();
+        let right_first_key = right_leaf.get_keys()[0].clone();
+        let left_last_key = left_leaf.get_keys()[left_leaf.key_count() as usize - 1].clone();
 
         // Create root internal node with height=1
-        let mut root = InterNode::<i32, i32>::new_root(
+        let mut root = InterNode::<CounterI32, CounterI32>::new_root(
             1,
             middle_first_key,
             left_leaf.get_ptr(),
             middle_leaf.get_ptr(),
         );
-        root.insert_no_split(right_first_key, right_leaf.get_ptr());
+        root.insert_no_split(right_first_key.clone(), right_leaf.get_ptr());
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (2 * min_count + leaf_cap) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -100,8 +102,8 @@ fn test_leaf_del_merge_with_left_height_2() {
             let key = i as i32 * 2;
             if key != delete_key {
                 assert_eq!(
-                    map.get(&key),
-                    Some(&(i as i32 * 10)),
+                    map.get(&key).map(|v| **v),
+                    Some(i as i32 * 10),
                     "Original left leaf key {} should be accessible",
                     key
                 );
@@ -109,8 +111,8 @@ fn test_leaf_del_merge_with_left_height_2() {
         }
         // The one remaining key from middle leaf should be in left leaf now
         assert_eq!(
-            map.get(&middle_remaining_key),
-            Some(&(middle_remaining_key * 10 / 2)),
+            map.get(&middle_remaining_key).map(|v| **v),
+            Some(*middle_remaining_key * 10 / 2),
             "Remaining middle leaf key {} should be merged into left leaf",
             middle_remaining_key
         );
@@ -127,6 +129,7 @@ fn test_leaf_del_merge_with_left_height_2() {
         // Cleanup
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Merge middle leaf with right sibling in height=2 tree
@@ -148,32 +151,33 @@ fn test_leaf_del_merge_with_left_height_2() {
 /// - Change sep key of right leaf after shifting left
 #[test]
 fn test_merge_left_with_right_height_2() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create three leaf nodes
-        let mut left_leaf = LeafNode::<i32, i32>::alloc();
-        let mut middle_leaf = LeafNode::<i32, i32>::alloc();
-        let mut right_leaf = LeafNode::<i32, i32>::alloc();
+        let mut left_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut middle_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut right_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
 
         // Fill left leaf to min_count
         for i in 0..leaf_cap {
             let key = i as i32 * 2;
-            left_leaf.insert_no_split(i as i32 * 2, key * 10);
+            left_leaf.insert_no_split((i as i32 * 2).into(), (key * 10).into());
         }
 
         // Fill middle leaf to just above underflow threshold
         for i in 0..min_count {
             let key = (leaf_cap + i) as i32 * 2;
-            middle_leaf.insert_no_split(key, key * 10);
+            middle_leaf.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Fill right leaf to min_count (can accept merge)
         for i in 0..min_count {
             let key = (leaf_cap + min_count + i) as i32 * 2;
-            right_leaf.insert_no_split(key, key * 10);
+            right_leaf.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Link leaf nodes
@@ -182,17 +186,17 @@ fn test_merge_left_with_right_height_2() {
         (*middle_leaf.brothers()).next = right_leaf.get_ptr();
         (*right_leaf.brothers()).prev = middle_leaf.get_ptr();
 
-        let middle_first_key = middle_leaf.get_keys()[0];
-        let right_first_key = right_leaf.get_keys()[0];
+        let middle_first_key = middle_leaf.get_keys()[0].clone();
+        let right_first_key = right_leaf.get_keys()[0].clone();
 
         // Create root internal node with height=1
-        let mut root = InterNode::<i32, i32>::alloc(1);
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(1);
         root.set_left_ptr(left_leaf.get_ptr());
         root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
-        root.insert_no_split(right_first_key, right_leaf.get_ptr());
+        root.insert_no_split(right_first_key.clone(), right_leaf.get_ptr());
 
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (leaf_cap + 2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -224,11 +228,12 @@ fn test_merge_left_with_right_height_2() {
         for i in 0..(min_count * 2 + leaf_cap) {
             let key = i as i32 * 2;
             if key != delete_key {
-                assert_eq!(map.get(&key), Some(&(key * 10)));
+                assert_eq!(map.get(&key).map(|v| **v), Some(key * 10));
             }
         }
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Three-way merge (left + middle + right -> left + right)
@@ -249,8 +254,9 @@ fn test_merge_left_with_right_height_2() {
 /// - change_key for right leaf after shifting leeft
 #[test]
 fn test_leaf_del_merge_3_2_height_2() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let _min_count = (leaf_cap + 1) / 2;
         // For 3-way merge, we need small nodes
         // left + middle + right should be <= 2 * cap
@@ -261,26 +267,24 @@ fn test_leaf_del_merge_3_2_height_2() {
         println!("leaf_cap {leaf_cap}");
 
         // Create three leaf nodes with small counts
-        let mut left_leaf = LeafNode::<i32, i32>::alloc();
-        let mut middle_leaf = LeafNode::<i32, i32>::alloc();
-        let mut right_leaf = LeafNode::<i32, i32>::alloc();
+        let mut left_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut middle_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut right_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
 
         // Fill left leaf
         for i in 0..leaf_cap - 1 {
             let key = i as i32 * 2;
-            left_leaf.insert_no_split(key, key * 10);
+            left_leaf.insert_no_split(key.into(), (key * 10).into());
         }
-
         // Fill middle leaf
         for i in 0..3 {
             let key = (leaf_cap - 1 + i) as i32 * 2;
-            middle_leaf.insert_no_split(key, key * 10);
+            middle_leaf.insert_no_split(key.into(), (key * 10).into());
         }
-
         // Fill right leaf
         for i in 0..(leaf_cap - 1) {
             let key = (leaf_cap - 1 + 3 + i) as i32 * 2;
-            right_leaf.insert_no_split(key, key * 10);
+            right_leaf.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Link leaf nodes
@@ -289,18 +293,18 @@ fn test_leaf_del_merge_3_2_height_2() {
         (*middle_leaf.brothers()).next = right_leaf.get_ptr();
         (*right_leaf.brothers()).prev = middle_leaf.get_ptr();
 
-        let middle_first_key = middle_leaf.get_keys()[0];
-        let right_first_key = right_leaf.get_keys()[0];
+        let middle_first_key = middle_leaf.get_keys()[0].clone();
+        let right_first_key = right_leaf.get_keys()[0].clone();
 
         // Create root internal node with height=1
-        let mut root = InterNode::<i32, i32>::alloc(1);
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(1);
         root.set_left_ptr(left_leaf.get_ptr());
         root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
-        root.insert_no_split(right_first_key, right_leaf.get_ptr());
+        root.insert_no_split(right_first_key.clone(), right_leaf.get_ptr());
 
         let total_keys = leaf_cap * 2 - 2 + 3;
         // Create BTreeMap with this structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root.clone())),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -323,7 +327,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         for i in 0..total_keys {
             let key = i as i32 * 2;
             if key != delete_key {
-                assert_eq!(map.get(&key), Some(&(key * 10)), "key {key}");
+                assert_eq!(map.get(&key).map(|v| **v), Some(key * 10), "key {key}");
             } else {
                 assert_eq!(map.get(&key), None);
             }
@@ -333,6 +337,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         assert!(root.get_keys()[0] != right_first_key);
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Merge at the leftmost leaf (no left sibling, must merge with right)
@@ -355,40 +360,41 @@ fn test_leaf_del_merge_3_2_height_2() {
 /// - downgrade root to the only leaf
 #[test]
 fn test_leaf_del_leftmost_merge_right_height_2() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create two leaf nodes
-        let mut left_leaf = LeafNode::<i32, i32>::alloc();
-        let mut right_leaf = LeafNode::<i32, i32>::alloc();
+        let mut left_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut right_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
 
         // Fill left leaf to just above underflow
         for i in 0..min_count {
-            left_leaf.insert_no_split(i as i32 * 2, i as i32 * 10);
+            left_leaf.insert_no_split((i as i32 * 2).into(), (i as i32 * 10).into());
         }
 
         // Fill right leaf to min_count (can accept merge)
         for i in 0..min_count {
             let key = (min_count + i) as i32 * 2;
-            right_leaf.insert_no_split(key, (min_count + i) as i32 * 10);
+            right_leaf.insert_no_split(key.into(), ((min_count + i) as i32 * 10).into());
         }
 
         // Link leaves
         (*left_leaf.brothers()).next = right_leaf.get_ptr();
         (*right_leaf.brothers()).prev = left_leaf.get_ptr();
 
-        let right_first_key = right_leaf.get_keys()[0];
-        let left_first_key = left_leaf.get_keys()[0];
+        let right_first_key = right_leaf.get_keys()[0].clone();
+        let left_first_key = left_leaf.get_keys()[0].clone();
 
         // Create root internal node with height=1
-        let mut root = InterNode::<i32, i32>::alloc(1);
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(1);
         root.set_left_ptr(left_leaf.get_ptr());
-        root.insert_no_split(right_first_key, right_leaf.get_ptr());
+        root.insert_no_split(right_first_key.clone(), right_leaf.get_ptr());
 
         // Create BTreeMap
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -403,6 +409,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         }
 
         map.validate();
+        println!("alive count after remove: {}", alive_count());
 
         // Verify structure
         assert_eq!(map.len(), (min_count + 1) as usize);
@@ -410,8 +417,8 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         // Verify all remaining data is accessible
         // Leftmost key should still be accessible
         assert_eq!(
-            map.get(&left_first_key),
-            Some(&(left_first_key * 10 / 2)),
+            map.get(&left_first_key).map(|v| **v),
+            Some(*left_first_key * 10 / 2),
             "Leftmost key {} should be accessible after merge",
             left_first_key
         );
@@ -420,8 +427,8 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         for i in 0..min_count {
             let key = (min_count + i) as i32 * 2;
             assert_eq!(
-                map.get(&key),
-                Some(&(key * 5)),
+                map.get(&key).map(|v| **v),
+                Some(key * 5),
                 "Right leaf key {} should be accessible after merge",
                 key
             );
@@ -431,15 +438,18 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         for i in 0..min_count {
             let right_key = (min_count + i) as i32 * 2;
             assert!(
-                left_first_key < right_key,
+                *left_first_key < right_key,
                 "Leftmost key {} should be less than right key {}",
                 left_first_key,
                 right_key
             );
         }
         assert_eq!(map.height(), 1);
+        println!("before drop map, alive count: {}", alive_count());
         drop(map);
+        println!("after drop map, alive count: {}", alive_count());
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Merge at the rightmost leaf (no right sibling, must merge with left)
@@ -461,40 +471,41 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
 /// - downgrade root to the only leaf
 #[test]
 fn test_leaf_del_merge_left_with_rightmost_height_2() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create two leaf nodes
-        let mut left_leaf = LeafNode::<i32, i32>::alloc();
-        let mut right_leaf = LeafNode::<i32, i32>::alloc();
+        let mut left_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut right_leaf = LeafNode::<CounterI32, CounterI32>::alloc();
 
         // Fill left leaf to min_count (can accept merge)
         for i in 0..min_count {
-            left_leaf.insert_no_split(i as i32 * 2, i as i32 * 10);
+            left_leaf.insert_no_split((i as i32 * 2).into(), (i as i32 * 10).into());
         }
 
         // Fill right leaf to just above underflow
         for i in 0..min_count {
             let key = (min_count + i) as i32 * 2;
-            right_leaf.insert_no_split(key, (min_count + i) as i32 * 10);
+            right_leaf.insert_no_split(key.into(), ((min_count + i) as i32 * 10).into());
         }
 
         // Link leaves
         (*left_leaf.brothers()).next = right_leaf.get_ptr();
         (*right_leaf.brothers()).prev = left_leaf.get_ptr();
 
-        let right_first_key = right_leaf.get_keys()[0];
-        let left_last_key = left_leaf.get_keys()[left_leaf.key_count() as usize - 1];
+        let right_first_key = right_leaf.get_keys()[0].clone();
+        let left_last_key = left_leaf.get_keys()[left_leaf.key_count() as usize - 1].clone();
 
         // Create root internal node with height=1
-        let mut root = InterNode::<i32, i32>::alloc(1);
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(1);
         root.set_left_ptr(left_leaf.get_ptr());
-        root.insert_no_split(right_first_key, right_leaf.get_ptr());
+        root.insert_no_split(right_first_key.clone(), right_leaf.get_ptr());
 
         // Create BTreeMap
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -504,7 +515,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
         //map.dump();
 
         // Record rightmost key that will remain after removals
-        let right_remaining_key = right_leaf.get_keys()[0];
+        let right_remaining_key = right_leaf.get_keys()[0].clone();
 
         // Remove elements from right leaf to trigger merge with left
         for i in 1..min_count {
@@ -522,23 +533,23 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
         for i in 0..min_count {
             let key = i as i32 * 2;
             assert_eq!(
-                map.get(&key),
-                Some(&(i as i32 * 10)),
+                map.get(&key).map(|v| **v),
+                Some(i as i32 * 10),
                 "Left leaf key {} should be accessible",
                 key
             );
         }
         // Right leaf's remaining key should be merged into left
         assert_eq!(
-            map.get(&right_remaining_key),
-            Some(&(right_remaining_key * 10 / 2)),
+            map.get(&right_remaining_key).map(|v| **v),
+            Some(*right_remaining_key * 10 / 2),
             "Right leaf remaining key {} should be merged into left",
             right_remaining_key
         );
 
         // Verify ordering: left_last_key < right_remaining_key
         assert!(
-            left_last_key < right_remaining_key,
+            *left_last_key < *right_remaining_key,
             "Left last key {} should be less than right remaining key {}",
             left_last_key,
             right_remaining_key
@@ -547,6 +558,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
 
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Merge in height=3 tree (root -> internal nodes -> leaves)
@@ -572,27 +584,37 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
 /// - merge with left brother, right is not touch
 #[test]
 fn test_leaf_del_merge_with_left_height_3() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create leaf nodes for left branch
-        let mut leaf_0 = LeafNode::<i32, i32>::alloc();
-        let mut leaf_1 = LeafNode::<i32, i32>::alloc();
+        let mut leaf_0 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
         for i in 0..min_count {
-            leaf_0.insert_no_split(i as i32 * 2, i as i32 * 10);
+            leaf_0.insert_no_split((i as i32 * 2).into(), (i as i32 * 10).into());
         }
         for i in 0..min_count {
-            leaf_1.insert_no_split((min_count + i) as i32 * 2, (min_count + i) as i32 * 10);
+            leaf_1.insert_no_split(
+                ((min_count + i) as i32 * 2).into(),
+                ((min_count + i) as i32 * 10).into(),
+            );
         }
 
         // Create leaf nodes for right branch
-        let mut leaf_2 = LeafNode::<i32, i32>::alloc();
-        let mut leaf_3 = LeafNode::<i32, i32>::alloc();
+        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
         for i in 0..min_count {
-            leaf_2.insert_no_split((2 * min_count + i) as i32 * 2, (2 * min_count + i) as i32 * 10);
-            leaf_3.insert_no_split((3 * min_count + i) as i32 * 2, (3 * min_count + i) as i32 * 10);
+            leaf_2.insert_no_split(
+                ((2 * min_count + i) as i32 * 2).into(),
+                ((2 * min_count + i) as i32 * 10).into(),
+            );
+            leaf_3.insert_no_split(
+                ((3 * min_count + i) as i32 * 2).into(),
+                ((3 * min_count + i) as i32 * 10).into(),
+            );
         }
 
         // Link leaves
@@ -603,27 +625,27 @@ fn test_leaf_del_merge_with_left_height_3() {
         (*leaf_2.brothers()).next = leaf_3.get_ptr();
         (*leaf_3.brothers()).prev = leaf_2.get_ptr();
 
-        let leaf1_first_key = leaf_1.get_keys()[0];
-        let leaf2_first_key = leaf_2.get_keys()[0];
-        let leaf3_first_key = leaf_3.get_keys()[0];
+        let leaf1_first_key = leaf_1.get_keys()[0].clone();
+        let leaf2_first_key = leaf_2.get_keys()[0].clone();
+        let leaf3_first_key = leaf_3.get_keys()[0].clone();
 
         // Create left internal node (height=1)
-        let mut internal_left = InterNode::<i32, i32>::alloc(1);
+        let mut internal_left = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_left.set_left_ptr(leaf_0.get_ptr());
         internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr());
 
         // Create right internal node (height=1)
-        let mut internal_right = InterNode::<i32, i32>::alloc(1);
+        let mut internal_right = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_right.set_left_ptr(leaf_2.get_ptr());
         internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr());
 
         // Create root internal node (height=2)
-        let mut root = InterNode::<i32, i32>::alloc(2);
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
         root.set_left_ptr(internal_left.get_ptr());
-        root.insert_no_split(leaf2_first_key, internal_right.get_ptr());
+        root.insert_no_split(leaf2_first_key.clone(), internal_right.get_ptr());
 
         // Create BTreeMap with height=3 structure
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (4 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -633,8 +655,8 @@ fn test_leaf_del_merge_with_left_height_3() {
         //map.dump();
 
         // Record the key that will remain in leaf_1 after removals
-        let leaf_1_remaining_key = leaf_1.get_keys()[0];
-        let leaf_0_last_key = leaf_0.get_keys()[leaf_0.key_count() as usize - 1];
+        let leaf_1_remaining_key = leaf_1.get_keys()[0].clone();
+        let leaf_0_last_key = leaf_0.get_keys()[leaf_0.key_count() as usize - 1].clone();
 
         // Remove elements from leaf_1 to trigger merge with leaf_0
         for i in 1..min_count {
@@ -660,23 +682,23 @@ fn test_leaf_del_merge_with_left_height_3() {
         for i in 0..min_count {
             let key = i as i32 * 2;
             assert_eq!(
-                map.get(&key),
-                Some(&(i as i32 * 10)),
+                map.get(&key).map(|v| **v),
+                Some(i as i32 * 10),
                 "leaf_0 key {} should be accessible",
                 key
             );
         }
         // The one remaining key from leaf_1
         assert_eq!(
-            map.get(&leaf_1_remaining_key),
-            Some(&(leaf_1_remaining_key * 10 / 2)),
+            map.get(&leaf_1_remaining_key).map(|v| **v),
+            Some(*leaf_1_remaining_key * 10 / 2),
             "leaf_1 remaining key {} should be merged into leaf_0",
             leaf_1_remaining_key
         );
 
         // Verify key ordering
         assert!(
-            leaf_0_last_key < leaf_1_remaining_key,
+            *leaf_0_last_key < *leaf_1_remaining_key,
             "leaf_0 last key {} should be less than merged leaf_1 key {}",
             leaf_0_last_key,
             leaf_1_remaining_key
@@ -684,6 +706,7 @@ fn test_leaf_del_merge_with_left_height_3() {
 
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Merge with right sibling in different subtree (height=3)
@@ -715,38 +738,39 @@ fn test_leaf_del_merge_with_left_height_3() {
 /// - Update root sep key of right after merge
 #[test]
 fn test_leaf_del_merge_with_right_height_3() {
+    reset_alive_count();
     unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
         let min_count = (leaf_cap + 1) / 2;
         assert!(min_count > 2);
 
         // Create leaf nodes
-        let mut leaf_0 = LeafNode::<i32, i32>::alloc(); // Full
-        let mut leaf_1 = LeafNode::<i32, i32>::alloc(); // Half-full, will underflow
-        let mut leaf_2 = LeafNode::<i32, i32>::alloc(); // Half-full, can accept merge
-        let mut leaf_3 = LeafNode::<i32, i32>::alloc(); // Not used in merge
+        let mut leaf_0 = LeafNode::<CounterI32, CounterI32>::alloc(); // Full
+        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc(); // Half-full, will underflow
+        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc(); // Half-full, can accept merge
+        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc(); // Not used in merge
 
         // Fill leaf_0 to capacity (full)
         for i in 0..leaf_cap {
-            leaf_0.insert_no_split(i as i32 * 2, i as i32 * 10);
+            leaf_0.insert_no_split((i as i32 * 2).into(), (i as i32 * 10).into());
         }
 
         // Fill leaf_1 to min_count (half-full, will underflow after delete)
         for i in 0..min_count {
             let key = (leaf_cap + i) as i32 * 2;
-            leaf_1.insert_no_split(key, key * 10);
+            leaf_1.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Fill leaf_2 to min_count (half-full, can accept merge)
         for i in 0..min_count {
             let key = (leaf_cap + min_count + i) as i32 * 2;
-            leaf_2.insert_no_split(key, key * 10);
+            leaf_2.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Fill leaf_3 with some data
         for i in 0..min_count {
             let key = (leaf_cap + 2 * min_count + i) as i32 * 2;
-            leaf_3.insert_no_split(key, key * 10);
+            leaf_3.insert_no_split(key.into(), (key * 10).into());
         }
 
         // Link leaves in chain
@@ -757,30 +781,30 @@ fn test_leaf_del_merge_with_right_height_3() {
         (*leaf_2.brothers()).next = leaf_3.get_ptr();
         (*leaf_3.brothers()).prev = leaf_2.get_ptr();
 
-        let leaf_1_first_key = leaf_1.get_keys()[0];
-        let leaf_2_first_key = leaf_2.get_keys()[0];
-        let leaf_3_first_key = leaf_3.get_keys()[0];
+        let leaf_1_first_key = leaf_1.get_keys()[0].clone();
+        let leaf_2_first_key = leaf_2.get_keys()[0].clone();
+        let leaf_3_first_key = leaf_3.get_keys()[0].clone();
 
         // Create internal_left (height=1) with leaf_0 (full) and leaf_1 (half-full)
-        let mut internal_left = InterNode::<i32, i32>::alloc(1);
+        let mut internal_left = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_left.set_left_ptr(leaf_0.get_ptr());
         internal_left.insert_no_split(leaf_1_first_key, leaf_1.get_ptr());
 
         // Create internal_right (height=1) with leaf_2 and leaf_3
-        let mut internal_right = InterNode::<i32, i32>::alloc(1);
+        let mut internal_right = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_right.set_left_ptr(leaf_2.get_ptr());
         internal_right.insert_no_split(leaf_3_first_key, leaf_3.get_ptr());
 
         // Create root (height=2)
-        let root = InterNode::<i32, i32>::new_root(
+        let root = InterNode::<CounterI32, CounterI32>::new_root(
             2,
-            leaf_2_first_key,
+            leaf_2_first_key.clone(),
             internal_left.get_ptr(),
             internal_right.get_ptr(),
         );
 
         // Create BTreeMap
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
@@ -807,8 +831,8 @@ fn test_leaf_del_merge_with_right_height_3() {
         for i in 0..leaf_cap {
             let key = i as i32 * 2;
             assert_eq!(
-                map.get(&key),
-                Some(&(i as i32 * 10)),
+                map.get(&key).map(|v| **v),
+                Some(i as i32 * 10),
                 "leaf_0 key {} should be accessible",
                 key
             );
@@ -822,8 +846,8 @@ fn test_leaf_del_merge_with_right_height_3() {
                 // Value should be key * 10 for leaf_1/leaf_2/leaf_3 data
                 let expected_value = key * 10;
                 assert_eq!(
-                    map.get(&key),
-                    Some(&expected_value),
+                    map.get(&key).map(|v| **v),
+                    Some(expected_value),
                     "key {} should be accessible after merge",
                     key
                 );
@@ -832,6 +856,7 @@ fn test_leaf_del_merge_with_right_height_3() {
 
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
 /// Test: Three-way merge in height=3 tree (leaf_1 + leaf_2 + leaf_3 -> leaf_1 + leaf_3)
@@ -859,42 +884,39 @@ fn test_leaf_del_merge_with_right_height_3() {
 /// - change leaf_3 sep key at root level
 #[test]
 fn test_leaf_del_merge_2_3_height_3() {
-    unsafe {
-        let leaf_cap = LeafNode::<i32, i32>::cap();
-        let min_count = (leaf_cap + 1) / 2;
-        assert!(min_count > 2);
-        // For 3-way merge, we need: leaf_1 + leaf_2 + leaf_3 <= 2 * leaf_cap
-        // leaf_1 = leaf_cap - 1, leaf_2 = 3, leaf_3 = leaf_cap - 2
-        // Total = (leaf_cap - 1) + 3 + (leaf_cap - 2) = 2*leaf_cap, exactly!
+    reset_alive_count();
 
+    unsafe {
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
+        let min_count = (leaf_cap + 1) / 2;
+
+        assert!(min_count > 2);
         // Create leaf nodes
-        let mut leaf_0 = LeafNode::<i32, i32>::alloc(); // Full
-        let mut leaf_1 = LeafNode::<i32, i32>::alloc(); // One less than full (leaf_cap - 1)
-        let mut leaf_2 = LeafNode::<i32, i32>::alloc(); // Only 3 keys, will underflow
-        let mut leaf_3 = LeafNode::<i32, i32>::alloc(); // leaf_cap - 2 keys
+        let mut leaf_0 = LeafNode::<CounterI32, CounterI32>::alloc(); // Full
+        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc(); // One less than full (leaf_cap - 1)
+        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc(); // Only 3 keys, will underflow
+        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc(); // leaf_cap - 2 keys
 
         // Fill leaf_0 to capacity (full)
         for i in 0..leaf_cap {
             let key = i as i32 * 2;
-            leaf_0.insert_no_split(key, key * 5);
+            leaf_0.insert_no_split(key.into(), (key * 5).into());
         }
-
         // Fill leaf_1 to leaf_cap - 1 (one less than full)
         for i in 0..(leaf_cap - 1) {
             let key = (leaf_cap + i) as i32 * 2;
-            leaf_1.insert_no_split(key, key * 5);
+            leaf_1.insert_no_split(key.into(), (key * 5).into());
         }
 
         // Fill leaf_2 with only 3 keys (will underflow after delete)
         for i in 0..3 {
             let key = (leaf_cap + leaf_cap - 1 + i) as i32 * 2;
-            leaf_2.insert_no_split(key, key * 5);
+            leaf_2.insert_no_split(key.into(), (key * 5).into());
         }
-
         // Fill leaf_3 to leaf_cap - 2 (adjusted for 3-way merge condition)
         for i in 0..(leaf_cap - 1) {
             let key = (leaf_cap + leaf_cap - 1 + 3 + i) as i32 * 2;
-            leaf_3.insert_no_split(key, key * 5);
+            leaf_3.insert_no_split(key.into(), (key * 5).into());
         }
 
         // Link leaves in chain
@@ -905,37 +927,36 @@ fn test_leaf_del_merge_2_3_height_3() {
         (*leaf_2.brothers()).next = leaf_3.get_ptr();
         (*leaf_3.brothers()).prev = leaf_2.get_ptr();
 
-        let leaf_1_first_key = leaf_1.get_keys()[0];
-        let leaf_2_first_key = leaf_2.get_keys()[0];
-        let leaf_3_first_key = leaf_3.get_keys()[0];
-
+        let leaf_1_first_key = leaf_1.get_keys()[0].clone();
+        let leaf_2_first_key = leaf_2.get_keys()[0].clone();
+        let leaf_3_first_key = leaf_3.get_keys()[0].clone();
         // Create internal_left (height=1) with leaf_0 (full) and leaf_1
-        let mut internal_left = InterNode::<i32, i32>::alloc(1);
+        let mut internal_left = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_left.set_left_ptr(leaf_0.get_ptr());
         internal_left.insert_no_split(leaf_1_first_key, leaf_1.get_ptr());
-
         // Create internal_right (height=1) with leaf_2 and leaf_3
-        let mut internal_right = InterNode::<i32, i32>::alloc(1);
+        let mut internal_right = InterNode::<CounterI32, CounterI32>::alloc(1);
         internal_right.set_left_ptr(leaf_2.get_ptr());
         internal_right.insert_no_split(leaf_3_first_key, leaf_3.get_ptr());
 
         // Create root (height=2)
-        let root = InterNode::<i32, i32>::new_root(
+        let root = InterNode::<CounterI32, CounterI32>::new_root(
             2,
-            leaf_2_first_key,
+            leaf_2_first_key.clone(),
             internal_left.get_ptr(),
             internal_right.get_ptr(),
         );
+        // Calculate total keys: leaf_cap + (leaf_cap - 1) + 3 + (leaf_cap-2) = 3*leaf_cap
 
-        // Calculate total keys: leaf_cap + (leaf_cap-1) + 3 + (leaf_cap-2) = 3*leaf_cap
         let total_keys = leaf_cap + (leaf_cap - 1) + 3 + (leaf_cap - 1);
 
         // Create BTreeMap
-        let mut map = BTreeMap::<i32, i32> {
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(Node::Inter(root)),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
         };
+
         map.validate();
         assert_eq!(map.height(), 3);
 
@@ -946,11 +967,9 @@ fn test_leaf_del_merge_2_3_height_3() {
         assert!(map.remove(&delete_key).is_some());
 
         map.validate();
-
         // After 3-way merge, leaf_1, leaf_2, and leaf_3 should be merged
         // Total remaining keys = total_keys - 1
         assert_eq!(map.len(), (total_keys - 1) as usize);
-
         // Verify all remaining data is accessible
         // All values are stored as key * 5
         for i in 0..total_keys {
@@ -958,14 +977,14 @@ fn test_leaf_del_merge_2_3_height_3() {
             if key != delete_key {
                 let expected_value = key * 5;
                 assert_eq!(
-                    map.get(&key),
-                    Some(&expected_value),
+                    map.get(&key).map(|v| **v),
+                    Some(expected_value),
                     "key {} should be accessible after merge",
                     key
                 );
             }
         }
-
         drop(map);
     }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
