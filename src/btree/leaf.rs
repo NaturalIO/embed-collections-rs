@@ -1,6 +1,7 @@
 use super::node::*;
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, dealloc};
+use core::borrow::Borrow;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
@@ -192,11 +193,12 @@ impl<K, V> LeafNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search(&self, key: &K) -> (u32, bool)
+    pub fn search<Q>(&self, key: &Q) -> (u32, bool)
     where
-        K: Ord,
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
-        self.base._search::<K>(LEAF_HEAD_SIZE, key)
+        self.base._search::<K, Q>(LEAF_HEAD_SIZE, key)
     }
 
     /// Insert key-value at index (assuming there is space)
@@ -223,12 +225,29 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn remove_no_borrow(&mut self, idx: u32) -> (K, V) {
+    pub fn remove_pair_no_borrow(&mut self, idx: u32) -> (K, V) {
         let left = self.key_count() - 1;
         let key = self._remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
         let value = self._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
         self.get_header_mut().count = left;
         (key, value)
+    }
+
+    #[inline]
+    pub fn remove_value_no_borrow(&mut self, idx: u32) -> V {
+        let left = self.key_count() - 1;
+        unsafe {
+            let key_p = self.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx);
+            if needs_drop::<K>() {
+                (*key_p).assume_init_drop();
+            }
+            if left > idx {
+                ptr::copy(key_p.add(1), key_p, (left - idx) as usize);
+            }
+        }
+        let value = self._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
+        self.get_header_mut().count = left;
+        value
     }
 
     /// NOTE: it will require two calls to remove (k, v) pair, so the count is not decrease here

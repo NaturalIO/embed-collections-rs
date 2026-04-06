@@ -1,6 +1,8 @@
 use super::{inter::*, leaf::*};
 use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
+use core::borrow::Borrow;
+use core::cmp::Ordering;
 use core::fmt;
 use core::ops::Bound;
 use core::ptr::{self, NonNull};
@@ -111,9 +113,10 @@ impl NodeBase {
     /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
-    pub fn _search<K>(&self, header_offset: usize, key: &K) -> (u32, bool)
+    pub fn _search<K, Q>(&self, header_offset: usize, key: &Q) -> (u32, bool)
     where
-        K: Ord,
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
         // TODO review this
         macro_rules! _search {
@@ -122,11 +125,12 @@ impl NodeBase {
                 if $start < $end {
                     let mut k = self.item_ptr::<K>(header_offset, $start as u32);
                     loop {
-                        if *k == *key {
-                            return (idx, true);
-                        } else if (*k) > *key {
+                        let k_ref: &K = &*k;
+                        match k_ref.borrow().cmp(key) {
+                            Ordering::Equal => return (idx, true),
                             // insert to this pos, idx should move right
-                            return (idx, false);
+                            Ordering::Greater => return (idx, false),
+                            _ => {}
                         }
                         idx += 1;
                         k = k.add(1);
@@ -144,13 +148,14 @@ impl NodeBase {
             let count = self.key_count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
             let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
-            if count > first_line_limit
-                && *key > (*self.item_ptr::<K>(header_offset, first_line_limit - 1))
-            {
-                _search!(first_line_limit, count);
-            } else {
-                _search!(0, count);
+            if count > first_line_limit {
+                let first_line_last = &*self.item_ptr::<K>(header_offset, first_line_limit - 1);
+                if key > first_line_last.borrow() {
+                    _search!(first_line_limit, count);
+                    // will return here
+                }
             }
+            _search!(0, count);
         }
     }
 
@@ -259,7 +264,11 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[inline]
-    pub fn find_leaf(&self, key: &K) -> LeafNode<K, V> {
+    pub fn find_leaf<Q>(&self, key: &Q) -> LeafNode<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
         match self {
             Self::Leaf(node) => node.clone(),
             Self::Inter(node) => {
@@ -289,7 +298,11 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[inline]
-    pub fn find_leaf_with_cache(&self, cache: &mut PathCache<K, V>, key: &K) -> LeafNode<K, V> {
+    pub fn find_leaf_with_cache<Q>(&self, cache: &mut PathCache<K, V>, key: &Q) -> LeafNode<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
         match &self {
             Self::Leaf(node) => node.clone(),
             Self::Inter(node) => {
@@ -315,8 +328,12 @@ impl<K: Ord, V> Node<K, V> {
     /// - idx: regardless include or exclude, idx always return idx|0 for start_bound,
     ///   retrun (idx + 1) | key_count() for end_bound
     #[inline]
-    pub fn find_leaf_with_bound(&self, bound: Bound<&K>, is_start: bool) -> (LeafNode<K, V>, u32) {
-        let key = borrow_key_from_bound::<K>(bound);
+    pub fn find_leaf_with_bound<Q>(&self, bound: Bound<&Q>, is_start: bool) -> (LeafNode<K, V>, u32)
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let key = borrow_key_from_bound::<Q>(bound);
         let mut cur = self.clone();
         loop {
             match cur {
@@ -625,7 +642,7 @@ pub(super) const MERGE_RIGHT: u8 = 2;
 pub(super) fn dummy_post_callback<K, V>(_node: InterNode<K, V>) {}
 
 #[inline(always)]
-pub(super) fn borrow_key_from_bound<K>(bound: Bound<&K>) -> Option<&K> {
+pub(super) fn borrow_key_from_bound<Q: ?Sized>(bound: Bound<&Q>) -> Option<&Q> {
     match bound {
         Bound::Unbounded => None,
         Bound::Included(key) => Some(key),

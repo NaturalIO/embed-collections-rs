@@ -2,6 +2,7 @@ use super::leaf::*;
 use super::node::*;
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, dealloc};
+use core::borrow::Borrow;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
@@ -170,22 +171,24 @@ impl<K: Ord, V> InterNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_child(&self, key: &K) -> u32
+    pub fn search_child<Q>(&self, key: &Q) -> u32
     where
-        K: Ord,
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
-        let (idx, is_equal) = self.base._search::<K>(INTER_KEY_HEAD_SIZE, key);
+        let (idx, is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key);
         if is_equal { idx + 1 } else { idx }
     }
 
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_key(&self, key: &K) -> u32
+    pub fn search_key<Q>(&self, key: &Q) -> u32
     where
-        K: Ord,
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
     {
-        let (idx, _is_equal) = self.base._search::<K>(INTER_KEY_HEAD_SIZE, key);
+        let (idx, _is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key);
         idx
     }
 

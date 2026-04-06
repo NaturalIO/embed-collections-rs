@@ -63,6 +63,7 @@
 - 2 - 3 split (increase fill ratio to 90%)
 */
 
+use core::borrow::Borrow;
 use core::cell::UnsafeCell;
 #[cfg(test)]
 use core::fmt::Debug;
@@ -136,6 +137,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Returns an entry to the key in the map
+    #[inline]
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         let cache = self.get_cache();
         cache.clear();
@@ -151,39 +153,58 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         }
     }
 
+    #[inline(always)]
+    fn find<Q>(&self, key: &Q) -> Option<(LeafNode<K, V>, u32)>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let leaf = match &self.root {
+            None => return None,
+            Some(root) => root.find_leaf(key),
+        };
+        let (idx, is_equal) = leaf.search(key);
+        if is_equal { Some((leaf, idx)) } else { None }
+    }
+
     /// Returns true if the map contains the key
-    pub fn contains_key(&self, key: &K) -> bool {
-        self.get(key).is_some()
+    #[inline(always)]
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        self.find::<Q>(key).is_some()
     }
 
     /// Returns a reference to the value corresponding to the key
-    pub fn get(&self, key: &K) -> Option<&V> {
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => root.find_leaf(key),
-        };
-        let (idx, is_equal) = leaf.search(key);
-        if is_equal {
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        if let Some((leaf, idx)) = self.find::<Q>(key) {
             let value = unsafe { leaf.value_ptr(idx) };
             debug_assert!(!value.is_null());
-            return Some(unsafe { (*value).assume_init_ref() });
+            Some(unsafe { (*value).assume_init_ref() })
+        } else {
+            None
         }
-        None
     }
 
     /// Returns a mutable reference to the value corresponding to the key
-    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => root.find_leaf(key),
-        };
-        let (idx, is_equal) = leaf.search(key);
-        if is_equal {
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        if let Some((leaf, idx)) = self.find::<Q>(key) {
             let value = unsafe { leaf.value_ptr(idx) };
             debug_assert!(!value.is_null());
-            return Some(unsafe { (*value).assume_init_mut() });
+            Some(unsafe { (*value).assume_init_mut() })
+        } else {
+            None
         }
-        None
     }
 
     /// Insert a key-value pair into the map
@@ -200,11 +221,32 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Remove a key from the map, returning the value if it existed
-    pub fn remove(&mut self, key: &K) -> Option<V> {
-        //TODO fix it
-        match self.entry(key.clone()) {
-            Entry::Occupied(entry) => Some(entry.remove()),
-            Entry::Vacant(_) => None,
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        if let Some(root) = &self.root {
+            let cache = self.get_cache();
+            cache.clear();
+            let mut leaf = root.find_leaf_with_cache::<Q>(cache, key);
+            let (idx, is_equal) = leaf.search(key);
+            if is_equal {
+                let val = leaf.remove_value_no_borrow(idx);
+                self.len -= 1;
+                // Check for underflow and handle merge
+                let new_count = leaf.key_count();
+                let min_count = LeafNode::<K, V>::cap() >> 1;
+                if new_count < min_count && !root.is_leaf() {
+                    // The cache should already contain the path from the entry lookup
+                    self.handle_leaf_underflow(leaf);
+                }
+                Some(val)
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 

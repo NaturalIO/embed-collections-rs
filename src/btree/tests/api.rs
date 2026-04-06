@@ -352,3 +352,58 @@ fn test_pop_last_all() {
     assert!(map.is_empty());
     assert_eq!(map.pop_last(), None);
 }
+
+#[test]
+fn test_borrow_string_str() {
+    let mut map: BTreeMap<String, i32> = BTreeMap::new();
+    map.insert("hello".to_string(), 1);
+    map.insert("world".to_string(), 2);
+    map.insert("foo".to_string(), 3);
+    map.validate();
+
+    // Test get with &str
+    assert_eq!(map.get("hello"), Some(&1));
+    assert_eq!(map.get("world"), Some(&2));
+    assert_eq!(map.get("foo"), Some(&3));
+    assert_eq!(map.get("not_exist"), None);
+
+    // Test contains_key with &str
+    assert!(map.contains_key("hello"));
+    assert!(map.contains_key("world"));
+    assert!(!map.contains_key("not_exist"));
+
+    // Test get_mut with &str
+    if let Some(v) = map.get_mut("hello") {
+        *v = 100;
+    }
+    map.validate();
+    assert_eq!(map.get("hello"), Some(&100));
+
+    // Test remove with &str
+    assert_eq!(map.remove("foo"), Some(3));
+    map.validate();
+    assert_eq!(map.get("foo"), None);
+    assert_eq!(map.len(), 2);
+}
+
+#[test]
+fn test_borrow_vec_slice() {
+    let mut map: BTreeMap<Vec<u8>, i32> = BTreeMap::new();
+    map.insert(vec![1, 2, 3], 1);
+    map.insert(vec![4, 5, 6], 2);
+    map.validate();
+
+    // Test get with &[u8]
+    assert_eq!(map.get(&[1, 2, 3][..]), Some(&1));
+    assert_eq!(map.get(&[4, 5, 6][..]), Some(&2));
+    assert_eq!(map.get(&[7, 8, 9][..]), None);
+
+    // Test contains_key with &[u8]
+    assert!(map.contains_key(&[1, 2, 3][..]));
+    assert!(!map.contains_key(&[7, 8, 9][..]));
+
+    // Test remove with &[u8]
+    assert_eq!(map.remove(&[1, 2, 3][..]), Some(1));
+    map.validate();
+    assert_eq!(map.len(), 1);
+}

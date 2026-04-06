@@ -94,7 +94,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// Remove the key-value pair from the map and return the key and value
     #[inline]
     pub fn remove_entry(mut self) -> (K, V) {
-        let (key, val) = self.node.remove_no_borrow(self.idx);
+        let (key, val) = self.node.remove_pair_no_borrow(self.idx);
         self.map.len -= 1;
         // Check for underflow and handle merge
         let new_count = self.node.key_count();
