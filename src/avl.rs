@@ -1340,7 +1340,7 @@ where
 mod tests {
     use super::*;
     use core::cell::UnsafeCell;
-    use rand::Rng;
+    use fastrand::Rng;
     use std::time::Instant;
 
     struct IntAvlNode {
@@ -1593,11 +1593,11 @@ mod tests {
     fn int_avl_tree_random() {
         let count = 1000;
         let mut test_list: Vec<i64> = Vec::with_capacity(count);
-        let mut rng = rand::thread_rng();
+        let mut rng = Rng::new();
         let mut tree = new_inttree();
         tree.validate_tree();
         for _ in 0..count {
-            let node_value: i64 = rng.r#gen();
+            let node_value: i64 = rng.i64(..);
             if !test_list.contains(&node_value) {
                 test_list.push(node_value);
                 assert!(tree.add_int_node(new_intnode(node_value)))
