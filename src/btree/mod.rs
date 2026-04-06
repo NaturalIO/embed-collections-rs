@@ -631,6 +631,105 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         );
     }
 
+    /// Returns the first key-value pair in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn first_key_value(&self) -> Option<(&K, &V)> {
+        let leaf = match &self.root {
+            None => return None,
+            Some(root) => root.find_first_leaf(None),
+        };
+        if leaf.key_count() == 0 {
+            return None;
+        }
+        unsafe {
+            let key = (*leaf.key_ptr(0)).assume_init_ref();
+            let value = (*leaf.value_ptr(0)).assume_init_ref();
+            Some((key, value))
+        }
+    }
+
+    /// Returns the last key-value pair in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn last_key_value(&self) -> Option<(&K, &V)> {
+        let leaf = match &self.root {
+            None => return None,
+            Some(root) => root.find_last_leaf(None),
+        };
+        let count = leaf.key_count();
+        if count == 0 {
+            return None;
+        }
+        unsafe {
+            let last_idx = count - 1;
+            let key = (*leaf.key_ptr(last_idx)).assume_init_ref();
+            let value = (*leaf.value_ptr(last_idx)).assume_init_ref();
+            Some((key, value))
+        }
+    }
+
+    /// Returns an entry to the first key in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn first_entry(&mut self) -> Option<Entry<'_, K, V>> {
+        let cache = self.get_cache();
+        cache.clear();
+        let leaf = match &self.root {
+            None => return None,
+            Some(root) => {
+                let leaf = root.find_first_leaf(Some(cache));
+                // Populate cache with the path to first leaf
+                leaf
+            }
+        };
+        if leaf.key_count() == 0 {
+            return None;
+        }
+        Some(Entry::Occupied(OccupiedEntry { map: self, idx: 0, node: leaf }))
+    }
+
+    /// Returns an entry to the last key in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn last_entry(&mut self) -> Option<Entry<'_, K, V>> {
+        let cache = self.get_cache();
+        cache.clear();
+        let leaf = match &self.root {
+            None => return None,
+            Some(root) => {
+                let leaf = root.find_last_leaf(Some(cache));
+                // Populate cache with the path to last leaf
+                leaf
+            }
+        };
+        let count = leaf.key_count();
+        if count == 0 {
+            return None;
+        }
+        Some(Entry::Occupied(OccupiedEntry { map: self, idx: count - 1, node: leaf }))
+    }
+
+    /// Removes and returns the first key-value pair in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn pop_first(&mut self) -> Option<(K, V)> {
+        match self.first_entry() {
+            Some(Entry::Occupied(entry)) => Some(entry.remove_entry()),
+            _ => None,
+        }
+    }
+
+    /// Removes and returns the last key-value pair in the map
+    /// Returns `None` if the map is empty
+    #[inline]
+    pub fn pop_last(&mut self) -> Option<(K, V)> {
+        match self.last_entry() {
+            Some(Entry::Occupied(entry)) => Some(entry.remove_entry()),
+            _ => None,
+        }
+    }
+
     /// Returns an iterator over the map's entries
     #[inline]
     pub fn iter(&self) -> Iter<'_, K, V> {
