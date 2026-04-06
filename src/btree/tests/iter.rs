@@ -562,7 +562,6 @@ fn test_range_double_ended_multi_leaf() {
     assert_eq!(remaining_forward, expected_remaining);
 }
 
-/* IntoIter tests temporarily disabled
 #[test]
 fn test_into_iter() {
     let mut map = BTreeMap::new();
@@ -584,7 +583,7 @@ fn test_into_iter_empty() {
 #[test]
 fn test_into_iter_large() {
     let mut map = BTreeMap::new();
-    let n = 100;
+    let n = 1000;
 
     for i in 0..n {
         map.insert(i, i * 2);
@@ -594,4 +593,3 @@ fn test_into_iter_large() {
     let expected: Vec<_> = (0..n).map(|i| (i, i * 2)).collect();
     assert_eq!(collected, expected);
 }
-*/

@@ -13,7 +13,7 @@ fn test_leaf_align() {
             assert_eq!(leaf.get_keys()[i as usize], i as u8);
             assert_eq!(leaf.get_values()[i as usize], i as usize);
         }
-        leaf.dealloc();
+        leaf.dealloc::<true>();
     }
     {
         let cap = LeafNode::<u8, u16>::cap();
@@ -26,7 +26,7 @@ fn test_leaf_align() {
             assert_eq!(leaf.get_keys()[i as usize], i as u8);
             assert_eq!(leaf.get_values()[i as usize], i as u16);
         }
-        leaf.dealloc();
+        leaf.dealloc::<true>();
     }
 }
 
@@ -60,7 +60,7 @@ fn test_leaf_node_search() {
         assert!(!found);
         assert_eq!(idx as usize, cap);
 
-        leaf.dealloc();
+        leaf.dealloc::<true>();
     }
 }
 
@@ -138,8 +138,8 @@ fn test_leaf_node_split_insert_at_split_idx_left() {
         assert!((*new_leaf.brothers()).next.is_null(), "Right node's next should be null");
 
         // Cleanup
-        leaf.dealloc();
-        new_leaf.dealloc();
+        leaf.dealloc::<true>();
+        new_leaf.dealloc::<true>();
     }
 }
 
@@ -199,8 +199,8 @@ fn test_leaf_node_split_insert_at_split_idx_right() {
             );
         }
         // Cleanup
-        leaf.dealloc();
-        new_leaf.dealloc();
+        leaf.dealloc::<true>();
+        new_leaf.dealloc::<true>();
     }
 }
 
@@ -237,8 +237,8 @@ fn test_leaf_node_split_insert_at_end() {
             assert_eq!((*leaf.value_ptr(i)).assume_init_read(), (i as i32) * 10);
         }
         // Cleanup
-        leaf.dealloc();
-        new_leaf.dealloc();
+        leaf.dealloc::<true>();
+        new_leaf.dealloc::<true>();
     }
 }
 

@@ -102,17 +102,19 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn dealloc(self) {
+    pub fn dealloc<const DROP_ITEM: bool>(self) {
         let count = self.key_count();
         unsafe {
-            if needs_drop::<K>() {
-                for i in 0..count {
-                    (*self.key_ptr(i)).assume_init_drop();
+            if DROP_ITEM {
+                if needs_drop::<K>() {
+                    for i in 0..count {
+                        (*self.key_ptr(i)).assume_init_drop();
+                    }
                 }
-            }
-            if needs_drop::<V>() {
-                for i in 0..count {
-                    (*self.value_ptr(i)).assume_init_drop();
+                if needs_drop::<V>() {
+                    for i in 0..count {
+                        (*self.value_ptr(i)).assume_init_drop();
+                    }
                 }
             }
             dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);

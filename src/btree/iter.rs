@@ -1,5 +1,9 @@
+use super::BTreeMap;
+use super::inter::*;
 use super::leaf::*;
+use super::node::*;
 use core::marker::PhantomData;
+use core::mem::needs_drop;
 
 /// Internal base iterator structure that handles the common logic
 /// for iterating over leaf nodes in both forward and backward directions.
@@ -479,10 +483,11 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
     }
 }
 
-/*
 /// An owning iterator over the entries of a BTreeMap
 /// Uses PathCache to manage tree traversal and safe deallocation
-pub struct IntoIter<K: Ord, V> {
+///
+/// NOTE: In order to keep the logic simple, we does not implement `DoubleEndedIterator` here
+pub struct IntoIter<K: Ord + Clone + Sized, V: Sized> {
     /// Path cache for deallocating internal nodes after iteration
     cache: PathCache<K, V>,
     /// Current leaf being iterated
@@ -492,77 +497,55 @@ pub struct IntoIter<K: Ord, V> {
     /// Remaining elements to iterate
     remaining: usize,
     /// If true, iterate in reverse order
-    reverse: bool,
+    is_forward: bool,
 }
 
-impl<K: Ord, V> IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
     #[inline]
-    pub(super) fn new(root: Option<Node<K, V>>, remaining: usize, reverse: bool) -> Self {
-        let mut cache = PathCache::new();
-        let (leaf, idx) = match root {
-            None => (None, 0),
-            Some(Node::Leaf(leaf)) => {
-                let idx = if reverse { leaf.key_count() } else { 0 };
-                (Some(leaf), idx)
+    pub(super) fn new(mut tree: BTreeMap<K, V>, is_forward: bool) -> Self {
+        if let Some(root) = tree.root.take() {
+            let mut cache = tree.get_cache().take();
+            let leaf = if is_forward {
+                root.find_first_leaf(Some(&mut cache))
+            } else {
+                root.find_last_leaf(Some(&mut cache))
+            };
+            Self {
+                cache,
+                idx: if is_forward { 0 } else { leaf.key_count() },
+                leaf: Some(leaf),
+                remaining: tree.len,
+                is_forward,
             }
-            Some(Node::Inter(inter)) => {
-                // Navigate to first (or last) leaf and populate cache
-                let mut cur = inter;
-                loop {
-                    let child_idx = if reverse { cur.key_count() } else { 0 };
-                    cache.push(cur.clone(), child_idx as u32);
-                    match cur.get_child(child_idx) {
-                        Node::Leaf(leaf) => {
-                            let idx = if reverse { leaf.key_count() } else { 0 };
-                            break (Some(leaf), idx);
-                        }
-                        Node::Inter(child_inter) => {
-                            cur = child_inter;
-                        }
-                    }
-                }
-            }
-        };
-
-        Self {
-            cache,
-            leaf,
-            idx,
-            remaining,
-            reverse,
+        } else {
+            Self { cache: PathCache::new(), leaf: None, idx: 0, remaining: 0, is_forward }
         }
     }
 
-    /// Advance to next leaf in forward direction using leaf brother pointers
-    fn advance_forward(&mut self) -> Option<LeafNode<K, V>> {
-        let leaf = self.leaf.take()?;
-        unsafe {
-            let next = (*leaf.brothers()).next;
-            leaf.dealloc();
-            if next.is_null() {
-                None
-            } else {
-                Some(LeafNode::from_header(next))
-            }
-        }
+    #[inline(always)]
+    fn advance_forward(&mut self) -> LeafNode<K, V> {
+        let _leaf = self.leaf.take().unwrap();
+        _leaf.dealloc::<false>();
+        let (parent, idx) = self.cache.move_right_and_pop_l1(InterNode::dealloc).unwrap();
+        self.cache.push(parent.clone(), idx);
+        let new_leaf = parent.get_child(idx).into_leaf();
+        self.idx = 0;
+        new_leaf
     }
 
-    /// Advance to previous leaf in reverse direction using leaf brother pointers
-    fn advance_backward(&mut self) -> Option<LeafNode<K, V>> {
-        let leaf = self.leaf.take()?;
-        unsafe {
-            let prev = (*leaf.brothers()).prev;
-            leaf.dealloc();
-            if prev.is_null() {
-                None
-            } else {
-                Some(LeafNode::from_header(prev))
-            }
-        }
+    #[inline(always)]
+    fn advance_backward(&mut self) -> LeafNode<K, V> {
+        let _leaf = self.leaf.take().unwrap();
+        _leaf.dealloc::<false>();
+        let (parent, idx) = self.cache.move_left_and_pop_l1(InterNode::dealloc).unwrap();
+        self.cache.push(parent.clone(), idx);
+        let new_leaf = parent.get_child(idx).into_leaf();
+        self.idx = new_leaf.key_count();
+        new_leaf
     }
 }
 
-impl<K: Ord, V> Iterator for IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
     type Item = (K, V);
 
     #[inline]
@@ -570,45 +553,49 @@ impl<K: Ord, V> Iterator for IntoIter<K, V> {
         if self.remaining == 0 {
             return None;
         }
+        self.remaining -= 1;
 
-        let leaf = self.leaf.as_ref()?;
-        let count = leaf.key_count();
-
-        if self.reverse {
-            // Reverse iteration
-            if self.idx == 0 {
-                // Move to previous leaf
-                self.leaf = self.advance_backward();
-                if let Some(ref back_leaf) = self.leaf {
-                    self.idx = back_leaf.key_count();
+        // Check if we need to advance to next/prev leaf
+        if self.is_forward {
+            if let Some(ref leaf) = self.leaf {
+                if self.idx >= leaf.key_count() {
+                    let new_leaf = self.advance_forward();
+                    self.leaf = Some(new_leaf);
                 }
-                return self.next();
+            } else {
+                return None;
             }
-
-            self.idx -= 1;
-            unsafe {
-                let key = (*leaf.key_ptr(self.idx)).assume_init_read();
-                let value = (*leaf.value_ptr(self.idx)).assume_init_read();
-                self.remaining -= 1;
-                Some((key, value))
+            let idx = self.idx;
+            self.idx += 1;
+            if let Some(ref leaf) = self.leaf {
+                unsafe {
+                    let key = (*leaf.key_ptr(idx)).assume_init_read();
+                    let value = (*leaf.value_ptr(idx)).assume_init_read();
+                    return Some((key, value));
+                }
             }
         } else {
-            // Forward iteration
-            if self.idx >= count {
-                // Move to next leaf
-                self.leaf = self.advance_forward();
-                self.idx = 0;
-                return self.next();
+            if self.idx == 0 {
+                if let Some(ref leaf) = self.leaf {
+                    if leaf.get_left_node().is_none() {
+                        // At the beginning
+                        return None;
+                    }
+                }
+                let new_leaf = self.advance_backward();
+                self.leaf = Some(new_leaf);
             }
-
-            unsafe {
-                let key = (*leaf.key_ptr(self.idx)).assume_init_read();
-                let value = (*leaf.value_ptr(self.idx)).assume_init_read();
-                self.idx += 1;
-                self.remaining -= 1;
-                Some((key, value))
+            if let Some(ref leaf) = self.leaf {
+                self.idx -= 1;
+                let idx = self.idx;
+                unsafe {
+                    let key = (*leaf.key_ptr(idx)).assume_init_read();
+                    let value = (*leaf.value_ptr(idx)).assume_init_read();
+                    return Some((key, value));
+                }
             }
         }
+        None
     }
 
     #[inline]
@@ -617,26 +604,63 @@ impl<K: Ord, V> Iterator for IntoIter<K, V> {
     }
 }
 
-impl<K: Ord, V> ExactSizeIterator for IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> ExactSizeIterator for IntoIter<K, V> {
     #[inline]
     fn len(&self) -> usize {
         self.remaining
     }
 }
 
-impl<K: Ord, V> Drop for IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
     fn drop(&mut self) {
-        // Consume all remaining elements
-        while self.next().is_some() {}
-
-        // Deallocate remaining leaf if any
+        // NOTE: if the original tree has root, then self.leaf always exists after iteration done
         if let Some(leaf) = self.leaf.take() {
-            leaf.dealloc();
+            if self.is_forward {
+                if needs_drop::<K>() {
+                    for idx in self.idx..leaf.key_count() {
+                        unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
+                    }
+                }
+                if needs_drop::<V>() {
+                    for idx in self.idx..leaf.key_count() {
+                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
+                    }
+                }
+            } else {
+                if needs_drop::<K>() {
+                    for idx in 0..self.idx {
+                        unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
+                    }
+                }
+                if needs_drop::<V>() {
+                    for idx in 0..self.idx {
+                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
+                    }
+                }
+            }
+            leaf.dealloc::<false>();
+            // We should free the rest internal nodes even after leaf iteraction done
+            if self.is_forward {
+                while let Some((parent, idx)) = self.cache.move_right_and_pop_l1(InterNode::dealloc)
+                {
+                    self.cache.push(parent.clone(), idx);
+                    if let Node::Leaf(leaf) = parent.get_child(idx) {
+                        leaf.dealloc::<true>();
+                    } else {
+                        unreachable!();
+                    }
+                }
+            } else {
+                while let Some((parent, idx)) = self.cache.move_left_and_pop_l1(InterNode::dealloc)
+                {
+                    self.cache.push(parent.clone(), idx);
+                    if let Node::Leaf(leaf) = parent.get_child(idx) {
+                        leaf.dealloc::<true>();
+                    } else {
+                        unreachable!();
+                    }
+                }
+            }
         }
-
-        // Deallocate all internal nodes using PathCache
-        // Pop all remaining nodes from cache - they will be deallocated
-        while self.cache.pop().is_some() {}
     }
 }
-*/

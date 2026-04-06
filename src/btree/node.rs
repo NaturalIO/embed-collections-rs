@@ -240,6 +240,15 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[inline]
+    pub fn into_leaf(self) -> LeafNode<K, V> {
+        if let Self::Leaf(node) = self {
+            node
+        } else {
+            unreachable!();
+        }
+    }
+
+    #[inline]
     pub fn find_leaf(&self, key: &K) -> LeafNode<K, V> {
         match self {
             Self::Leaf(node) => node.clone(),
@@ -336,12 +345,15 @@ impl<K: Ord, V> Node<K, V> {
 
     /// Find the first leaf node
     #[inline]
-    pub fn find_first_leaf(&self) -> LeafNode<K, V> {
+    pub fn find_first_leaf(&self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
         let mut cur: Self = self.clone();
         loop {
             match cur {
                 Self::Leaf(leaf) => return leaf,
                 Self::Inter(inter) => {
+                    if let Some(_cache) = cache.as_mut() {
+                        _cache.push(inter.clone(), 0);
+                    }
                     cur = inter.get_child(0);
                 }
             }
@@ -350,13 +362,17 @@ impl<K: Ord, V> Node<K, V> {
 
     /// Find the last leaf node
     #[inline]
-    pub fn find_last_leaf(&self) -> LeafNode<K, V> {
+    pub fn find_last_leaf(&self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
         let mut cur: Self = self.clone();
         loop {
             match cur {
                 Self::Leaf(leaf) => return leaf,
                 Self::Inter(inter) => {
-                    cur = inter.get_child(inter.key_count());
+                    let idx = inter.key_count();
+                    if let Some(_cache) = cache.as_mut() {
+                        _cache.push(inter.clone(), idx);
+                    }
+                    cur = inter.get_child(idx);
                 }
             }
         }
@@ -417,12 +433,22 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 
     #[inline(always)]
+    pub fn take(&mut self) -> Self {
+        let mut inner = self.inner.take();
+        inner.clear();
+        Self { inner, pos: 0 }
+    }
+
+    #[inline(always)]
     pub fn assert_center(&self) {
         debug_assert_eq!(self.pos, 0);
     }
 
     #[inline]
-    fn _move_left_and_pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
+    fn _move_left_and_pop<F>(&mut self, post_callback: F) -> Option<(InterNode<K, V>, u32)>
+    where
+        F: Fn(InterNode<K, V>),
+    {
         while let Some((parent, idx)) = self.inner.pop() {
             debug_assert!(self.pos < 0);
             let move_step = (-self.pos) as u32;
@@ -436,12 +462,13 @@ impl<K: Ord, V> PathCache<K, V> {
                 }
             }
             let pre_height = parent.height();
+            post_callback(parent);
             // only move 1 since we change the branch, leave the rest to the loop
             self.pos += 1;
             let cond = |_node: &InterNode<K, V>, idx: u32| -> bool { idx > 0 };
             // this is for entry API, we already know there is a previous node
             let (grand_parent, grand_idx) =
-                _move_to_ancenstor!(self.inner, cond, dummy_post_callback::<K, V>).unwrap();
+                _move_to_ancenstor!(self.inner, cond, post_callback).unwrap();
             let (parent, idx) =
                 grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
             if self.pos == 0 {
@@ -553,9 +580,9 @@ impl<K: Ord, V> PathCache<K, V> {
     #[inline(always)]
     pub fn pop(&mut self) -> Option<(InterNode<K, V>, u32)> {
         if self.pos < 0 {
-            self._move_left_and_pop()
+            self._move_left_and_pop(dummy_post_callback::<K, V>)
         } else if self.pos > 0 {
-            self._move_right_and_pop(|_node| {})
+            self._move_right_and_pop(dummy_post_callback::<K, V>)
         } else {
             self.inner.pop()
         }
@@ -569,6 +596,16 @@ impl<K: Ord, V> PathCache<K, V> {
     {
         self.pos += 1;
         self._move_right_and_pop(post_callback)
+    }
+
+    // for dropping the tree, post order visit in reversed order, `post_callback` should dealloc on the node
+    #[inline(always)]
+    pub fn move_left_and_pop_l1<F>(&mut self, post_callback: F) -> Option<(InterNode<K, V>, u32)>
+    where
+        F: Fn(InterNode<K, V>) + Clone,
+    {
+        self.pos -= 1;
+        self._move_left_and_pop(post_callback)
     }
 }
 

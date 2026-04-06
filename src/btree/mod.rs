@@ -77,9 +77,7 @@ mod leaf;
 use leaf::*;
 pub mod iter;
 use iter::RangeBase;
-pub use iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
-// IntoIter is temporarily disabled
-// pub use iter::IntoIter;
+pub use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
 
 #[cfg(test)]
 mod tests;
@@ -435,7 +433,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             None
         };
         let no_right = leaf.unlink().is_null();
-        leaf.dealloc();
+        leaf.dealloc::<true>();
         let (parent, idx) = self.get_cache().pop().unwrap();
         println!("pop before {:?}", parent);
         self.remove_child_from_inter(parent, idx, right_sep, no_right);
@@ -666,7 +664,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn find_first_and_last_leaf(&self) -> Option<(LeafNode<K, V>, LeafNode<K, V>)> {
         let root = self.root.as_ref()?;
-        Some((root.find_first_leaf(), root.find_last_leaf()))
+        Some((root.find_first_leaf(None), root.find_last_leaf(None)))
     }
 
     /// Internal helper to find range bounds
@@ -709,56 +707,31 @@ impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
 
 impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
     fn drop(&mut self) {
-        let root = match self.root.take() {
+        let mut cache = self.get_cache().take();
+        let mut cur = match self.root.take() {
             None => return,
-            Some(Node::Leaf(leaf)) => {
-                leaf.dealloc();
-                return;
-            }
-            Some(Node::Inter(inter)) => inter,
+            Some(root) => root.find_first_leaf(Some(&mut cache)),
         };
-        let cache = self.get_cache();
-        cache.clear();
-        let mut cur = root;
-        loop {
-            cache.push(cur.clone(), 0);
-            match cur.get_child(0) {
-                Node::Leaf(leaf) => {
-                    leaf.dealloc();
-                    break;
-                }
-                Node::Inter(inter) => {
-                    cur = inter;
-                }
-            }
-        }
+        cur.dealloc::<true>();
         // To navigate to next leaf,
         // return None when reach the end
         while let Some((parent, idx)) = cache.move_right_and_pop_l1(InterNode::dealloc) {
             cache.push(parent.clone(), idx);
-            if let Node::Leaf(leaf) = parent.get_child(idx) {
-                leaf.dealloc();
-            } else {
-                unreachable!();
-            }
+            cur = parent.get_child(idx).into_leaf();
+            cur.dealloc::<true>();
         }
     }
 }
 
-/*
 impl<K: Ord + Clone + Sized, V: Sized> IntoIterator for BTreeMap<K, V> {
     type Item = (K, V);
     type IntoIter = IntoIter<K, V>;
 
     #[inline]
-    fn into_iter(mut self) -> Self::IntoIter {
-        let len = self.len;
-        // Take ownership of the root so Drop doesn't deallocate
-        let root = self.root.take();
-        IntoIter::new(root, len, false)
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter::new(self, true)
     }
 }
-*/
 impl<'a, K: Ord + Clone + Sized, V: Sized> IntoIterator for &'a BTreeMap<K, V> {
     type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
