@@ -475,7 +475,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             None
         };
         let no_right = leaf.unlink().is_null();
-        leaf.dealloc::<true>();
+        leaf.dealloc::<false>();
         let (parent, idx) = self.get_cache().pop().unwrap();
         //println!("pop before {:?}", parent);
         self.remove_child_from_inter(parent, idx, right_sep, no_right);
