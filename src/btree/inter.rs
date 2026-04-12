@@ -468,6 +468,14 @@ impl<K: fmt::Debug, V> fmt::Display for InterNode<K, V> {
     }
 }
 
+#[cfg(test)]
+impl<K, V> PartialEq for InterNode<K, V> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.get_ptr() == other.get_ptr()
+    }
+}
+
 impl<K: Ord + fmt::Debug, V: fmt::Debug> InterNode<K, V> {
     /// Validate internal node structure
     #[cfg(test)]

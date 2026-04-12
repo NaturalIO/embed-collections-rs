@@ -540,7 +540,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     #[inline]
     fn handle_inter_underflow(&mut self, mut node: InterNode<K, V>) {
-        //println!("handle_inter_underflow {node:?}");
+        // println!("handle_inter_underflow {node:?}");
         let cap = InterNode::<K, V>::cap();
         while node.key_count() <= 1 {
             if node.key_count() == 0 {
@@ -570,7 +570,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
                         // the sep key should pull down
                         if left.key_count() + node.key_count() < cap {
-                            println!("merge with left");
+                            // println!("merge with left");
                             left.merge(node, &mut grand, grand_idx);
                             node = grand;
                             continue;
@@ -580,7 +580,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let right = grand.get_child_as_inter(grand_idx + 1);
                         // the sep key should pull down
                         if right.key_count() + node.key_count() < cap {
-                            println!("merge with right");
+                            // println!("merge with right");
                             node.merge(right, &mut grand, grand_idx + 1);
                             node = grand;
                             continue;

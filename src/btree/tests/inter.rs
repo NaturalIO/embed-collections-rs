@@ -384,3 +384,204 @@ fn test_inter_split_insert_at_end() {
     }
     assert_eq!(alive_count(), 0);
 }
+
+/// Test: Merge two internal nodes with separator key from grandparent
+///
+/// Tree structure before:
+///   grand(h=2) -> [left | sep_key | right]
+///   left(h=1) -> [child_0 | key_1 | child_1 | ...]
+///   right(h=1) -> [child_n | key_n+1 | child_n+1 | ...]
+///
+/// After merge(left, right, grand, right_idx=1):
+///   grand(h=2) -> [merged]
+///   merged(h=1) contains all keys from left + sep_key + all keys from right
+///
+/// Key test: Verifies merge operation correctly:
+/// 1. Pulls separator key from grandparent
+/// 2. Combines all keys and children from both nodes
+/// 3. Properly manages CounterI32 memory (alive_count == 0 at end)
+#[test]
+fn test_inter_merge_basic() {
+    reset_alive_count();
+    unsafe {
+        let cap = InterNode::<CounterI32, CounterI32>::cap();
+        println!("InterNode<CounterI32> cap {}", cap);
+
+        // Create left node with some keys
+        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        left.set_left_ptr(0x1000 as *mut NodeHeader);
+        for i in 0..3 {
+            left.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
+        }
+        assert_eq!(left.key_count(), 3);
+
+        // Create right node with some keys
+        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        right.set_left_ptr(0x2000 as *mut NodeHeader);
+        for i in 0..3 {
+            right.insert_no_split(
+                ((30 + i * 10) as i32).into(),
+                (0x2000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
+        }
+        assert_eq!(right.key_count(), 3);
+
+        // Create grandparent node with separator key
+        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        grand.set_left_ptr(left.get_ptr());
+        grand.insert_no_split(25_i32.into(), right.get_ptr()); // separator key = 25
+        assert_eq!(grand.key_count(), 1);
+
+        // Record alive count before merge
+        let alive_before = alive_count();
+        println!("Alive count before merge: {}", alive_before);
+
+        // Perform merge: left merges right, separator key (25) pulled from grand
+        left.merge(right, &mut grand, 1);
+
+        // Verify merge results
+        assert_eq!(left.key_count(), 7, "Merged node should have 3 + 1 + 3 = 7 keys");
+        assert_eq!(grand.key_count(), 0, "Grandparent should have 0 keys after removing separator");
+
+        // Verify keys are in correct order: [0, 10, 20, 25, 30, 40, 50]
+        let expected_keys = [0, 10, 20, 25, 30, 40, 50];
+        for (i, &expected) in expected_keys.iter().enumerate() {
+            let actual = (*left.key_ptr(i as u32)).assume_init_ref().value;
+            assert_eq!(actual, expected, "Key at index {} should be {}", i, expected);
+        }
+
+        // Verify children pointers
+        assert_eq!(
+            *left.child_ptr(0),
+            0x1000 as *mut NodeHeader,
+            "First child should be left's left_ptr"
+        );
+        assert_eq!(
+            *left.child_ptr(4),
+            0x2000 as *mut NodeHeader,
+            "Child at index 4 should be right's left_ptr"
+        );
+
+        // Verify alive count - all CounterI32 should still be alive
+        let alive_after = alive_count();
+        println!("Alive count after merge: {}", alive_after);
+        assert_eq!(alive_after, alive_before, "No CounterI32 should be dropped during merge");
+
+        // Clean up
+        grand.dealloc::<false>(); // grand has no keys
+        left.dealloc::<true>(); // left has all the keys
+
+        println!("test_inter_merge_basic completed successfully");
+    }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
+}
+
+/// Test: Merge when right node has 0 keys (only left child)
+///
+/// This tests the edge case where right node has no keys,
+/// only a leftmost child pointer.
+#[test]
+fn test_inter_merge_right_empty() {
+    reset_alive_count();
+    unsafe {
+        // Create left node with keys
+        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        left.set_left_ptr(0x1000 as *mut NodeHeader);
+        for i in 0..3 {
+            left.insert_no_split(
+                ((i * 10) as i32).into(),
+                (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
+        }
+        assert_eq!(left.key_count(), 3);
+
+        // Create right node with NO keys (only left child)
+        let right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        (*right.child_ptr(0)) = 0x2000 as *mut NodeHeader;
+        assert_eq!(right.key_count(), 0);
+
+        // Create grandparent with separator key
+        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        grand.set_left_ptr(left.get_ptr());
+        grand.insert_no_split(25_i32.into(), right.get_ptr());
+        assert_eq!(grand.key_count(), 1);
+
+        // Perform merge
+        left.merge(right, &mut grand, 1);
+
+        // Verify results
+        assert_eq!(left.key_count(), 4, "Merged node should have 3 + 1 + 0 = 4 keys");
+
+        // Verify keys: [0, 10, 20, 25]
+        let expected_keys = [0, 10, 20, 25];
+        for (i, &expected) in expected_keys.iter().enumerate() {
+            let actual = (*left.key_ptr(i as u32)).assume_init_ref().value;
+            assert_eq!(actual, expected, "Key at index {} should be {}", i, expected);
+        }
+
+        // Verify children: left has 5 children (original 4 + right's left child)
+        assert_eq!(*left.child_ptr(0), 0x1000 as *mut NodeHeader);
+        assert_eq!(*left.child_ptr(4), 0x2000 as *mut NodeHeader);
+
+        // Clean up
+        grand.dealloc::<false>();
+        left.dealloc::<true>();
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+/// Test: Merge when left node has 0 keys
+///
+/// This tests the edge case where left node has no keys before merge.
+#[test]
+fn test_inter_merge_left_empty() {
+    reset_alive_count();
+    unsafe {
+        // Create left node with NO keys
+        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        (*left.child_ptr(0)) = 0x1000 as *mut NodeHeader;
+        assert_eq!(left.key_count(), 0);
+
+        // Create right node with keys
+        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        right.set_left_ptr(0x2000 as *mut NodeHeader);
+        for i in 0..3 {
+            right.insert_no_split(
+                ((30 + i * 10) as i32).into(),
+                (0x2000 + (i + 1) * 0x100) as *mut NodeHeader,
+            );
+        }
+        assert_eq!(right.key_count(), 3);
+
+        // Create grandparent with separator key
+        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        grand.set_left_ptr(left.get_ptr());
+        grand.insert_no_split(25_i32.into(), right.get_ptr());
+        assert_eq!(grand.key_count(), 1);
+
+        // Perform merge
+        left.merge(right, &mut grand, 1);
+
+        // Verify results
+        assert_eq!(left.key_count(), 4, "Merged node should have 0 + 1 + 3 = 4 keys");
+
+        // Verify keys: [25, 30, 40, 50]
+        let expected_keys = [25, 30, 40, 50];
+        for (i, &expected) in expected_keys.iter().enumerate() {
+            let actual = (*left.key_ptr(i as u32)).assume_init_ref().value;
+            assert_eq!(actual, expected, "Key at index {} should be {}", i, expected);
+        }
+
+        // Verify children: left has 5 children (original 1 + separator + right's 4)
+        assert_eq!(*left.child_ptr(0), 0x1000 as *mut NodeHeader);
+        assert_eq!(*left.child_ptr(1), 0x2000 as *mut NodeHeader);
+
+        // Clean up
+        grand.dealloc::<false>();
+        left.dealloc::<true>();
+    }
+    assert_eq!(alive_count(), 0);
+}
