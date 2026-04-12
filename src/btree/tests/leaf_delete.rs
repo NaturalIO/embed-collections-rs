@@ -956,7 +956,6 @@ fn test_leaf_del_merge_2_3_height_3() {
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
         };
-
         map.validate();
         assert_eq!(map.height(), 3);
 

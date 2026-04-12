@@ -15,7 +15,7 @@ fn test_inter_align() {
         let idx = inter.search_child(&(i as u8));
         assert_eq!(idx, i as u32);
     }
-    inter.dealloc();
+    inter.dealloc::<true>();
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn test_inter_insert_and_search() {
         let idx = inter.search_child(&50);
         assert_eq!(idx, cap as u32);
 
-        inter.dealloc();
+        inter.dealloc::<true>();
     }
 }
 
@@ -123,8 +123,8 @@ fn test_inter_split_insert_left() {
                 (0x1000 + (split_idx + i + 2) * 0x100) as *mut NodeHeader
             );
         }
-        new_node.dealloc();
-        node.dealloc();
+        new_node.dealloc::<true>();
+        node.dealloc::<true>();
         println!("Test Case 2 completed successfully");
     }
     assert_eq!(alive_count(), 0);
@@ -199,8 +199,8 @@ fn test_inter_split_insert_at_promote() {
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
             );
         }
-        new_node.dealloc();
-        node.dealloc();
+        new_node.dealloc::<true>();
+        node.dealloc::<true>();
         println!("Test Case 1 completed successfully");
     }
     assert_eq!(alive_count(), 0);
@@ -263,8 +263,8 @@ fn test_inter_split_insert_right_begin() {
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
             );
         }
-        new_node.dealloc();
-        node.dealloc();
+        new_node.dealloc::<true>();
+        node.dealloc::<true>();
         println!("Test Case 3 completed successfully");
     }
     assert_eq!(alive_count(), 0);
@@ -331,8 +331,8 @@ fn test_inter_split_insert_right_mid() {
                 (0x1000 + (split_idx + i + 1) * 0x100) as *mut NodeHeader
             );
         }
-        new_node.dealloc();
-        node.dealloc();
+        new_node.dealloc::<true>();
+        node.dealloc::<true>();
         println!("Test Case 3 completed successfully");
     }
     assert_eq!(alive_count(), 0);
@@ -378,8 +378,8 @@ fn test_inter_split_insert_at_end() {
             assert_eq!(*node.child_ptr(i + 1), (0x1000 + (i + 1) * 0x100) as *mut NodeHeader);
         }
         assert_eq!(*new_node.child_ptr(0), insert_child);
-        new_node.dealloc();
-        node.dealloc();
+        new_node.dealloc::<true>();
+        node.dealloc::<true>();
         println!("Test Case 3 completed successfully");
     }
     assert_eq!(alive_count(), 0);

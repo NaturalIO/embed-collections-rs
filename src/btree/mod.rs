@@ -257,13 +257,16 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     /// update the separate_key in parent after borrowing space from left/right node
     #[inline(always)]
-    fn update_ancestor_sep_key(&mut self, sep_key: K) {
+    fn update_ancestor_sep_key<const MOVE: bool>(&mut self, sep_key: K) {
         // if idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
         // split key
-        if let Some((parent, parent_idx)) = self
-            .get_cache()
-            .move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
-        {
+        let ret = if MOVE {
+            self.get_cache()
+                .move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
+        } else {
+            self.get_cache().peak_ancenstor(|_node, idx| -> bool { idx > 0 })
+        };
+        if let Some((parent, parent_idx)) = ret {
             //println!("update_ancestor_sep_key {:?} {}", parent, parent_idx - 1);
             parent.change_key(parent_idx - 1, sep_key);
         } else {
@@ -292,7 +295,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     leaf.move_left(&mut left_node, 1);
                     leaf.insert_no_split(key, value)
                 };
-                self.update_ancestor_sep_key(leaf.clone_first_key());
+                self.update_ancestor_sep_key::<true>(leaf.clone_first_key());
                 return val_p;
             }
         } else {
@@ -312,7 +315,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 leaf.insert_no_split(key, value)
             };
             self.get_cache().move_right();
-            self.update_ancestor_sep_key(right_node.clone_first_key());
+            self.update_ancestor_sep_key::<true>(right_node.clone_first_key());
             return val_p;
         }
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
@@ -476,80 +479,134 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         };
         let no_right = leaf.unlink().is_null();
         leaf.dealloc::<false>();
-        let (parent, idx) = self.get_cache().pop().unwrap();
-        //println!("pop before {:?}", parent);
-        self.remove_child_from_inter(parent, idx, right_sep, no_right);
-    }
-
-    /// To simplify the logic, we perform delete first, then rebalance
-    #[inline]
-    fn remove_child_from_inter(
-        &mut self, mut node: InterNode<K, V>, mut delete_idx: u32, right_sep: Option<K>,
-        _no_right: bool,
-    ) {
-        //println!("remove child {delete_idx} of {:?}", node);
-        self.get_cache().assert_center();
-        let mut node_keys = node.key_count();
-        let root_height = self.get_root_unwrap().height();
-        if node.key_count() == 0 {
-            if let Some((parent, idx)) = self.get_cache().move_to_ancenstor(
-                |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
-                InterNode::<K, V>::dealloc,
-            ) {
-                //println!("find ancestor {:?}{idx} of empty node {:?}", parent, node);
-                node.dealloc();
-                node = parent;
-                delete_idx = idx;
+        let (mut parent, mut idx) = self.get_cache().pop().unwrap();
+        if parent.key_count() == 0 {
+            if let Some((grand, grand_idx)) = self.remove_only_child(parent) {
+                parent = grand;
+                idx = grand_idx;
             } else {
-                node.dealloc();
-                // we are empty, my ancestor are all empty and delete by move_to_ancenstor
-                self.root = None;
                 return;
             }
         }
-        let node_height = node.height();
-        let at_root = node_height == root_height;
+        //println!("pop before {:?}", parent);
+        self.remove_leaf_from_inter(&mut parent, idx, right_sep, no_right);
+        if parent.key_count() <= 1 {
+            self.handle_inter_underflow(parent);
+        }
+    }
+
+    /// To simplify the logic, we perform delete first.
+    /// return the Some(node) when need to rebalance
+    #[inline]
+    fn remove_leaf_from_inter(
+        &mut self, node: &mut InterNode<K, V>, delete_idx: u32, right_sep: Option<K>,
+        _no_right: bool,
+    ) {
+        // println!("remove child {delete_idx} of {:?}", node);
+        self.get_cache().assert_center();
+        debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
         if delete_idx == node.key_count() {
-            //println!("delete last {delete_idx} from {:?}", node);
+            // println!("delete last {delete_idx} from {:?}", node);
             // delete the last child of this node
             node.remove_last_child(delete_idx);
             if let Some(key) = right_sep {
                 if let Some((grand_parent, grand_idx)) =
-                    self.get_cache().peak_ancenstor(|node: &InterNode<K, V>, idx: u32| -> bool {
-                        node.key_count() > idx
+                    self.get_cache().peak_ancenstor(|_node: &InterNode<K, V>, idx: u32| -> bool {
+                        _node.key_count() > idx
                     })
                 {
-                    //println!("peak_ancenstor {:?} {grand_idx} for right ", grand_parent);
+                    // println!("peak_ancenstor {:?} {grand_idx} for right ", grand_parent);
                     // key idx = child idx - 1
                     grand_parent.change_key(grand_idx, key);
                 }
-            } else if node.key_count() > 1 {
-                // TODO minminum threshold
-                return;
             }
         } else if delete_idx > 0 {
             //println!("delete mid {delete_idx} from {:?}", node);
             node.remove_mid_child(delete_idx);
             if let Some(key) = right_sep {
-                //println!("change_key {:?} {delete_idx}", node);
+                // println!("change_key {:?} {delete_idx}", node);
                 node.change_key(delete_idx - 1, key);
             }
-            // TODO optionally check node underflow
         } else {
-            //println!("delete first from {:?}", node);
+            // println!("delete first from {:?}", node);
             // delete_idx is the first but not the last
             let mut sep_key = node.remove_first_child();
             if let Some(key) = right_sep {
                 sep_key = key;
             }
-            self.update_ancestor_sep_key(sep_key);
-            // TODO optionally check node underflow
+            self.update_ancestor_sep_key::<false>(sep_key);
         }
-        if node.key_count() == 0 && at_root {
-            // only one child ptr left
-            let old_root =
-                self.root.replace(unsafe { Node::from_header(*node.child_ptr(0)) }).unwrap();
-            old_root.into_inter().dealloc();
+    }
+
+    #[inline]
+    fn handle_inter_underflow(&mut self, mut node: InterNode<K, V>) {
+        //println!("handle_inter_underflow {node:?}");
+        let cap = InterNode::<K, V>::cap();
+        while node.key_count() <= 1 {
+            if node.key_count() == 0 {
+                let root_height = self.get_root_unwrap().height();
+                if node.height() == root_height
+                    || self
+                        .get_cache()
+                        .peak_ancenstor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
+                            _node.key_count() > 0
+                        })
+                        .is_none()
+                {
+                    let _old_root =
+                        self.root.replace(unsafe { Node::from_header(*node.child_ptr(0)) });
+                    debug_assert!(_old_root.is_some());
+
+                    // println!("replace root {:?} with {:?}", _old_root, self.get_root_unwrap());
+                    while let Some((parent, _)) = self.get_cache().pop() {
+                        parent.dealloc::<false>();
+                    }
+                    node.dealloc::<false>(); // they all have no key
+                }
+                return;
+            } else {
+                if let Some((mut grand, grand_idx)) = self.get_cache().pop() {
+                    if grand_idx > 0 {
+                        let mut left = grand.get_child_as_inter(grand_idx - 1);
+                        // the sep key should pull down
+                        if left.key_count() + node.key_count() < cap {
+                            println!("merge with left");
+                            left.merge(node, &mut grand, grand_idx);
+                            node = grand;
+                            continue;
+                        }
+                    }
+                    if grand_idx < grand.key_count() {
+                        let right = grand.get_child_as_inter(grand_idx + 1);
+                        // the sep key should pull down
+                        if right.key_count() + node.key_count() < cap {
+                            println!("merge with right");
+                            node.merge(right, &mut grand, grand_idx + 1);
+                            node = grand;
+                            continue;
+                        }
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+    #[inline]
+    fn remove_only_child(&mut self, node: InterNode<K, V>) -> Option<(InterNode<K, V>, u32)> {
+        debug_assert_eq!(node.key_count(), 0);
+        if let Some((parent, idx)) = self.get_cache().move_to_ancenstor(
+            |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
+            InterNode::<K, V>::dealloc::<false>,
+        ) {
+            //println!("find ancestor {:?}{idx} of empty node {:?}", parent, node);
+            node.dealloc::<true>();
+            Some((parent, idx))
+        } else {
+            node.dealloc::<true>();
+            // we are empty, my ancestor are all empty and delete by move_to_ancenstor
+            self.root = None;
+            None
         }
     }
 
@@ -856,9 +913,9 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
         cur.dealloc::<true>();
         // To navigate to next leaf,
         // return None when reach the end
-        while let Some((parent, idx)) = cache.move_right_and_pop_l1(InterNode::dealloc) {
+        while let Some((parent, idx)) = cache.move_right_and_pop_l1(InterNode::dealloc::<true>) {
             cache.push(parent.clone(), idx);
-            cur = parent.get_child(idx).into_leaf();
+            cur = parent.get_child_as_leaf(idx);
             cur.dealloc::<true>();
         }
     }

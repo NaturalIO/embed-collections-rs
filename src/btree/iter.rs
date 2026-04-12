@@ -526,7 +526,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
     fn advance_forward(&mut self) -> LeafNode<K, V> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
-        let (parent, idx) = self.cache.move_right_and_pop_l1(InterNode::dealloc).unwrap();
+        let (parent, idx) = self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>).unwrap();
         self.cache.push(parent.clone(), idx);
         let new_leaf = parent.get_child(idx).into_leaf();
         self.idx = 0;
@@ -537,7 +537,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
     fn advance_backward(&mut self) -> LeafNode<K, V> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
-        let (parent, idx) = self.cache.move_left_and_pop_l1(InterNode::dealloc).unwrap();
+        let (parent, idx) = self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>).unwrap();
         self.cache.push(parent.clone(), idx);
         let new_leaf = parent.get_child(idx).into_leaf();
         self.idx = new_leaf.key_count();
@@ -641,7 +641,8 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
             leaf.dealloc::<false>();
             // We should free the rest internal nodes even after leaf iteraction done
             if self.is_forward {
-                while let Some((parent, idx)) = self.cache.move_right_and_pop_l1(InterNode::dealloc)
+                while let Some((parent, idx)) =
+                    self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>)
                 {
                     self.cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
@@ -651,7 +652,8 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
                     }
                 }
             } else {
-                while let Some((parent, idx)) = self.cache.move_left_and_pop_l1(InterNode::dealloc)
+                while let Some((parent, idx)) =
+                    self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>)
                 {
                     self.cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {

@@ -556,7 +556,7 @@ impl<K: Ord, V> PathCache<K, V> {
     /// iter backward through cache internal stack, without changing the cache,
     /// return None if reaches root
     #[inline(always)]
-    pub fn peak_ancenstor<FC>(&mut self, cond: FC) -> Option<(&InterNode<K, V>, u32)>
+    pub fn peak_ancenstor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
     where
         FC: Fn(&InterNode<K, V>, u32) -> bool,
     {
@@ -564,7 +564,7 @@ impl<K: Ord, V> PathCache<K, V> {
         // For dropping scenario, cannot move further, reach the end at root
         for (grand_parent, idx) in iter {
             if cond(grand_parent, *idx) {
-                return Some((grand_parent, *idx));
+                return Some((grand_parent.clone(), *idx));
             }
         }
         // grand_parent idx reach the end, will not visit again
