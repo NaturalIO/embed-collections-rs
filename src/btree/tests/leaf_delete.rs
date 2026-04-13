@@ -987,3 +987,170 @@ fn test_leaf_del_merge_2_3_height_3() {
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
+
+/// Test: Remove only child cascade when middle leaf merges to right
+///
+/// Tree structure:
+///   root(h=3) -> [inter_left | key_ab | inter_min | key_bc | inter_right]
+///   inter_left(h=2) -> [inter_left1]  <- single child (no keys)
+///     inter_left1(h=1) -> [leaf_left] (full)
+///   inter_min(h=2) -> [inter_min1]  <- single child (no keys)
+///     inter_min1(h=1) -> [leaf_mid] (half-full, will underflow)
+///   inter_right(h=2) -> [inter_right1]  <- single child (no keys)
+///     inter_right1(h=1) -> [leaf_right] (half-full)
+///
+/// Scenario: Delete one element from leaf_mid, causing it to underflow.
+/// Since leaf_left is full, leaf_mid must merge/move to leaf_right.
+/// After leaf_mid is deleted, inter_min1 has no children (or only empty child),
+/// triggering remove_only_child cascade up to root.
+///
+/// Coverage:
+/// - Leaf underflow triggers migration to right sibling
+/// - Parent InterNode (inter_min1) becomes empty after leaf deletion
+/// - remove_only_child is triggered to clean up empty InterNode
+/// - Cascade removal of single-child internal nodes up the tree
+#[test]
+fn test_leaf_del_remove_only_child_cascade() {
+    reset_alive_count();
+    unsafe {
+        let leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
+        let min_count = (leaf_cap + 1) / 2;
+        assert!(min_count > 2);
+
+        // Create three leaves: left (full), mid (half-full), right (half-full)
+        let mut leaf_left = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_mid = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_right = LeafNode::<CounterI32, CounterI32>::alloc();
+
+        // Fill leaf_left to capacity (full - cannot accept merge)
+        for i in 0..leaf_cap {
+            let key = i as i32 * 2;
+            leaf_left.insert_no_split(key.into(), (key * 10).into());
+        }
+
+        // Fill leaf_mid to min_count (half-full - will underflow after delete)
+        for i in 0..min_count {
+            let key = (leaf_cap + i) as i32 * 2;
+            leaf_mid.insert_no_split(key.into(), (key * 10).into());
+        }
+
+        // Fill leaf_right to min_count (half-full - can accept merge from mid)
+        for i in 0..min_count {
+            let key = (leaf_cap + min_count + i) as i32 * 2;
+            leaf_right.insert_no_split(key.into(), (key * 10).into());
+        }
+
+        // Link leaves in chain
+        (*leaf_left.brothers()).next = leaf_mid.get_ptr();
+        (*leaf_mid.brothers()).prev = leaf_left.get_ptr();
+        (*leaf_mid.brothers()).next = leaf_right.get_ptr();
+        (*leaf_right.brothers()).prev = leaf_mid.get_ptr();
+
+        let leaf_mid_first_key = leaf_mid.get_keys()[0].clone();
+        let leaf_right_first_key = leaf_right.get_keys()[0].clone();
+
+        // Create inter_left1 (height=1) with single child leaf_left, no keys
+        let mut inter_left1 = InterNode::<CounterI32, CounterI32>::alloc(1);
+        inter_left1.set_left_ptr(leaf_left.get_ptr());
+
+        // Create inter_min1 (height=1) with single child leaf_mid, no keys
+        let mut inter_min1 = InterNode::<CounterI32, CounterI32>::alloc(1);
+        inter_min1.set_left_ptr(leaf_mid.get_ptr());
+
+        // Create inter_right1 (height=1) with single child leaf_right, no keys
+        let mut inter_right1 = InterNode::<CounterI32, CounterI32>::alloc(1);
+        inter_right1.set_left_ptr(leaf_right.get_ptr());
+
+        // Create inter_left (height=2) with single child inter_left1, no keys
+        let mut inter_left = InterNode::<CounterI32, CounterI32>::alloc(2);
+        inter_left.set_left_ptr(inter_left1.get_ptr());
+
+        // Create inter_min (height=2) with single child inter_min1, no keys
+        let mut inter_min = InterNode::<CounterI32, CounterI32>::alloc(2);
+        inter_min.set_left_ptr(inter_min1.get_ptr());
+
+        // Create inter_right (height=2) with single child inter_right1, no keys
+        let mut inter_right = InterNode::<CounterI32, CounterI32>::alloc(2);
+        inter_right.set_left_ptr(inter_right1.get_ptr());
+        debug_assert_eq!(inter_right.key_count(), 0);
+
+        // Create root (height=3) with 2 keys and 3 children
+        let mut root = InterNode::<CounterI32, CounterI32>::alloc(3);
+        root.set_left_ptr(inter_left.get_ptr());
+        root.insert_no_split(leaf_mid_first_key.clone(), inter_min.get_ptr());
+        root.insert_no_split(leaf_right_first_key.clone(), inter_right.get_ptr());
+        debug_assert_eq!(root.key_count(), 2);
+
+        // Create BTreeMap
+        let total_keys = leaf_cap + 2 * min_count;
+        let mut map = BTreeMap::<CounterI32, CounterI32> {
+            root: Some(Node::Inter(root)),
+            len: total_keys as usize,
+            cache: UnsafeCell::new(PathCache::new()),
+        };
+        map.validate();
+        assert_eq!(map.height(), 4, "Initial tree height should be 4");
+        // map.dump();
+
+        // Delete one element from leaf_mid to trigger underflow
+        // leaf_mid has min_count keys, delete one to make it underflow
+        let delete_key = (leaf_cap + 1) as i32 * 2;
+        assert!(map.remove(&delete_key).is_some(), "Should remove key successfully");
+
+        map.validate();
+
+        // After merge, total keys should be total_keys - 1
+        assert_eq!(map.len(), (total_keys - 1) as usize, "Total keys should decrease by 1");
+
+        // Verify that inter_min and inter_min1 were removed (remove_only_child cascade)
+        // The root should now have only 2 children (inter_left and inter_right)
+        let root_node = map.get_root_unwrap().as_inter();
+        assert_eq!(
+            root_node.key_count(),
+            1,
+            "Root should have only 1 key (2 children) after remove_only_child cascade"
+        );
+        // map.dump();
+
+        // Verify all remaining data is accessible
+        // leaf_left data unchanged
+        for i in 0..leaf_cap {
+            let key = i as i32 * 2;
+            assert_eq!(
+                map.get(&key).map(|v| **v),
+                Some(key * 10),
+                "leaf_left key {} should be accessible",
+                key
+            );
+        }
+
+        // leaf_mid remaining data merged into leaf_right
+        // leaf_mid had min_count keys, one deleted, remaining min_count-1 keys
+        // After merge, they should be in leaf_right (or merged leaf)
+        for i in 0..min_count {
+            let key = (leaf_cap + i) as i32 * 2;
+            if key != delete_key {
+                assert_eq!(
+                    map.get(&key).map(|v| **v),
+                    Some(key * 10),
+                    "leaf_mid remaining key {} should be accessible after merge",
+                    key
+                );
+            }
+        }
+
+        // leaf_right data unchanged (plus merged data from leaf_mid)
+        for i in 0..min_count {
+            let key = (leaf_cap + min_count + i) as i32 * 2;
+            assert_eq!(
+                map.get(&key).map(|v| **v),
+                Some(key * 10),
+                "leaf_right key {} should be accessible",
+                key
+            );
+        }
+
+        drop(map);
+    }
+    assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
+}
