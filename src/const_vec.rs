@@ -618,28 +618,17 @@ mod tests {
 
     #[test]
     fn test_drop() {
-        use std::cell::Cell;
+        use crate::test::{CounterI32, alive_count, reset_alive_count};
 
-        #[derive(Debug)]
-        struct DropCounter<'a> {
-            count: &'a Cell<i32>,
-        }
-
-        impl<'a> Drop for DropCounter<'a> {
-            fn drop(&mut self) {
-                self.count.set(self.count.get() + 1);
-            }
-        }
-
-        let count = Cell::new(0);
+        reset_alive_count();
         {
-            let mut vec: ConstVec<DropCounter, 3> = ConstVec::new();
-            vec.push(DropCounter { count: &count }).expect("push failed");
-            vec.push(DropCounter { count: &count }).expect("push failed");
-            vec.push(DropCounter { count: &count }).expect("push failed");
-            assert_eq!(count.get(), 0);
+            let mut vec: ConstVec<CounterI32, 3> = ConstVec::new();
+            vec.push(CounterI32::new(1)).expect("push failed");
+            vec.push(CounterI32::new(2)).expect("push failed");
+            vec.push(CounterI32::new(3)).expect("push failed");
+            assert_eq!(alive_count(), 3);
         }
-        assert_eq!(count.get(), 3);
+        assert_eq!(alive_count(), 0);
     }
 
     #[test]

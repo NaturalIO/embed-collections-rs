@@ -151,6 +151,9 @@ pub mod various;
 pub use various::Various;
 pub mod btree;
 
+#[cfg(test)]
+pub mod test;
+
 /// Cache line size in bytes
 #[cfg(any(
     target_arch = "x86_64",

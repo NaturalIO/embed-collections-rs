@@ -60,7 +60,7 @@
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
-use core::mem::{MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ptr::{NonNull, null_mut};
 
 /// Segmented list with cache-friendly segment sizes.
@@ -334,9 +334,33 @@ impl<T> SegList<T> {
     }
 
     /// Clear all elements from the list
-    #[inline]
+    #[inline(always)]
     pub fn clear(&mut self) {
-        while self.pop().is_some() {}
+        if self.count == 0 {
+            return;
+        }
+        unsafe {
+            let tail_header = self.tail.as_mut();
+            let first = tail_header.next;
+            let mut cur = Segment::from_raw(self.tail);
+            loop {
+                let next = cur.get_header().prev;
+                if next.is_null() {
+                    if needs_drop::<T>() {
+                        cur.drop_items();
+                    }
+                    self.count = 0;
+                    let header = cur.get_header_mut();
+                    header.count = 0;
+                    header.next = first;
+                    self.tail = NonNull::new_unchecked(first);
+                    return;
+                } else {
+                    cur.dealloc_with_items();
+                    cur = Segment::from_raw(NonNull::new_unchecked(next));
+                }
+            }
+        }
     }
 }
 
@@ -499,12 +523,19 @@ impl<T> Segment<T> {
     }
 
     #[inline(always)]
+    unsafe fn drop_items(&self) {
+        unsafe {
+            for i in 0..self.len() {
+                (*self.item_ptr(i)).assume_init_drop();
+            }
+        }
+    }
+
+    #[inline(always)]
     unsafe fn dealloc_with_items(&mut self) {
         unsafe {
-            if core::mem::needs_drop::<T>() {
-                for i in 0..self.len() {
-                    (*self.item_ptr(i)).assume_init_drop();
-                }
+            if needs_drop::<T>() {
+                self.drop_items();
             }
             self.dealloc();
         }
@@ -757,7 +788,7 @@ impl<T> Drop for SegListDrain<T> {
                     let header = cur.get_header();
                     let mut next = header.next;
                     // Drop remaining elements in this segment (from current index to end)
-                    if core::mem::needs_drop::<T>() {
+                    if needs_drop::<T>() {
                         for i in self.cur_idx..header.count as usize {
                             (*cur.item_ptr(i)).assume_init_drop();
                         }
@@ -772,7 +803,7 @@ impl<T> Drop for SegListDrain<T> {
                     // Save prev pointer before dealloc
                     let mut prev = cur.get_header().prev;
                     // Drop remaining elements in this segment (from start to current index)
-                    if core::mem::needs_drop::<T>() {
+                    if needs_drop::<T>() {
                         for i in 0..=self.cur_idx {
                             (*cur.item_ptr(i)).assume_init_drop();
                         }
@@ -792,26 +823,7 @@ impl<T> Drop for SegListDrain<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::sync::atomic::{AtomicUsize, Ordering};
-
-    static DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    #[derive(Debug)]
-    struct DropTracker(i32);
-
-    impl Drop for DropTracker {
-        fn drop(&mut self) {
-            DROP_COUNT.fetch_add(1, Ordering::SeqCst);
-        }
-    }
-
-    fn reset_drop_count() {
-        DROP_COUNT.store(0, Ordering::SeqCst);
-    }
-
-    fn get_drop_count() -> usize {
-        DROP_COUNT.load(Ordering::SeqCst)
-    }
+    use crate::test::{CounterI32, alive_count, reset_alive_count};
 
     #[test]
     fn test_multiple_segments() {
@@ -905,125 +917,169 @@ mod tests {
 
     #[test]
     fn test_drain() {
-        // Get capacity per segment for DropTracker (i32)
-        let cap = Segment::<DropTracker>::base_cap();
+        // Get capacity per segment for CounterI32 (i32)
+        let cap = Segment::<CounterI32>::base_cap();
 
         // Scenario 1: Single segment, drain completely
         {
-            reset_drop_count();
+            reset_alive_count();
             {
-                let mut list: SegList<DropTracker> = SegList::new();
+                let mut list: SegList<CounterI32> = SegList::new();
                 // Push fewer elements than one segment capacity
                 for i in 0..5 {
-                    list.push(DropTracker(i));
+                    list.push(CounterI32::new(i));
                 }
                 assert!(list.len() < cap);
 
                 // Drain all elements
-                let drained: Vec<i32> = list.drain().map(|d| d.0).collect();
+                let drained: Vec<i32> = list.drain().map(|d| *d).collect();
                 assert_eq!(drained, vec![0, 1, 2, 3, 4]);
             }
             // All 5 elements should be dropped by drain
-            assert_eq!(get_drop_count(), 5);
+            assert_eq!(alive_count(), 0);
         }
 
         // Scenario 2: Three segments, drain first segment partially, then drop remaining
         {
-            reset_drop_count();
+            reset_alive_count();
             {
-                let mut list: SegList<DropTracker> = SegList::new();
+                let mut list: SegList<CounterI32> = SegList::new();
                 // Push elements to create 3 segments (cap * 2 + 5 = more than 2 segments)
                 let total = cap * 2 + 5;
                 for i in 0..total {
-                    list.push(DropTracker(i as i32));
+                    list.push(CounterI32::new(i as i32));
                 }
+                assert_eq!(alive_count(), cap * 2 + 5);
 
                 // Drain only half of first segment
                 let drain_count = cap / 2;
                 let mut drain_iter = list.drain();
                 for i in 0..drain_count {
-                    assert_eq!(drain_iter.next().unwrap().0, i as i32);
+                    assert_eq!(*drain_iter.next().unwrap(), i as i32);
                 }
                 // Drop the drain iterator early (remaining elements should be dropped)
                 drop(drain_iter);
             }
             // All elements should be dropped (drained + remaining in list)
-            assert_eq!(get_drop_count(), cap * 2 + 5);
+            assert_eq!(alive_count(), 0);
         }
 
         // Scenario 3: Three segments, drain exactly first segment, then drop remaining
         {
-            reset_drop_count();
+            reset_alive_count();
             {
-                let mut list: SegList<DropTracker> = SegList::new();
+                let mut list: SegList<CounterI32> = SegList::new();
                 // Push elements to create 3 segments
                 let total = cap * 2 + 3;
                 for i in 0..total {
-                    list.push(DropTracker(i as i32));
+                    list.push(CounterI32::new(i as i32));
                 }
+                assert_eq!(alive_count(), cap * 2 + 3);
 
                 // Drain exactly first segment
                 let mut drain_iter = list.drain();
                 for i in 0..cap {
-                    assert_eq!(drain_iter.next().unwrap().0, i as i32);
+                    assert_eq!(*drain_iter.next().unwrap(), i as i32);
                 }
                 // Drop the drain iterator early
                 drop(drain_iter);
             }
             // All elements should be dropped
-            assert_eq!(get_drop_count(), cap * 2 + 3);
+            assert_eq!(alive_count(), 0);
         }
     }
 
     #[test]
     fn test_drop_single_segment() {
-        reset_drop_count();
+        reset_alive_count();
         {
-            let mut list: SegList<DropTracker> = SegList::new();
-            let cap = Segment::<DropTracker>::base_cap();
+            let mut list: SegList<CounterI32> = SegList::new();
+            let cap = Segment::<CounterI32>::base_cap();
 
             // Push fewer elements than one segment capacity
             for i in 0..5 {
-                list.push(DropTracker(i));
+                list.push(CounterI32::new(i));
             }
             assert!(list.len() < cap);
+            assert_eq!(alive_count(), 5);
 
             // list drops here, should drop all elements
         }
 
-        assert_eq!(get_drop_count(), 5);
+        assert_eq!(alive_count(), 0);
     }
 
     #[test]
     fn test_drop_multi_segment() {
-        let cap = Segment::<DropTracker>::base_cap();
-        reset_drop_count();
+        let cap = Segment::<CounterI32>::base_cap();
+        reset_alive_count();
         {
-            let mut list: SegList<DropTracker> = SegList::new();
+            let mut list: SegList<CounterI32> = SegList::new();
 
             // Push elements to create multiple segments (3 segments)
             let total = cap * 2 + 10;
             for i in 0..total {
-                list.push(DropTracker(i as i32));
+                list.push(CounterI32::new(i as i32));
             }
+            assert_eq!(alive_count(), cap * 2 + 10);
             // list drops here, should drop all elements across all segments
         }
-        assert_eq!(get_drop_count(), cap * 2 + 10);
+        assert_eq!(alive_count(), 0);
     }
 
     #[test]
-    fn test_clear() {
-        let mut list: SegList<i32> = SegList::new();
+    fn test_clear_1_segment() {
+        reset_alive_count();
+        {
+            let mut list: SegList<CounterI32> = SegList::new();
+            let base_cap = Segment::<CounterI32>::base_cap();
 
-        for i in 0..50 {
-            list.push(i);
+            for i in 0..base_cap as i32 {
+                list.push(CounterI32::new(i));
+            }
+            assert_eq!(alive_count(), base_cap);
+            list.clear();
+            assert!(list.is_empty());
+            assert_eq!(list.len(), 0);
+            assert!(list.pop().is_none());
         }
+        assert_eq!(alive_count(), 0);
+    }
 
+    #[test]
+    fn test_clear_2_segment() {
+        reset_alive_count();
+        {
+            let mut list: SegList<CounterI32> = SegList::new();
+
+            let count = Segment::<CounterI32>::base_cap() + Segment::<CounterI32>::large_cap();
+            for i in 0..count as i32 {
+                list.push(CounterI32::new(i));
+            }
+            assert_eq!(alive_count(), count);
+            list.clear();
+            assert!(list.is_empty());
+            assert_eq!(list.len(), 0);
+            assert!(list.pop().is_none());
+        }
+        assert_eq!(alive_count(), 0);
+    }
+
+    #[test]
+    fn test_clear_3_segment() {
+        reset_alive_count();
+        let mut list: SegList<CounterI32> = SegList::new();
+
+        let count = Segment::<CounterI32>::base_cap() + Segment::<CounterI32>::large_cap() * 2;
+        for i in 0..count as i32 {
+            list.push(CounterI32::new(i));
+        }
+        assert_eq!(alive_count(), count);
         list.clear();
-
         assert!(list.is_empty());
         assert_eq!(list.len(), 0);
-        assert_eq!(list.pop(), None);
+        assert!(list.pop().is_none());
+        assert_eq!(alive_count(), 0);
     }
 
     /// Large struct that larger than cache line
