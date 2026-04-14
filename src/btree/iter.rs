@@ -577,10 +577,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
         } else {
             if self.idx == 0 {
                 if let Some(ref leaf) = self.leaf {
-                    if leaf.get_left_node().is_none() {
-                        // At the beginning
-                        return None;
-                    }
+                    leaf.get_left_node()?;
                 }
                 let new_leaf = self.advance_backward();
                 self.leaf = Some(new_leaf);

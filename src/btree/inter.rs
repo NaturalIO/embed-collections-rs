@@ -256,7 +256,7 @@ impl<K: Ord, V> InterNode<K, V> {
     #[inline(always)]
     pub fn insert_at_front(&mut self, left_ptr: *mut NodeHeader, key: K) {
         let count = self.key_count();
-        debug_assert!((count as u32) < Self::cap(), "Node is full, cannot insert at front");
+        debug_assert!(count < Self::cap(), "Node is full, cannot insert at front");
         unsafe {
             if count > 0 {
                 // Shift existing keys to the right by one position
@@ -467,7 +467,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 (key_count - child_idx) as usize,
             );
             self.get_header_mut().count = key_count - 1;
-            return key;
+            key
         }
     }
 

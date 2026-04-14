@@ -641,19 +641,18 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
             // delete the last child of this node
             node.remove_last_child();
-            if let Some(key) = right_sep {
-                if let Some((grand_parent, grand_idx)) =
+            if let Some(key) = right_sep
+                && let Some((grand_parent, grand_idx)) =
                     self.get_cache().peak_ancenstor(|_node: &InterNode<K, V>, idx: u32| -> bool {
                         _node.key_count() > idx
                     })
+            {
+                #[cfg(test)]
                 {
-                    #[cfg(test)]
-                    {
-                        self.triggers |= TestFlag::UpdateSepKey as u32;
-                    }
-                    // key idx = child idx - 1 , and + 1 for right node
-                    grand_parent.change_key(grand_idx, key);
+                    self.triggers |= TestFlag::UpdateSepKey as u32;
                 }
+                // key idx = child idx - 1 , and + 1 for right node
+                grand_parent.change_key(grand_idx, key);
             }
         } else if delete_idx > 0 {
             node.remove_mid_child(delete_idx);
@@ -860,9 +859,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             }
                             prev_leaf_max = unsafe {
                                 Some(
-                                    (*leaf.key_ptr(leaf.key_count() as u32 - 1))
-                                        .assume_init_ref()
-                                        .clone(),
+                                    (*leaf.key_ptr(leaf.key_count() - 1)).assume_init_ref().clone(),
                                 )
                             };
                             break;
@@ -881,14 +878,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
                         // Calculate bounds for this leaf
                         let min_key = if idx > 0 {
-                            unsafe {
-                                Some((*parent.key_ptr((idx - 1) as u32)).assume_init_ref().clone())
-                            }
+                            unsafe { Some((*parent.key_ptr(idx - 1)).assume_init_ref().clone()) }
                         } else {
                             None
                         };
-                        let max_key = if (idx as u32) < parent.key_count() {
-                            unsafe { Some((*parent.key_ptr(idx as u32)).assume_init_ref().clone()) }
+                        let max_key = if idx < parent.key_count() {
+                            unsafe { Some((*parent.key_ptr(idx)).assume_init_ref().clone()) }
                         } else {
                             None
                         };
@@ -906,11 +901,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             );
                         }
                         prev_leaf_max = unsafe {
-                            Some(
-                                (*leaf.key_ptr(leaf.key_count() as u32 - 1))
-                                    .assume_init_ref()
-                                    .clone(),
-                            )
+                            Some((*leaf.key_ptr(leaf.key_count() - 1)).assume_init_ref().clone())
                         };
                     } else {
                         unreachable!();
@@ -973,9 +964,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let leaf = match &self.root {
             None => return None,
             Some(root) => {
-                let leaf = root.find_first_leaf(Some(cache));
                 // Populate cache with the path to first leaf
-                leaf
+                root.find_first_leaf(Some(cache))
             }
         };
         if leaf.key_count() == 0 {
@@ -993,9 +983,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let leaf = match &self.root {
             None => return None,
             Some(root) => {
-                let leaf = root.find_last_leaf(Some(cache));
                 // Populate cache with the path to last leaf
-                leaf
+                root.find_last_leaf(Some(cache))
             }
         };
         let count = leaf.key_count();
