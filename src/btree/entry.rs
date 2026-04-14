@@ -169,6 +169,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
                 let mut leaf = LeafNode::<K, V>::alloc();
                 map.root = Some(Node::Leaf(leaf.clone()));
                 map.len = 1;
+                map.leaf_count += 1;
                 return &mut *leaf.insert_no_split_with_idx(0, key, value);
             }
         }

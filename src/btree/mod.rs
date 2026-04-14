@@ -91,6 +91,32 @@ pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
     len: usize,
     // use unsafe to avoid borrow problems
     cache: UnsafeCell<PathCache<K, V>>,
+    // count of leaf nodes
+    leaf_count: usize,
+    #[cfg(test)]
+    triggers: u32,
+}
+
+#[cfg(test)]
+#[repr(u32)]
+enum TestFlag {
+    LeafSplit = 1,
+    InterSplit = 1 << 1,
+    LeafMoveLeft = 1 << 2,
+    LeafMoveRight = 1 << 3,
+    LeafMergeLeft = 1 << 4,
+    LeafMergeRight = 1 << 5,
+    InterMoveLeft = 1 << 6,
+    InterMoveLeftFirst = 1 << 7,
+    InterMoveRight = 1 << 8,
+    InterMoveRightLast = 1 << 9,
+    InterMergeLeft = 1 << 10,
+    InterMergeRight = 1 << 11,
+    UpdateSepKey = 1 << 12,
+    RemoveOnlyChild = 1 << 13,
+    RemoveChildFirst = 1 << 14,
+    RemoveChildMid = 1 << 15,
+    RemoveChildLast = 1 << 16,
 }
 
 unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Send for BTreeMap<K, V> {}
@@ -99,7 +125,14 @@ unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send> Sync for BTreeMap<K,
 impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Create a new empty BTreeMap
     pub fn new() -> Self {
-        Self { root: None, len: 0, cache: UnsafeCell::new(PathCache::<K, V>::new()) }
+        Self {
+            root: None,
+            len: 0,
+            cache: UnsafeCell::new(PathCache::<K, V>::new()),
+            leaf_count: 0,
+            #[cfg(test)]
+            triggers: 0,
+        }
     }
 
     /// Returns the number of elements in the map
@@ -120,6 +153,25 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let inter_cap = InterNode::<K, V>::cap();
         let leaf_cap = LeafNode::<K, V>::cap();
         (inter_cap, leaf_cap)
+    }
+
+    /// Return the number of leaf nodes
+    #[inline]
+    pub fn leaf_count(&self) -> usize {
+        self.leaf_count
+    }
+
+    /// Return the average fill ratio of leaf nodes
+    ///
+    /// The range is [0.0, 100]
+    #[inline]
+    pub fn get_fill_ratio(&self) -> f32 {
+        if self.len == 0 {
+            0.0
+        } else {
+            let cap = LeafNode::<K, V>::cap() as usize * self.leaf_count;
+            self.len as f32 / cap as f32 * 100.0
+        }
     }
 
     /// When root is leaf, returns 1, otherwise return the number of layers of inter node
@@ -267,6 +319,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             self.get_cache().peak_ancenstor(|_node, idx| -> bool { idx > 0 })
         };
         if let Some((parent, parent_idx)) = ret {
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::UpdateSepKey as u32;
+            }
             parent.change_key(parent_idx - 1, sep_key);
         }
     }
@@ -292,6 +348,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     leaf.move_left(&mut left_node, 1);
                     leaf.insert_no_split(key, value)
                 };
+                #[cfg(test)]
+                {
+                    self.triggers |= TestFlag::LeafMoveLeft as u32;
+                }
                 self.update_ancestor_sep_key::<true>(leaf.clone_first_key());
                 return val_p;
             }
@@ -311,11 +371,20 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 leaf.move_right::<false>(&mut right_node, cap - 1, 1);
                 leaf.insert_no_split(key, value)
             };
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::LeafMoveRight as u32;
+            }
             self.get_cache().move_right();
             self.update_ancestor_sep_key::<true>(right_node.clone_first_key());
             return val_p;
         }
+        #[cfg(test)]
+        {
+            self.triggers |= TestFlag::LeafSplit as u32;
+        }
         let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
+        self.leaf_count += 1;
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
         self.propagate_split(split_key, leaf.get_ptr(), new_leaf.get_ptr());
         ptr_v
@@ -332,17 +401,16 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         &mut self, mut promote_key: K, mut left_ptr: *mut NodeHeader,
         mut right_ptr: *mut NodeHeader,
     ) {
-        let cache = self.get_cache();
         let mut height = 0;
         // If we have parent nodes in cache, process them iteratively
-        while let Some((mut parent, idx)) = cache.pop() {
+        while let Some((mut parent, idx)) = self.get_cache().pop() {
             if !parent.is_full() {
                 // should insert next to left_ptr
                 parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
                 return;
             } else {
                 // Parent is full, try to borrow space from sibling through grand_parent
-                if let Some((mut grand, grand_idx)) = cache.peak_next() {
+                if let Some((mut grand, grand_idx)) = self.get_cache().peak_next() {
                     // Try to borrow from left sibling of parent
                     if grand_idx > 0 {
                         let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
@@ -353,9 +421,17 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                 debug_assert_eq!(parent.get_child_ptr(0), left_ptr);
                                 unsafe { (*parent.child_ptr(0)) = right_ptr };
                                 left_parent.append(demote_key, left_ptr);
+                                #[cfg(test)]
+                                {
+                                    self.triggers |= TestFlag::InterMoveLeftFirst as u32;
+                                }
                             } else {
                                 parent.rotate_left(&mut grand, grand_idx, &mut left_parent);
                                 parent.insert_no_split_with_idx(idx - 1, promote_key, right_ptr);
+                                #[cfg(test)]
+                                {
+                                    self.triggers |= TestFlag::InterMoveLeft as u32;
+                                }
                             }
                             return;
                         }
@@ -368,9 +444,17 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                 // split from last child of parent
                                 let demote_key = grand.change_key(grand_idx, promote_key);
                                 right_parent.insert_at_front(right_ptr, demote_key);
+                                #[cfg(test)]
+                                {
+                                    self.triggers |= TestFlag::InterMoveRightLast as u32;
+                                }
                             } else {
                                 parent.rotate_right(&mut grand, grand_idx, &mut right_parent);
                                 parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
+                                #[cfg(test)]
+                                {
+                                    self.triggers |= TestFlag::InterMoveRight as u32;
+                                }
                             }
                             return;
                         }
@@ -382,6 +466,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 promote_key = _promote_key;
                 right_ptr = right.get_ptr();
                 left_ptr = parent.get_ptr();
+                #[cfg(test)]
+                {
+                    self.triggers |= TestFlag::InterSplit as u32;
+                }
                 // Continue to next parent in cache (loop will pop next parent)
             }
         }
@@ -410,14 +498,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
     fn handle_leaf_underflow(&mut self, mut leaf: LeafNode<K, V>) {
-        //println!("handle_leaf_underflow {:?}", leaf);
         debug_assert!(!self.get_root_unwrap().is_leaf());
         let cur_count = leaf.key_count();
         let cap = LeafNode::<K, V>::cap();
         debug_assert!(cur_count <= cap >> 1);
         let mut can_unlink: bool = false;
         let (mut left_avail, mut right_avail) = (0, 0);
-        let mut merge_state = 0;
+        let mut merge_right = false;
         if cur_count == 0 {
             // if the right and left are full, or they not exist, can come to this
             can_unlink = true;
@@ -425,10 +512,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if !can_unlink && let Some(mut left_node) = leaf.get_left_node() {
             let left_count = left_node.key_count();
             if left_count + cur_count <= cap {
-                //println!("merge left");
                 leaf.copy_left(&mut left_node, cur_count);
                 can_unlink = true;
-                merge_state = MERGE_LEFT;
+                #[cfg(test)]
+                {
+                    self.triggers |= TestFlag::LeafMergeLeft as u32;
+                }
             } else {
                 left_avail = cap - left_count;
             }
@@ -436,10 +525,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if !can_unlink && let Some(mut right_node) = leaf.get_right_node() {
             let right_count = right_node.key_count();
             if right_count + cur_count <= cap {
-                //println!("merge right");
                 leaf.copy_right::<false>(&mut right_node, 0, cur_count);
                 can_unlink = true;
-                merge_state = MERGE_RIGHT;
+                merge_right = true;
+                #[cfg(test)]
+                {
+                    self.triggers |= TestFlag::LeafMergeRight as u32;
+                }
             } else {
                 right_avail = cap - right_count;
             }
@@ -448,19 +540,23 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // merge, only either triggering merge left or merge right.
         if !can_unlink && left_avail > 0 && right_avail > 0 && left_avail + right_avail == cur_count
         {
-            //println!("3-2 merge");
             let mut left_node = leaf.get_left_node().unwrap();
             let mut right_node = leaf.get_right_node().unwrap();
             debug_assert!(left_avail < cur_count);
             leaf.copy_left(&mut left_node, left_avail);
             leaf.copy_right::<false>(&mut right_node, left_avail, cur_count - left_avail);
-            merge_state = MERGE_LEFT | MERGE_RIGHT;
+            merge_right = true;
             can_unlink = true;
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::LeafMergeLeft as u32 | TestFlag::LeafMergeRight as u32;
+            }
         }
         if !can_unlink {
             return;
         }
-        let right_sep = if merge_state & MERGE_RIGHT > 0 {
+        self.leaf_count -= 1;
+        let right_sep = if merge_right {
             let right_node = leaf.get_right_node().unwrap();
             Some(right_node.clone_first_key())
         } else {
@@ -477,8 +573,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 return;
             }
         }
-        //println!("pop before {:?}", parent);
-        self.remove_leaf_from_inter(&mut parent, idx, right_sep, no_right);
+        self.remove_child_from_inter(&mut parent, idx, right_sep, no_right);
         if parent.key_count() <= 1 {
             self.handle_inter_underflow(parent);
         }
@@ -487,15 +582,17 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// To simplify the logic, we perform delete first.
     /// return the Some(node) when need to rebalance
     #[inline]
-    fn remove_leaf_from_inter(
+    fn remove_child_from_inter(
         &mut self, node: &mut InterNode<K, V>, delete_idx: u32, right_sep: Option<K>,
         _no_right: bool,
     ) {
-        // println!("remove child {delete_idx} of {:?}", node);
         self.get_cache().assert_center();
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
         if delete_idx == node.key_count() {
-            // println!("delete last {delete_idx} from {:?}", node);
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::RemoveChildLast as u32;
+            }
             // delete the last child of this node
             node.remove_last_child();
             if let Some(key) = right_sep {
@@ -504,22 +601,35 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         _node.key_count() > idx
                     })
                 {
-                    // println!("peak_ancenstor {:?} {grand_idx} for right ", grand_parent);
-                    // key idx = child idx - 1
+                    #[cfg(test)]
+                    {
+                        self.triggers |= TestFlag::UpdateSepKey as u32;
+                    }
+                    // key idx = child idx - 1 , and + 1 for right node
                     grand_parent.change_key(grand_idx, key);
                 }
             }
         } else if delete_idx > 0 {
-            //println!("delete mid {delete_idx} from {:?}", node);
             node.remove_mid_child(delete_idx);
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::RemoveChildMid as u32;
+            }
+            // sep key of right node shift left
             if let Some(key) = right_sep {
-                // println!("change_key {:?} {delete_idx}", node);
                 node.change_key(delete_idx - 1, key);
+                #[cfg(test)]
+                {
+                    self.triggers |= TestFlag::UpdateSepKey as u32;
+                }
             }
         } else {
-            // println!("delete first from {:?}", node);
             // delete_idx is the first but not the last
             let (_, mut sep_key) = node.remove_first_child();
+            #[cfg(test)]
+            {
+                self.triggers |= TestFlag::RemoveChildFirst as u32;
+            }
             if let Some(key) = right_sep {
                 sep_key = key;
             }
@@ -529,7 +639,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     #[inline]
     fn handle_inter_underflow(&mut self, mut node: InterNode<K, V>) {
-        // println!("handle_inter_underflow {node:?}");
         let cap = InterNode::<K, V>::cap();
         while node.key_count() <= 1 {
             if node.key_count() == 0 {
@@ -546,7 +655,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         self.root.replace(unsafe { Node::from_header(*node.child_ptr(0)) });
                     debug_assert!(_old_root.is_some());
 
-                    // println!("replace root {:?} with {:?}", _old_root, self.get_root_unwrap());
                     while let Some((parent, _)) = self.get_cache().pop() {
                         parent.dealloc::<false>();
                     }
@@ -559,7 +667,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
                         // the sep key should pull down
                         if left.key_count() + node.key_count() < cap {
-                            // println!("merge with left");
+                            #[cfg(test)]
+                            {
+                                self.triggers |= TestFlag::InterMergeLeft as u32;
+                            }
                             left.merge(node, &mut grand, grand_idx);
                             node = grand;
                             continue;
@@ -569,7 +680,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let right = grand.get_child_as_inter(grand_idx + 1);
                         // the sep key should pull down
                         if right.key_count() + node.key_count() < cap {
-                            // println!("merge with right");
+                            #[cfg(test)]
+                            {
+                                self.triggers |= TestFlag::InterMergeRight as u32;
+                            }
                             node.merge(right, &mut grand, grand_idx + 1);
                             node = grand;
                             continue;
@@ -584,11 +698,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn remove_only_child(&mut self, node: InterNode<K, V>) -> Option<(InterNode<K, V>, u32)> {
         debug_assert_eq!(node.key_count(), 0);
+        #[cfg(test)]
+        {
+            self.triggers |= TestFlag::RemoveOnlyChild as u32;
+        }
         if let Some((parent, idx)) = self.get_cache().move_to_ancenstor(
             |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
             InterNode::<K, V>::dealloc::<false>,
         ) {
-            //println!("find ancestor {:?}{idx} of empty node {:?}", parent, node);
             node.dealloc::<true>();
             Some((parent, idx))
         } else {
@@ -667,7 +784,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
         match &self.root {
             Some(Node::Leaf(leaf)) => {
-                //println!("visit {:?}", leaf);
                 total_keys += leaf.validate(None, None);
             }
             Some(Node::Inter(inter)) => {
@@ -679,7 +795,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     cur.validate();
                     match cur.get_child(0) {
                         Node::Leaf(leaf) => {
-                            //println!("visit {:?}", leaf);
                             // Validate first leaf with no min/max bounds from parent
                             let min_key: Option<K> = None;
                             let max_key = if inter.key_count() > 0 {
@@ -708,7 +823,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             break;
                         }
                         Node::Inter(child_inter) => {
-                            //println!("visit {:?}", inter);
                             cur = child_inter;
                         }
                     }
@@ -718,10 +832,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 while let Some((parent, idx)) =
                     cache.move_right_and_pop_l1(dummy_post_callback::<K, V>)
                 {
-                    //println!("move_right_and_pop_l1 {:?} {idx}", parent);
                     cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
-                        //println!("visit child {idx} {:?}", leaf);
                         // Calculate bounds for this leaf
                         let min_key = if idx > 0 {
                             unsafe {

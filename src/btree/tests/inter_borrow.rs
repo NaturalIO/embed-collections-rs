@@ -88,8 +88,10 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
             root: Some(Node::Inter(root)),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4 + inter_cap as usize - 1,
+            triggers: 0,
         };
-        //map.dump();
+        map.dump();
 
         map.validate();
 
@@ -100,7 +102,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
         let insert_value = CounterI32::new(insert_key_raw * 10);
         map.insert(insert_key, insert_value);
         map.validate();
-        // map.dump();
+        map.dump();
 
         assert_eq!(
             map.get(&CounterI32::new(insert_key_raw)),
@@ -121,6 +123,8 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
             assert_eq!(map.get(&k), Some(&CounterI32::new(*k * 5)));
         }
         drop(dummy_leaves);
+        assert!(map.triggers & TestFlag::InterMoveLeftFirst as u32 > 0);
+        assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -214,8 +218,10 @@ fn test_inter_borrow_case2_rotate_left() {
             root: Some(Node::Inter(root)),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4 + inter_cap as usize - 1,
+            triggers: 0,
         };
-        map.dump();
+        // map.dump();
 
         map.validate();
 
@@ -225,7 +231,7 @@ fn test_inter_borrow_case2_rotate_left() {
         println!("Insert key: {}", insert_key);
         map.insert(insert_key.clone(), insert_value.clone());
         map.validate();
-        map.dump();
+        // map.dump();
 
         assert_eq!(map.get(&insert_key), Some(&insert_value));
         for i in 0..leaf_cap {
@@ -245,6 +251,8 @@ fn test_inter_borrow_case2_rotate_left() {
             assert_eq!(map.get(&k), Some(&CounterI32::new(*k * 5)));
         }
         drop(dummy_leaves);
+        assert!(map.triggers & TestFlag::InterMoveLeft as u32 > 0);
+        assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -347,8 +355,10 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
             root: Some(Node::Inter(root)),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4 + inter_cap as usize - 1,
+            triggers: 0,
         };
-        map.dump();
+        //map.dump();
 
         map.validate();
 
@@ -381,6 +391,9 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
             assert_eq!(map.get(&CounterI32::new(i * 2)), Some(&CounterI32::new(i * 10)));
         }
         drop(dummy_leaves);
+
+        assert!(map.triggers & TestFlag::InterMoveRightLast as u32 > 0);
+        assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -470,8 +483,10 @@ fn test_inter_borrow_case4_rotate_right() {
             root: Some(Node::Inter(root)),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4 + inter_cap as usize - 1,
+            triggers: 0,
         };
-        map.dump();
+        // map.dump();
 
         map.validate();
 
@@ -501,6 +516,8 @@ fn test_inter_borrow_case4_rotate_right() {
             assert_eq!(map.get(&CounterI32::new(i * 2)), Some(&CounterI32::new(i * 10)));
         }
         drop(dummy_leaves);
+        assert!(map.triggers & TestFlag::InterMoveRight as u32 > 0);
+        assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");

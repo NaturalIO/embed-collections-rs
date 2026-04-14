@@ -21,6 +21,8 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
         map.insert((i as i32).into(), (i as i32 * 10).into());
         map.validate();
     }
+    println!("leaf_count: {}", map.leaf_count());
+    println!("fill_ratio: {:.2}", map.get_fill_ratio());
     println!("height: {}", map.height());
     assert_eq!(height, map.height());
 
@@ -61,6 +63,7 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
 #[case(100, 10)] // Small batch, more iterations
 #[case(1000, 10)] // Standard test: 1000 elements per batch, 10 iterations
 #[case(500, 5)] // Medium batch, fewer iterations
+#[case(10000, 3)] // Standard test: 1000 elements per batch, 10 iterations
 fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iterations: usize) {
     reset_alive_count();
     assert_eq!(alive_count(), 0);
@@ -78,6 +81,11 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         prev_batch.push(key);
         map.insert(key.into(), value_from_key(key).into());
     }
+    println!("---");
+    println!("len: {}", map.len());
+    println!("leaf_count: {}", map.leaf_count());
+    println!("fill_ratio: {:.2}", map.get_fill_ratio());
+    println!("height: {}", map.height());
     map.validate();
     println!("After first batch: height={}, len={}", map.height(), map.len());
 
@@ -91,7 +99,11 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
             map.insert(key.into(), value_from_key(key).into());
         }
         map.validate();
-        println!("After iteration {} insert: height={}, len={}", iter, map.height(), map.len());
+        println!("---iteration {iter}: insert ---");
+        println!("len: {}", map.len());
+        println!("leaf_count: {}", map.leaf_count());
+        println!("fill_ratio: {:.2}", map.get_fill_ratio());
+        println!("height: {}", map.height());
 
         // Delete previous batch
         for key in &prev_batch {
@@ -106,7 +118,11 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
             }
         }
         map.validate();
-        println!("After iteration {} delete: height={}, len={}", iter, map.height(), map.len());
+        println!("---iteration {iter}: removed ---");
+        println!("len: {}", map.len());
+        println!("leaf_count: {}", map.leaf_count());
+        println!("fill_ratio: {:.2}", map.get_fill_ratio());
+        println!("height: {}", map.height());
 
         prev_batch = current_batch;
     }
@@ -126,6 +142,7 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
 
     assert_eq!(map.len(), 0, "Map should be empty after deleting all elements");
     assert_eq!(map.height(), 1, "Height should be 1 for empty tree");
+    assert_eq!(map.leaf_count(), 1);
 
     drop(map);
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");

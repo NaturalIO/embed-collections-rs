@@ -68,6 +68,8 @@ fn test_leaf_del_merge_with_left_height_2() {
             root: Some(Node::Inter(root)),
             len: (2 * min_count + leaf_cap) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
         map.validate();
 
@@ -126,6 +128,9 @@ fn test_leaf_del_merge_with_left_height_2() {
             "Merged middle key should be less than right first key"
         );
 
+        assert_eq!(map.height(), 2);
+        assert_eq!(map.leaf_count, 2);
+        assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildMid as u32);
         // Cleanup
         drop(map);
     }
@@ -200,6 +205,8 @@ fn test_merge_left_with_right_height_2() {
             root: Some(Node::Inter(root)),
             len: (leaf_cap + 2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
         map.validate();
 
@@ -231,6 +238,14 @@ fn test_merge_left_with_right_height_2() {
                 assert_eq!(map.get(&key).map(|v| **v), Some(key * 10));
             }
         }
+        assert_eq!(map.height(), 2);
+        assert_eq!(map.leaf_count, 2);
+        assert_eq!(
+            map.triggers,
+            TestFlag::LeafMergeRight as u32
+                | TestFlag::RemoveChildMid as u32
+                | TestFlag::UpdateSepKey as u32
+        );
         drop(map);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
@@ -251,7 +266,7 @@ fn test_merge_left_with_right_height_2() {
 /// Coverage:
 /// - Merge with left and right brothers
 /// - delete child at mid idx=1 of root level
-/// - change_key for right leaf after shifting leeft
+/// - change_key for right leaf after shifting left
 #[test]
 fn test_leaf_del_merge_3_2_height_2() {
     reset_alive_count();
@@ -308,10 +323,12 @@ fn test_leaf_del_merge_3_2_height_2() {
             root: Some(Node::Inter(root.clone())),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
         map.validate();
 
-        //map.dump();
+        // map.dump();
 
         let delete_key = (leaf_cap - 1) as i32 * 2;
         // Remove elements from middle leaf to trigger 3-way merge
@@ -335,6 +352,15 @@ fn test_leaf_del_merge_3_2_height_2() {
         //map.dump();
         assert_eq!(root.get_keys()[0], (leaf_cap as i32 + 1) * 2);
         assert!(root.get_keys()[0] != right_first_key);
+        assert_eq!(map.height(), 2);
+        assert_eq!(map.leaf_count, 2);
+        assert_eq!(
+            map.triggers,
+            TestFlag::LeafMergeLeft as u32
+                | TestFlag::LeafMergeRight as u32
+                | TestFlag::RemoveChildMid as u32
+                | TestFlag::UpdateSepKey as u32
+        );
         drop(map);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
@@ -398,6 +424,8 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
             root: Some(Node::Inter(root)),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 2,
+            triggers: 0,
         };
         map.validate();
         assert_eq!(map.height(), 2);
@@ -446,8 +474,13 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         }
         assert_eq!(map.height(), 1);
         println!("before drop map, alive count: {}", alive_count());
+
+        assert_eq!(map.leaf_count, 1);
+        assert_eq!(
+            map.triggers,
+            TestFlag::LeafMergeRight as u32 | TestFlag::RemoveChildFirst as u32
+        );
         drop(map);
-        println!("after drop map, alive count: {}", alive_count());
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
@@ -509,6 +542,8 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
             root: Some(Node::Inter(root)),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 2,
+            triggers: 0,
         };
         assert_eq!(map.height(), 2);
         map.validate();
@@ -555,6 +590,9 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
             right_remaining_key
         );
         assert_eq!(map.height(), 1);
+
+        assert_eq!(map.leaf_count, 1);
+        assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildLast as u32);
 
         drop(map);
     }
@@ -649,6 +687,8 @@ fn test_leaf_del_merge_with_left_height_3() {
             root: Some(Node::Inter(root)),
             len: (4 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
         map.validate();
         assert_eq!(map.height(), 3);
@@ -703,6 +743,8 @@ fn test_leaf_del_merge_with_left_height_3() {
             leaf_0_last_key,
             leaf_1_remaining_key
         );
+        assert_eq!(map.leaf_count, 3);
+        assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildLast as u32);
 
         drop(map);
     }
@@ -808,6 +850,8 @@ fn test_leaf_del_merge_with_right_height_3() {
             root: Some(Node::Inter(root)),
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
         // map.dump();
         //map.validate();
@@ -853,6 +897,13 @@ fn test_leaf_del_merge_with_right_height_3() {
                 );
             }
         }
+        assert_eq!(map.leaf_count, 3);
+        assert_eq!(
+            map.triggers,
+            TestFlag::LeafMergeRight as u32
+                | TestFlag::RemoveChildLast as u32
+                | TestFlag::UpdateSepKey as u32
+        );
 
         drop(map);
     }
@@ -955,6 +1006,8 @@ fn test_leaf_del_merge_2_3_height_3() {
             root: Some(Node::Inter(root)),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
         map.validate();
         assert_eq!(map.height(), 3);
@@ -983,6 +1036,14 @@ fn test_leaf_del_merge_2_3_height_3() {
                 );
             }
         }
+        assert_eq!(map.leaf_count, 3);
+        assert_eq!(
+            map.triggers,
+            TestFlag::LeafMergeRight as u32
+                | TestFlag::LeafMergeLeft as u32
+                | TestFlag::RemoveChildFirst as u32
+                | TestFlag::UpdateSepKey as u32
+        );
         drop(map);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
@@ -1087,6 +1148,8 @@ fn test_leaf_del_remove_only_child_cascade() {
             root: Some(Node::Inter(root)),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
         map.validate();
         assert_eq!(map.height(), 4, "Initial tree height should be 4");
@@ -1149,7 +1212,15 @@ fn test_leaf_del_remove_only_child_cascade() {
                 key
             );
         }
-
+        // map.dump();
+        assert_eq!(map.leaf_count, 2);
+        assert_eq!(
+            map.triggers,
+            TestFlag::RemoveOnlyChild as u32
+                | TestFlag::RemoveChildMid as u32
+                | TestFlag::LeafMergeRight as u32
+                | TestFlag::UpdateSepKey as u32
+        );
         drop(map);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");

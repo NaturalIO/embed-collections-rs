@@ -625,9 +625,6 @@ impl<K: Ord, V> PathCache<K, V> {
     }
 }
 
-pub(super) const MERGE_LEFT: u8 = 1;
-pub(super) const MERGE_RIGHT: u8 = 2;
-
 pub(super) fn dummy_post_callback<K, V>(_node: InterNode<K, V>) {}
 
 #[inline(always)]

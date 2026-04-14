@@ -70,6 +70,8 @@ fn test_borrow_from_left_insert_first_height_2() {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
 
         // Verify middle leaf is full before insert
@@ -96,6 +98,9 @@ fn test_borrow_from_left_insert_first_height_2() {
 
         assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
 
+        assert_eq!(map.leaf_count, 3); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map); // This will deallocate all nodes
     }
@@ -154,6 +159,8 @@ fn test_borrow_from_left_insert_mid_height_2() {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
 
         // Insert into middle leaf (which is full) - this will trigger either borrowing or split
@@ -189,6 +196,10 @@ fn test_borrow_from_left_insert_mid_height_2() {
         assert_eq!(root.height(), 1);
         // verify the spliter of middle_leaf has changed
         assert_eq!(root.get_keys()[0], old_middle_leaf_key1);
+
+        assert_eq!(map.leaf_count, 3); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
 
         // Cleanup
         drop(map); // This will deallocate all nodes
@@ -246,6 +257,8 @@ fn test_borrow_from_right_height_2_not_last() {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
 
         assert_eq!(map.get_root_unwrap().as_inter().get_keys()[1], right_leaf.get_keys()[0]);
@@ -278,6 +291,9 @@ fn test_borrow_from_right_height_2_not_last() {
         // verify the spliter of right_leaf has changed
         assert_eq!(root.get_keys()[1], middle_last_key);
 
+        assert_eq!(map.leaf_count, 3); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }
@@ -332,6 +348,8 @@ fn test_borrow_from_right_height_2_last() {
             root: Some(Node::Inter(root)),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
 
         assert_eq!(map.get_root_unwrap().as_inter().get_keys()[1], right_leaf.get_keys()[0]);
@@ -367,6 +385,9 @@ fn test_borrow_from_right_height_2_last() {
         // verify the spliter of right_leaf has changed
         assert_eq!(root.get_keys()[1], insert_key);
 
+        assert_eq!(map.leaf_count, 3); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }
@@ -439,6 +460,8 @@ fn test_borrow_from_left_insert_first_height_3() {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
 
         assert_eq!(map.height(), 3);
@@ -459,10 +482,12 @@ fn test_borrow_from_left_insert_first_height_3() {
         assert_eq!(root.get_keys()[0], leaf_2.get_keys()[0]);
         assert_eq!(internal_left.key_count(), 1);
         assert_eq!(internal_right.key_count(), 1);
-        map.dump();
+        //map.dump();
 
         map.validate();
-
+        assert_eq!(map.leaf_count, 4); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }
@@ -536,6 +561,8 @@ fn test_borrow_from_left_insert_mid_height_3() {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
 
         assert_eq!(map.height(), 3);
@@ -557,6 +584,9 @@ fn test_borrow_from_left_insert_mid_height_3() {
         assert_eq!(internal_left.key_count(), 1);
         assert_eq!(internal_right.key_count(), 1);
 
+        assert_eq!(map.leaf_count, 4); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }
@@ -631,6 +661,8 @@ fn test_borrow_from_right_insert_not_last_height_3() {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
 
         assert_eq!(map.height(), 3);
@@ -654,6 +686,10 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         assert_eq!(internal_left.key_count(), 1);
         assert_eq!(internal_right.key_count(), 1);
 
+        assert_eq!(map.leaf_count, 4); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
+        // as long as right sibling changed, sep key should be update
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }
@@ -728,6 +764,8 @@ fn test_borrow_from_right_insert_last_height_3() {
             root: Some(Node::Inter(root)),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
 
         assert_eq!(map.height(), 3);
@@ -750,7 +788,9 @@ fn test_borrow_from_right_insert_last_height_3() {
         // the root key has changed
         assert_eq!(internal_left.key_count(), 1);
         assert_eq!(internal_right.key_count(), 1);
-
+        assert_eq!(map.leaf_count, 4); // unchanged
+        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
+        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
         // Cleanup
         drop(map);
     }

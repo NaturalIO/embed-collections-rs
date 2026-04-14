@@ -86,6 +86,8 @@ fn test_inter_underflow_merge_right_height_3_2() {
             root: Some(Node::Inter(root)),
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
         //map.dump();
         assert_eq!(map.height(), 3);
@@ -132,6 +134,8 @@ fn test_inter_underflow_merge_right_height_3_2() {
         //map.dump();
         // height collaps from 3 to 2
         assert_eq!(map.height(), 2);
+        assert_eq!(map.leaf_count, 4);
+        assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
     }
     // After map is dropped, all CounterI32 should be dropped
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -209,6 +213,8 @@ fn test_inter_underflow_merge_left_height_3_2() {
             root: Some(Node::Inter(root)),
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 4,
+            triggers: 0,
         };
         assert_eq!(map.height(), 3);
         //map.dump();
@@ -256,6 +262,9 @@ fn test_inter_underflow_merge_left_height_3_2() {
         //map.dump();
         // height collaps from 3 to 2
         assert_eq!(map.height(), 2);
+
+        assert_eq!(map.leaf_count, 4);
+        assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }
@@ -345,6 +354,8 @@ fn test_inter_underflow_merge_right_height_3() {
             root: Some(Node::Inter(root)),
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 6,
+            triggers: 0,
         };
         assert_eq!(map.height(), 3, "Tree height should remain 3");
         // map.dump();
@@ -397,6 +408,8 @@ fn test_inter_underflow_merge_right_height_3() {
                 "Key {} should exist",
                 (50 + i) * 2
             );
+            assert_eq!(map.leaf_count, 6);
+            assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
         }
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -487,6 +500,8 @@ fn test_inter_underflow_merge_left_height_3() {
             root: Some(Node::Inter(root)),
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 6,
+            triggers: 0,
         };
         //map.dump();
         assert_eq!(map.height(), 3, "Tree height should remain 3");
@@ -541,6 +556,9 @@ fn test_inter_underflow_merge_left_height_3() {
                 "Key {} should exist",
                 (50 + i) * 2
             );
+
+            assert_eq!(map.leaf_count, 6);
+            assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
         }
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -599,6 +617,8 @@ fn test_inter_underflow_root_becomes_leaf() {
             root: Some(Node::Inter(root)),
             len: 3,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 1,
+            triggers: 0,
         };
         // map.dump();
 
@@ -627,6 +647,8 @@ fn test_inter_underflow_root_becomes_leaf() {
         for i in 0..3 {
             assert!(map.contains_key(&CounterI32::new(i * 2)), "Key {} should exist", i * 2);
         }
+        assert_eq!(map.leaf_count, 1);
+        assert_eq!(map.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }
@@ -702,6 +724,8 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
             root: Some(Node::Inter(root)),
             len: 9,
             cache: UnsafeCell::new(PathCache::new()),
+            leaf_count: 3,
+            triggers: 0,
         };
         assert_eq!(map.height(), 3, "Tree height should be 3");
         // map.dump();
@@ -746,6 +770,8 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
                 (20 + i) * 2
             );
         }
+        assert_eq!(map.leaf_count, 3);
+        assert_eq!(map.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }
