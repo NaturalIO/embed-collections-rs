@@ -213,6 +213,7 @@ impl<K, V> LeafNode<K, V> {
 
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
+    #[cfg(test)]
     #[inline]
     pub fn insert_no_split(&mut self, key: K, value: V) -> *mut V
     where
@@ -281,19 +282,38 @@ impl<K, V> LeafNode<K, V> {
 
     /// move items at the begining of this node to the tail of left_node
     #[inline(always)]
-    pub fn move_left(&mut self, left_node: &mut Self, move_count: u32) {
-        let count = self.key_count();
-        let cur_node_left = count - move_count;
-        self.copy_left(left_node, move_count);
-        if move_count < count {
-            unsafe {
-                let first_key = self.key_ptr(0);
-                let first_val = self.value_ptr(0);
-                ptr::copy(self.key_ptr(move_count), first_key, cur_node_left as usize);
-                ptr::copy(self.value_ptr(move_count), first_val, cur_node_left as usize);
+    pub fn insert_borrow_left(
+        &mut self, left_node: &mut Self, mut idx: u32, key: K, value: V,
+    ) -> *mut V {
+        debug_assert!(idx != 0);
+        debug_assert!(idx < self.key_count());
+        unsafe {
+            let first_key_p = self.key_ptr(0);
+            let first_val_p = self.value_ptr(0);
+            let move_key = (*first_key_p).assume_init_read();
+            let move_value = (*first_val_p).assume_init_read();
+            left_node.insert_no_split_with_idx(left_node.key_count(), move_key, move_value);
+            idx -= 1;
+            if idx > 0 {
+                ptr::copy(first_key_p.add(1), first_key_p, idx as usize);
+                ptr::copy(first_val_p.add(1), first_val_p, idx as usize);
             }
+            (*self.key_ptr(idx)).write(key);
+            let value_p = self.value_ptr(idx);
+            (*value_p).write(value);
+            value_p as *mut V
         }
-        self.get_header_mut().count = cur_node_left;
+    }
+
+    #[inline(always)]
+    pub fn borrow_right(&mut self, right_node: &mut Self) {
+        let idx = self.key_count() - 1;
+        unsafe {
+            let move_key = (*self.key_ptr(idx)).assume_init_read();
+            let move_value = (*self.value_ptr(idx)).assume_init_read();
+            right_node.insert_no_split_with_idx(0, move_key, move_value);
+            self.get_header_mut().count = idx;
+        }
     }
 
     #[inline(always)]
@@ -315,18 +335,15 @@ impl<K, V> LeafNode<K, V> {
         }
     }
 
-    /// If append == true, move the items to the tail,
-    /// If append == false, prepend to items to the front.
+    /// move the items to the tail of right_node
     #[inline(always)]
-    pub fn move_right<const APPEND: bool>(
-        &mut self, right_node: &mut Self, start_idx: u32, move_count: u32,
-    ) {
-        self.copy_right::<APPEND>(right_node, start_idx, move_count);
+    pub fn move_right(&mut self, right_node: &mut Self, start_idx: u32, move_count: u32) {
+        self.copy_right::<true>(right_node, start_idx, move_count);
         self.get_header_mut().count -= move_count;
     }
 
-    /// If append == true, move the items to the tail,
-    /// If append == false, prepend to items to the front.
+    /// If append == true, copy the items to the tail of right_node,
+    /// If append == false, prepend to items to the front of right_node.
     ///
     /// # Safety
     ///
@@ -377,6 +394,7 @@ impl<K, V> LeafNode<K, V> {
         }
     }
 
+    #[inline]
     pub fn insert_with_split(&mut self, idx: u32, key: K, value: V) -> (Self, *mut V) {
         let mut new_leaf = unsafe { LeafNode::<K, V>::alloc() };
         let count = self.key_count();
@@ -394,7 +412,7 @@ impl<K, V> LeafNode<K, V> {
             let insert_left = split_idx >= idx;
             let total_copy = count - split_idx;
             if insert_left {
-                self.move_right::<true>(&mut new_leaf, split_idx, total_copy);
+                self.move_right(&mut new_leaf, split_idx, total_copy);
                 let ptr_v = self.insert_no_split_with_idx(idx, key, value);
                 (new_leaf, ptr_v)
             } else {

@@ -556,3 +556,166 @@ fn test_remove_value_no_borrow_single_element() {
         assert_eq!(alive_count(), 0);
     }
 }
+
+/// Test insert_borrow_left - insert at index 1 (minimum valid idx)
+/// Setup: left_node has [0, 1, 2], right_node (self) has [10, 20, 30, 40]
+/// Operation: insert_borrow_left with idx=1, key=15, value=150
+/// Expected: left_node becomes [0, 1, 2, 10], right_node becomes [15, 20, 30, 40]
+#[test]
+fn test_insert_borrow_left_at_idx_one() {
+    unsafe {
+        let mut left_node = LeafNode::<i32, i32>::alloc();
+        let mut right_node = LeafNode::<i32, i32>::alloc();
+
+        // Setup left_node with [0, 1, 2]
+        for i in 0..3 {
+            left_node.insert_no_split(i, i * 10);
+        }
+
+        // Setup right_node with [10, 20, 30, 40]
+        for i in 1..5 {
+            right_node.insert_no_split(i * 10, i * 100);
+        }
+
+        // Verify search returns correct idx for key=15
+        let (idx, found) = right_node.search(&15);
+        assert!(!found);
+        assert_eq!(idx, 1, "key=15 should be inserted at idx=1");
+
+        // Insert at idx=1, key=15, value=150
+        let ptr_v = right_node.insert_borrow_left(&mut left_node, 1, 15, 150);
+        assert_eq!(*ptr_v, 150);
+
+        // Verify left_node: [0, 1, 2, 10]
+        assert_eq!(left_node.key_count(), 4);
+        assert_eq!((*left_node.key_ptr(0)).assume_init_read(), 0);
+        assert_eq!((*left_node.key_ptr(1)).assume_init_read(), 1);
+        assert_eq!((*left_node.key_ptr(2)).assume_init_read(), 2);
+        assert_eq!((*left_node.key_ptr(3)).assume_init_read(), 10);
+
+        // Verify right_node: [15, 20, 30, 40]
+        assert_eq!(right_node.key_count(), 4);
+        assert_eq!((*right_node.key_ptr(0)).assume_init_read(), 15);
+        assert_eq!((*right_node.key_ptr(1)).assume_init_read(), 20);
+        assert_eq!((*right_node.key_ptr(2)).assume_init_read(), 30);
+        assert_eq!((*right_node.key_ptr(3)).assume_init_read(), 40);
+
+        left_node.dealloc::<true>();
+        right_node.dealloc::<true>();
+    }
+}
+
+/// Test insert_borrow_left - insert at last index
+/// Setup: left_node has [0], right_node (self) has [10, 20, 30]
+/// Operation: insert_borrow_left with idx=2, key=25, value=250
+/// Expected: left_node becomes [0, 10], right_node becomes [20, 25, 30]
+#[test]
+fn test_insert_borrow_left_at_last_idx() {
+    unsafe {
+        let mut left_node = LeafNode::<i32, i32>::alloc();
+        let mut right_node = LeafNode::<i32, i32>::alloc();
+
+        // Setup left_node with [0]
+        left_node.insert_no_split(0, 0);
+
+        // Setup right_node with [10, 20, 30]
+        for i in 1..4 {
+            right_node.insert_no_split(i * 10, i * 100);
+        }
+
+        // Verify search returns correct idx for key=25
+        let (idx, found) = right_node.search(&25);
+        assert!(!found);
+        assert_eq!(idx, 2, "key=25 should be inserted at idx=2");
+
+        // Insert at idx=2 (last valid index), key=25, value=250
+        let ptr_v = right_node.insert_borrow_left(&mut left_node, 2, 25, 250);
+        assert_eq!(*ptr_v, 250);
+
+        // Verify left_node: [0, 10]
+        assert_eq!(left_node.key_count(), 2);
+        assert_eq!((*left_node.key_ptr(0)).assume_init_read(), 0);
+        assert_eq!((*left_node.key_ptr(1)).assume_init_read(), 10);
+
+        // Verify right_node: [20, 25, 30]
+        assert_eq!(right_node.key_count(), 3);
+        assert_eq!((*right_node.key_ptr(0)).assume_init_read(), 20);
+        assert_eq!((*right_node.key_ptr(1)).assume_init_read(), 25);
+        assert_eq!((*right_node.key_ptr(2)).assume_init_read(), 30);
+
+        left_node.dealloc::<true>();
+        right_node.dealloc::<true>();
+    }
+}
+
+/// Test borrow_right - move last element from left to right
+/// Setup: left_node has [10, 20, 30], right_node has [40, 50]
+/// Operation: left_node.borrow_right(&mut right_node)
+/// Expected: left_node becomes [10, 20], right_node becomes [30, 40, 50]
+#[test]
+fn test_borrow_right_basic() {
+    unsafe {
+        let mut left_node = LeafNode::<i32, i32>::alloc();
+        let mut right_node = LeafNode::<i32, i32>::alloc();
+
+        // Setup left_node with [10, 20, 30]
+        for i in 1..4 {
+            left_node.insert_no_split(i * 10, i * 100);
+        }
+
+        // Setup right_node with [40, 50]
+        right_node.insert_no_split(40, 400);
+        right_node.insert_no_split(50, 500);
+
+        // Borrow from left to right
+        left_node.borrow_right(&mut right_node);
+
+        // Verify left_node: [10, 20]
+        assert_eq!(left_node.key_count(), 2);
+        assert_eq!((*left_node.key_ptr(0)).assume_init_read(), 10);
+        assert_eq!((*left_node.key_ptr(1)).assume_init_read(), 20);
+
+        // Verify right_node: [30, 40, 50]
+        assert_eq!(right_node.key_count(), 3);
+        assert_eq!((*right_node.key_ptr(0)).assume_init_read(), 30);
+        assert_eq!((*right_node.key_ptr(1)).assume_init_read(), 40);
+        assert_eq!((*right_node.key_ptr(2)).assume_init_read(), 50);
+
+        left_node.dealloc::<true>();
+        right_node.dealloc::<true>();
+    }
+}
+
+/// Test borrow_right - when left_node has only one element
+/// Setup: left_node has [10], right_node has [20, 30]
+/// Operation: left_node.borrow_right(&mut right_node)
+/// Expected: left_node becomes empty, right_node becomes [10, 20, 30]
+#[test]
+fn test_borrow_right_single_element() {
+    unsafe {
+        let mut left_node = LeafNode::<i32, i32>::alloc();
+        let mut right_node = LeafNode::<i32, i32>::alloc();
+
+        // Setup left_node with [10]
+        left_node.insert_no_split(10, 100);
+
+        // Setup right_node with [20, 30]
+        right_node.insert_no_split(20, 200);
+        right_node.insert_no_split(30, 300);
+
+        // Borrow from left to right
+        left_node.borrow_right(&mut right_node);
+
+        // Verify left_node: empty
+        assert_eq!(left_node.key_count(), 0);
+
+        // Verify right_node: [10, 20, 30]
+        assert_eq!(right_node.key_count(), 3);
+        assert_eq!((*right_node.key_ptr(0)).assume_init_read(), 10);
+        assert_eq!((*right_node.key_ptr(1)).assume_init_read(), 20);
+        assert_eq!((*right_node.key_ptr(2)).assume_init_read(), 30);
+
+        left_node.dealloc::<true>();
+        right_node.dealloc::<true>();
+    }
+}

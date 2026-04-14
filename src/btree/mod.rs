@@ -384,15 +384,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             if let Some(mut left_node) = leaf.get_left_node()
                 && !left_node.is_full()
             {
-                let (idx, _is_equal) = leaf.search(&key);
-                debug_assert!(!_is_equal);
                 let val_p = if idx == 0 {
                     // leaf is not change, but since the insert pos is leftmost of this node, mean parent
                     // separate_key <= key, need to update its separate_key
-                    left_node.insert_no_split(key, value)
+                    left_node.insert_no_split_with_idx(left_node.key_count(), key, value)
                 } else {
-                    leaf.move_left(&mut left_node, 1);
-                    leaf.insert_no_split(key, value)
+                    leaf.insert_borrow_left(&mut left_node, idx, key, value)
                 };
                 #[cfg(test)]
                 {
@@ -407,15 +404,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if let Some(mut right_node) = leaf.get_right_node()
             && !right_node.is_full()
         {
-            let (idx, _is_equal) = leaf.search(&key);
-            debug_assert!(!_is_equal);
             let val_p = if idx == cap {
                 // leaf is not change, in this condition, right_node is the leftmost child
                 // of its parent, key < right_node.get_keys()[0]
                 right_node.insert_no_split_with_idx(0, key, value)
             } else {
-                leaf.move_right::<false>(&mut right_node, cap - 1, 1);
-                leaf.insert_no_split(key, value)
+                leaf.borrow_right(&mut right_node);
+                leaf.insert_no_split_with_idx(idx, key, value)
             };
             #[cfg(test)]
             {
