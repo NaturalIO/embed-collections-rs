@@ -428,20 +428,19 @@ impl<K: Ord, V> InterNode<K, V> {
     /// If node has no key, return Err(());
     /// otherwise shift everything left and return Ok(first_key)
     #[inline(always)]
-    pub fn remove_first_child(&mut self) -> (*mut NodeHeader, K) {
+    pub fn remove_first_child(&mut self) -> K {
         let key_count = self.key_count();
         debug_assert!(key_count > 0);
         unsafe {
             let first_key_ptr = self.key_ptr(0);
             let first_child_ptr = self.child_ptr(0);
             let first_key = (*first_key_ptr).assume_init_read();
-            let first_child = *first_child_ptr;
             // key[idx] is removed, move key[idx+1..] forward, (key_count - 1) keys's left
             ptr::copy(first_key_ptr.add(1), first_key_ptr, (key_count - 1) as usize);
             // child_ptr(idx) is remove, key_count of ptrs left,
             ptr::copy(first_child_ptr.add(1), first_child_ptr, key_count as usize);
             self.get_header_mut().count = key_count - 1;
-            (first_child, first_key)
+            first_key
         }
     }
 
@@ -473,10 +472,28 @@ impl<K: Ord, V> InterNode<K, V> {
 
     /// my_idx: parent.child_ptr[child_idx] == self
     #[inline]
-    pub fn rotate_left(&mut self, parent: &mut Self, my_idx: u32, left: &mut Self) {
-        let (child, promote_key) = self.remove_first_child();
-        let demote_key = parent.change_key(my_idx - 1, promote_key);
-        left.append(demote_key, child);
+    pub fn insert_rotate_left(
+        &mut self, parent: &mut Self, my_idx: u32, left: &mut Self, insert_child_idx: u32, key: K,
+        child_ptr: *mut NodeHeader,
+    ) {
+        debug_assert!(insert_child_idx <= self.key_count());
+        debug_assert!(insert_child_idx > 0);
+        unsafe {
+            let first_key_ptr = self.key_ptr(0);
+            let first_child_ptr = self.child_ptr(0);
+            let first_key = (*first_key_ptr).assume_init_read();
+            let first_child = *first_child_ptr;
+            // key[idx] is removed, move key[idx+1..] forward, (key_count - 1) keys's left
+            if insert_child_idx > 1 {
+                ptr::copy(first_key_ptr.add(1), first_key_ptr, (insert_child_idx - 1) as usize);
+            }
+            // child_ptr(idx) is remove, key_count of ptrs left,
+            ptr::copy(first_child_ptr.add(1), first_child_ptr, insert_child_idx as usize);
+            (*self.key_ptr(insert_child_idx - 1)).write(key);
+            (*self.child_ptr(insert_child_idx)) = child_ptr;
+            let demote_key = parent.change_key(my_idx - 1, first_key);
+            left.append(demote_key, first_child);
+        }
     }
 
     /// my_idx: parent.child_ptr[child_idx] == self

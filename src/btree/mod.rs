@@ -471,8 +471,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                     self.triggers |= TestFlag::InterMoveLeftFirst as u32;
                                 }
                             } else {
-                                parent.rotate_left(&mut grand, grand_idx, &mut left_parent);
-                                parent.insert_no_split_with_idx(idx - 1, promote_key, right_ptr);
+                                parent.insert_rotate_left(
+                                    &mut grand,
+                                    grand_idx,
+                                    &mut left_parent,
+                                    idx,
+                                    promote_key,
+                                    right_ptr,
+                                );
                             }
                             return;
                         }
@@ -665,7 +671,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
         } else {
             // delete_idx is the first but not the last
-            let (_, mut sep_key) = node.remove_first_child();
+            let mut sep_key = node.remove_first_child();
             #[cfg(test)]
             {
                 self.triggers |= TestFlag::RemoveChildFirst as u32;

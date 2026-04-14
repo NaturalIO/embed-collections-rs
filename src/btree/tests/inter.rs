@@ -657,3 +657,196 @@ fn test_inter_insert_at_front_empty() {
     }
     assert_eq!(alive_count(), 0);
 }
+
+/// Test insert_rotate_left - basic case
+///
+/// Setup:
+///   parent (h=2) -> [left | 100 | right]
+///   left (h=1) -> [0x1000 | 10 | 0x1001 | 20 | 0x1002]
+///   right (h=1) -> [0x2000 | 110 | 0x2001 | 120 | 0x2002 | 130 | 0x2003]
+///
+/// Insert key=115 (search returns idx=1, meaning between 110 and 120)
+/// After rotate:
+///   parent: key 100 -> 110
+///   left: [10, 20, 100] with children [0x1000, 0x1001, 0x1002, 0x2000]
+///   right: [115, 120, 130] with children [0x2001, 0x2001A, 0x2002, 0x2003]
+#[test]
+fn test_insert_rotate_left_basic() {
+    unsafe {
+        // Create left node with keys [10, 20]
+        let mut left = InterNode::<i32, i32>::alloc(1);
+        left.set_left_ptr(0x1000 as *mut NodeHeader);
+        left.insert_no_split(10_i32, 0x1001 as *mut NodeHeader);
+        left.insert_no_split(20_i32, 0x1002 as *mut NodeHeader);
+
+        // Create right node with keys [110, 120, 130]
+        let mut right = InterNode::<i32, i32>::alloc(1);
+        right.set_left_ptr(0x2000 as *mut NodeHeader);
+        right.insert_no_split(110_i32, 0x2001 as *mut NodeHeader);
+        right.insert_no_split(120_i32, 0x2002 as *mut NodeHeader);
+        right.insert_no_split(130_i32, 0x2003 as *mut NodeHeader);
+
+        // Create parent node with separator key 100
+        let mut parent = InterNode::<i32, i32>::alloc(2);
+        parent.set_left_ptr(left.get_ptr());
+        parent.insert_no_split(100_i32, right.get_ptr());
+
+        // Search for key=115, should return idx=1
+        let key: i32 = 115_i32;
+        let insert_idx = right.search_key(&key);
+        assert_eq!(insert_idx, 1, "key=115 should be inserted at idx=1");
+
+        // Perform insert_rotate_left
+        right.insert_rotate_left(
+            &mut parent,
+            1,
+            &mut left,
+            insert_idx,
+            key,
+            0x2001A as *mut NodeHeader,
+        );
+
+        // Verify parent: key 100 replaced with 110
+        assert_eq!((*parent.key_ptr(0)).assume_init_read(), 110);
+
+        // Verify left node: [10, 20, 100]
+        assert_eq!(left.key_count(), 3);
+        assert_eq!((*left.key_ptr(0)).assume_init_read(), 10);
+        assert_eq!((*left.key_ptr(1)).assume_init_read(), 20);
+        assert_eq!((*left.key_ptr(2)).assume_init_read(), 100);
+
+        // Verify right node: [115, 120, 130]
+        assert_eq!(right.key_count(), 3);
+        assert_eq!((*right.key_ptr(0)).assume_init_read(), 115);
+        assert_eq!((*right.key_ptr(1)).assume_init_read(), 120);
+        assert_eq!((*right.key_ptr(2)).assume_init_read(), 130);
+
+        parent.dealloc::<false>();
+        left.dealloc::<true>();
+        right.dealloc::<true>();
+    }
+}
+
+/// Test insert_rotate_left - insert at middle position (idx=2)
+///
+/// Setup:
+///   parent (h=2) -> [left | 200 | right]
+///   left (h=1) -> [0x3000 | 30 | 0x3001]
+///   right (h=1) -> [0x4000 | 210 | 0x4001 | 220 | 0x4002 | 230 | 0x4003]
+///
+/// Insert key=225 (search returns idx=2, meaning between 220 and 230)
+#[test]
+fn test_insert_rotate_left_middle() {
+    unsafe {
+        // Create left node with key [30]
+        let mut left = InterNode::<i32, i32>::alloc(1);
+        left.set_left_ptr(0x3000 as *mut NodeHeader);
+        left.insert_no_split(30_i32, 0x3001 as *mut NodeHeader);
+
+        // Create right node with keys [210, 220, 230]
+        let mut right = InterNode::<i32, i32>::alloc(1);
+        right.set_left_ptr(0x4000 as *mut NodeHeader);
+        right.insert_no_split(210_i32, 0x4001 as *mut NodeHeader);
+        right.insert_no_split(220_i32, 0x4002 as *mut NodeHeader);
+        right.insert_no_split(230_i32, 0x4003 as *mut NodeHeader);
+
+        // Create parent node with separator key 200
+        let mut parent = InterNode::<i32, i32>::alloc(2);
+        parent.set_left_ptr(left.get_ptr());
+        parent.insert_no_split(200_i32, right.get_ptr());
+
+        // Search for key=225, should return idx=2
+        let key: i32 = 225_i32;
+        let insert_idx = right.search_key(&key);
+        assert_eq!(insert_idx, 2, "key=225 should be inserted at idx=2");
+
+        // Perform insert_rotate_left
+        right.insert_rotate_left(
+            &mut parent,
+            1,
+            &mut left,
+            insert_idx,
+            key,
+            0x4002A as *mut NodeHeader,
+        );
+
+        // Verify parent: key 200 replaced with 210
+        assert_eq!((*parent.key_ptr(0)).assume_init_read(), 210);
+
+        // Verify left node: [30, 200]
+        assert_eq!(left.key_count(), 2);
+        assert_eq!((*left.key_ptr(0)).assume_init_read(), 30);
+        assert_eq!((*left.key_ptr(1)).assume_init_read(), 200);
+
+        // Verify right node: [220, 225, 230]
+        assert_eq!(right.key_count(), 3);
+        assert_eq!((*right.key_ptr(0)).assume_init_read(), 220);
+        assert_eq!((*right.key_ptr(1)).assume_init_read(), 225);
+        assert_eq!((*right.key_ptr(2)).assume_init_read(), 230);
+
+        parent.dealloc::<false>();
+        left.dealloc::<true>();
+        right.dealloc::<true>();
+    }
+}
+
+/// Test insert_rotate_left - insert at last position (idx=key_count)
+///
+/// Setup:
+///   parent (h=2) -> [left | 300 | right]
+///   left (h=1) -> [0x5000 | 40 | 0x5001]
+///   right (h=1) -> [0x6000 | 310 | 0x6001 | 320 | 0x6002]
+///
+/// Insert key=330 (search returns idx=2, meaning after 320)
+#[test]
+fn test_insert_rotate_left_last() {
+    unsafe {
+        // Create left node with key [40]
+        let mut left = InterNode::<i32, i32>::alloc(1);
+        left.set_left_ptr(0x5000 as *mut NodeHeader);
+        left.insert_no_split(40_i32, 0x5001 as *mut NodeHeader);
+
+        // Create right node with keys [310, 320]
+        let mut right = InterNode::<i32, i32>::alloc(1);
+        right.set_left_ptr(0x6000 as *mut NodeHeader);
+        right.insert_no_split(310_i32, 0x6001 as *mut NodeHeader);
+        right.insert_no_split(320_i32, 0x6002 as *mut NodeHeader);
+
+        // Create parent node with separator key 300
+        let mut parent = InterNode::<i32, i32>::alloc(2);
+        parent.set_left_ptr(left.get_ptr());
+        parent.insert_no_split(300_i32, right.get_ptr());
+
+        // Search for key=330, should return idx=2 (key_count)
+        let key: i32 = 330_i32;
+        let insert_idx = right.search_key(&key);
+        assert_eq!(insert_idx, 2, "key=330 should be inserted at idx=2 (key_count)");
+
+        // Perform insert_rotate_left
+        right.insert_rotate_left(
+            &mut parent,
+            1,
+            &mut left,
+            insert_idx,
+            key,
+            0x6003 as *mut NodeHeader,
+        );
+
+        // Verify parent: key 300 replaced with 310
+        assert_eq!((*parent.key_ptr(0)).assume_init_read(), 310);
+
+        // Verify left node: [40, 300]
+        assert_eq!(left.key_count(), 2);
+        assert_eq!((*left.key_ptr(0)).assume_init_read(), 40);
+        assert_eq!((*left.key_ptr(1)).assume_init_read(), 300);
+
+        // Verify right node: [320, 330]
+        assert_eq!(right.key_count(), 2);
+        assert_eq!((*right.key_ptr(0)).assume_init_read(), 320);
+        assert_eq!((*right.key_ptr(1)).assume_init_read(), 330);
+
+        parent.dealloc::<false>();
+        left.dealloc::<true>();
+        right.dealloc::<true>();
+    }
+}
