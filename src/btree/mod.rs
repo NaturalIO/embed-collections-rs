@@ -267,10 +267,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             self.get_cache().peak_ancenstor(|_node, idx| -> bool { idx > 0 })
         };
         if let Some((parent, parent_idx)) = ret {
-            //println!("update_ancestor_sep_key {:?} {}", parent, parent_idx - 1);
             parent.change_key(parent_idx - 1, sep_key);
-        } else {
-            //println!("no ancestor");
         }
     }
 
@@ -401,56 +398,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 Node::Leaf(node) => {
                     debug_assert_eq!(height, 0);
                     debug_assert_eq!(node.get_ptr(), left_ptr);
-                }
-            }
-        }
-    }
-
-    /// Dump the entire tree structure for debugging
-    #[cfg(test)]
-    pub fn dump(&self)
-    where
-        K: Debug,
-        V: Debug,
-    {
-        println!("=== BTreeMap Dump ===");
-        println!("Length: {}", self.len());
-        if let Some(root) = &self.root {
-            self.dump_node(root, 0);
-        } else {
-            println!("(empty)");
-        }
-        println!("=====================");
-    }
-
-    #[cfg(test)]
-    fn dump_node(&self, node: &Node<K, V>, depth: usize)
-    where
-        K: Debug,
-        V: Debug,
-    {
-        match node {
-            Node::Leaf(leaf) => {
-                print!("{:indent$}", "", indent = depth * 2);
-                println!("{}", leaf);
-            }
-            Node::Inter(inter) => {
-                print!("{:indent$}", "", indent = depth * 2);
-                println!("{}", inter);
-                // Dump children
-                let count = inter.key_count() as u32;
-                for i in 0..=count {
-                    unsafe {
-                        let child_ptr = *inter.child_ptr(i);
-                        if !child_ptr.is_null() {
-                            let child_node = if (*child_ptr).is_leaf() {
-                                Node::Leaf(LeafNode::<K, V>::from_header(child_ptr))
-                            } else {
-                                Node::Inter(InterNode::<K, V>::from_header(child_ptr))
-                            };
-                            self.dump_node(&child_node, depth + 1);
-                        }
-                    }
                 }
             }
         }
@@ -649,6 +596,56 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // we are empty, my ancestor are all empty and delete by move_to_ancenstor
             self.root = None;
             None
+        }
+    }
+
+    /// Dump the entire tree structure for debugging
+    #[cfg(test)]
+    pub fn dump(&self)
+    where
+        K: Debug,
+        V: Debug,
+    {
+        println!("=== BTreeMap Dump ===");
+        println!("Length: {}", self.len());
+        if let Some(root) = &self.root {
+            self.dump_node(root, 0);
+        } else {
+            println!("(empty)");
+        }
+        println!("=====================");
+    }
+
+    #[cfg(test)]
+    fn dump_node(&self, node: &Node<K, V>, depth: usize)
+    where
+        K: Debug,
+        V: Debug,
+    {
+        match node {
+            Node::Leaf(leaf) => {
+                print!("{:indent$}", "", indent = depth * 2);
+                println!("{}", leaf);
+            }
+            Node::Inter(inter) => {
+                print!("{:indent$}", "", indent = depth * 2);
+                println!("{}", inter);
+                // Dump children
+                let count = inter.key_count() as u32;
+                for i in 0..=count {
+                    unsafe {
+                        let child_ptr = *inter.child_ptr(i);
+                        if !child_ptr.is_null() {
+                            let child_node = if (*child_ptr).is_leaf() {
+                                Node::Leaf(LeafNode::<K, V>::from_header(child_ptr))
+                            } else {
+                                Node::Inter(InterNode::<K, V>::from_header(child_ptr))
+                            };
+                            self.dump_node(&child_node, depth + 1);
+                        }
+                    }
+                }
+            }
         }
     }
 

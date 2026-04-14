@@ -94,7 +94,7 @@ impl<K, V> InterNode<K, V> {
         }
     }
 
-    #[inline(always)]
+    #[cfg(test)]
     pub(super) fn get_keys(&self) -> &[K] {
         self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
     }
@@ -396,15 +396,6 @@ impl<K: Ord, V> InterNode<K, V> {
             child = child.get_child_as_inter(idx);
         }
         (child, idx)
-    }
-
-    #[inline(always)]
-    pub fn clone_first_key(&self) -> K
-    where
-        K: Clone,
-    {
-        debug_assert!(self.key_count() > 0);
-        unsafe { (*self.key_ptr(0)).assume_init_ref().clone() }
     }
 
     /// old key is auto drop, replace with new key

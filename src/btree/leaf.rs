@@ -128,12 +128,12 @@ impl<K, V> LeafNode<K, V> {
         avail == 0
     }
 
-    #[inline(always)]
+    #[cfg(test)]
     pub(super) fn get_keys(&self) -> &[K] {
         self.base.get_array::<K>(LEAF_HEAD_SIZE, 0)
     }
 
-    #[inline(always)]
+    #[cfg(test)]
     pub(super) fn get_values(&self) -> &[V] {
         self.base.get_array::<V>(AREA_SIZE + LEAF_HEAD_SIZE, 0)
     }

@@ -79,6 +79,7 @@ impl NodeBase {
         self.header.as_ptr()
     }
 
+    #[cfg(test)]
     #[inline(always)]
     pub fn get_array<T>(&self, header_size: usize, delta: usize) -> &[T] {
         let header = self.get_header();
@@ -237,18 +238,9 @@ impl<K: Ord, V> Node<K, V> {
         }
     }
 
-    #[inline]
+    #[cfg(test)]
     pub fn as_inter(&self) -> &InterNode<K, V> {
         if let Self::Inter(node) = &self {
-            node
-        } else {
-            unreachable!();
-        }
-    }
-
-    #[inline]
-    pub fn into_inter(self) -> InterNode<K, V> {
-        if let Self::Inter(node) = self {
             node
         } else {
             unreachable!();
@@ -284,17 +276,6 @@ impl<K: Ord, V> Node<K, V> {
                     }
                 }
             }
-        }
-    }
-
-    #[inline]
-    pub fn clone_first_key(&self) -> K
-    where
-        K: Clone,
-    {
-        match self {
-            Self::Inter(node) => node.clone_first_key(),
-            Self::Leaf(node) => node.clone_first_key(),
         }
     }
 
