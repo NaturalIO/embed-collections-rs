@@ -65,7 +65,6 @@
 
 use core::borrow::Borrow;
 use core::cell::UnsafeCell;
-#[cfg(test)]
 use core::fmt::Debug;
 use core::ops::RangeBounds;
 pub mod entry;
@@ -159,6 +158,53 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     pub fn leaf_count(&self) -> usize {
         self.leaf_count
+    }
+
+    #[cfg(all(test, feature = "std"))]
+    pub fn print_trigger_flags(&self) {
+        let mut s = String::from("");
+        if self.triggers & TestFlag::InterSplit as u32 > 0 {
+            s += "InterSplit,";
+        }
+        if self.triggers & TestFlag::LeafSplit as u32 > 0 {
+            s += "LeafSplit,";
+        }
+        if self.triggers & TestFlag::LeafMoveLeft as u32 > 0 {
+            s += "LeafMoveLeft,";
+        }
+        if self.triggers & TestFlag::LeafMoveRight as u32 > 0 {
+            s += "LeafMoveRight,";
+        }
+        if self.triggers & TestFlag::InterMoveLeft as u32 > 0 {
+            s += "InterMoveLeft,";
+        }
+        if self.triggers & TestFlag::InterMoveRight as u32 > 0 {
+            s += "InterMoveRight,";
+        }
+        if s.len() > 0 {
+            println!("{s}");
+        }
+        let mut s = String::from("");
+        if self.triggers & TestFlag::InterMergeLeft as u32 > 0 {
+            s += "InterMergeLeft,";
+        }
+        if self.triggers & TestFlag::InterMergeRight as u32 > 0 {
+            s += "InterMergeRight,";
+        }
+        if self.triggers & TestFlag::RemoveOnlyChild as u32 > 0 {
+            s += "RemoveOnlyChild,";
+        }
+        if self.triggers
+            & (TestFlag::RemoveChildFirst as u32
+                | TestFlag::RemoveChildMid as u32
+                | TestFlag::RemoveChildLast as u32)
+            > 0
+        {
+            s += "RemoveChild,";
+        }
+        if s.len() > 0 {
+            println!("{s}");
+        }
     }
 
     /// Return the average fill ratio of leaf nodes
@@ -415,6 +461,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx > 0 {
                         let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
                         if !left_parent.is_full() {
+                            #[cfg(test)]
+                            {
+                                self.triggers |= TestFlag::InterMoveLeft as u32;
+                            }
                             if idx == 0 {
                                 // special case: split from first child of parent
                                 let demote_key = grand.change_key(grand_idx - 1, promote_key);
@@ -428,10 +478,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             } else {
                                 parent.rotate_left(&mut grand, grand_idx, &mut left_parent);
                                 parent.insert_no_split_with_idx(idx - 1, promote_key, right_ptr);
-                                #[cfg(test)]
-                                {
-                                    self.triggers |= TestFlag::InterMoveLeft as u32;
-                                }
                             }
                             return;
                         }
@@ -440,6 +486,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx < grand.key_count() {
                         let mut right_parent = grand.get_child_as_inter(grand_idx + 1);
                         if !right_parent.is_full() {
+                            #[cfg(test)]
+                            {
+                                self.triggers |= TestFlag::InterMoveRight as u32;
+                            }
                             if idx == parent.key_count() {
                                 // split from last child of parent
                                 let demote_key = grand.change_key(grand_idx, promote_key);
@@ -451,10 +501,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                             } else {
                                 parent.rotate_right(&mut grand, grand_idx, &mut right_parent);
                                 parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
-                                #[cfg(test)]
-                                {
-                                    self.triggers |= TestFlag::InterMoveRight as u32;
-                                }
                             }
                             return;
                         }
@@ -640,7 +686,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn handle_inter_underflow(&mut self, mut node: InterNode<K, V>) {
         let cap = InterNode::<K, V>::cap();
-        while node.key_count() <= 1 {
+        while node.key_count() <= InterNode::<K, V>::UNDERFLOW_CAP {
             if node.key_count() == 0 {
                 let root_height = self.get_root_unwrap().height();
                 if node.height() == root_height
@@ -666,7 +712,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx > 0 {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
                         // the sep key should pull down
-                        if left.key_count() + node.key_count() < cap {
+                        if left.key_count() + node.key_count() <= cap {
                             #[cfg(test)]
                             {
                                 self.triggers |= TestFlag::InterMergeLeft as u32;
@@ -679,7 +725,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx < grand.key_count() {
                         let right = grand.get_child_as_inter(grand_idx + 1);
                         // the sep key should pull down
-                        if right.key_count() + node.key_count() < cap {
+                        if right.key_count() + node.key_count() <= cap {
                             #[cfg(test)]
                             {
                                 self.triggers |= TestFlag::InterMergeRight as u32;
@@ -717,7 +763,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Dump the entire tree structure for debugging
-    #[cfg(test)]
+    #[cfg(all(test, feature = "std"))]
     pub fn dump(&self)
     where
         K: Debug,
@@ -733,7 +779,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         println!("=====================");
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, feature = "std"))]
     fn dump_node(&self, node: &Node<K, V>, depth: usize)
     where
         K: Debug,
@@ -768,7 +814,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     /// Validate the entire tree structure
     /// Uses the same traversal logic as Drop to avoid recursion
-    #[cfg(test)]
     pub fn validate(&self)
     where
         K: Debug,

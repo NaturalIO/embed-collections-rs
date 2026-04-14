@@ -46,6 +46,8 @@ impl<K, V> InterNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
     const LAYOUT: (u32, Layout) = Self::cal_layout();
 
+    pub(super) const UNDERFLOW_CAP: u32 = Self::LAYOUT.0 / 3;
+
     /// return inter_key_cap, leaf_key_cap.
     /// where:
     /// - inter_key_cap + 1 inter_value_cap;
@@ -535,7 +537,6 @@ impl<K, V> PartialEq for InterNode<K, V> {
 
 impl<K: Ord + fmt::Debug, V: fmt::Debug> InterNode<K, V> {
     /// Validate internal node structure
-    #[cfg(test)]
     pub fn validate(&self) {
         let count = self.key_count() as usize;
         if count == 0 {

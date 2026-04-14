@@ -464,7 +464,6 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Display for LeafNode<K, V> {
 impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
     /// Validate leaf node structure
     /// Returns the number of keys in this node
-    #[cfg(test)]
     pub fn validate(&self, min_key: Option<&K>, max_key: Option<&K>) -> usize {
         let count = self.key_count() as usize;
 

@@ -28,6 +28,7 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
 
     let alive_after_insert = alive_count();
     println!("alive_after_insert: {}", alive_after_insert);
+    map.print_trigger_flags();
 
     // Delete most elements to trigger merge, use Borrow<i32> to query
     for i in 0..count {
@@ -41,6 +42,7 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
     let alive_after_remove = alive_count();
     println!("alive_after_remove: {}", alive_after_remove);
     assert_eq!(alive_after_remove, 0); // All dropped
+    map.print_trigger_flags();
 
     drop(map);
     assert_eq!(alive_count(), 0);
@@ -93,8 +95,12 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
     for iter in 1..iterations {
         // Insert new batch
         let mut current_batch: Vec<i32> = Vec::with_capacity(batch_size);
-        for _ in 0..batch_size {
+        while current_batch.len() < batch_size {
             let key: i32 = rng.i32(..);
+            if map.contains_key(&key) {
+                // filter duplicated keys
+                continue;
+            }
             current_batch.push(key);
             map.insert(key.into(), value_from_key(key).into());
         }
@@ -123,13 +129,20 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         println!("leaf_count: {}", map.leaf_count());
         println!("fill_ratio: {:.2}", map.get_fill_ratio());
         println!("height: {}", map.height());
+        map.print_trigger_flags();
 
         prev_batch = current_batch;
     }
 
+    let mut height = map.height();
+
     // Verify all remaining elements are accessible
     for key in &prev_batch {
-        assert!(map.contains_key(key), "Remaining key {} should be accessible", key);
+        if !map.contains_key(key) {
+            println!("error: Remaining key {} should be accessible", key);
+            map.dump();
+            map.validate();
+        }
     }
 
     // Delete remaining elements
@@ -137,6 +150,11 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         let v = map.remove(key);
         assert!(v.is_some(), "Remaining key {} should be removable", key);
         assert_eq!(*v.unwrap(), value_from_key(*key));
+        if height != map.height() {
+            println!("tree height dec to {}, len {}", map.height(), map.len());
+            height = map.height();
+            map.print_trigger_flags();
+        }
     }
     map.validate();
 
