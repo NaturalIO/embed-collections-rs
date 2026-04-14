@@ -163,6 +163,7 @@ impl NodeBase {
     ///
     /// # Safety
     /// it does not check is_full
+    #[inline(always)]
     pub unsafe fn _insert<K, V>(
         &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
     ) -> *mut V {
@@ -551,6 +552,13 @@ impl<K: Ord, V> PathCache<K, V> {
             }
         }
         None
+    }
+
+    #[inline(always)]
+    pub fn peak_next(&self) -> Option<(InterNode<K, V>, u32)> {
+        debug_assert_eq!(self.pos, 0);
+        let (parent, idx) = self.inner.last()?;
+        Some((parent.clone(), *idx))
     }
 
     /// iter backward through cache internal stack, without changing the cache,

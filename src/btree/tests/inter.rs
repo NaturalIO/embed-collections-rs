@@ -585,3 +585,75 @@ fn test_inter_merge_left_empty() {
     }
     assert_eq!(alive_count(), 0);
 }
+
+/// Test: InterNode insert_at_front
+///
+/// Verifies inserting key and child at the front of an internal node,
+/// shifting existing content to the right.
+#[test]
+fn test_inter_insert_at_front() {
+    reset_alive_count();
+    unsafe {
+        let cap = InterNode::<CounterI32, CounterI32>::cap() as usize;
+        assert!(cap > 6);
+
+        // Create an internal node with some keys
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        node.set_left_ptr(0x1000 as *mut NodeHeader);
+
+        // Insert some keys
+        for i in 0..5 {
+            node.insert_no_split(
+                CounterI32::new((i * 10) as i32),
+                ((0x2000 + i * 0x100) as usize) as *mut NodeHeader,
+            );
+        }
+        assert_eq!(node.key_count() as usize, 5);
+
+        let original_first_key = node.get_keys()[0].value;
+        let original_first_child = node.get_child_ptr(0);
+
+        // Insert at front (child_ptr, key)
+        node.insert_at_front(0x9999 as *mut NodeHeader, CounterI32::new(999));
+        // Verify count increased
+        assert_eq!(node.key_count() as usize, 6);
+        // Verify new key is at front
+        assert_eq!(node.get_keys()[0].value, 999);
+        assert_eq!(node.get_child_ptr(0), 0x9999 as *mut NodeHeader);
+        // Verify original content shifted right
+        assert_eq!(node.get_keys()[1].value, original_first_key);
+        assert_eq!(node.get_child_ptr(1), original_first_child);
+
+        // Verify remaining keys are correct
+        for i in 1..5 {
+            assert_eq!(node.get_keys()[i + 1].value, (i * 10) as i32);
+        }
+        // Clean up
+        node.dealloc::<true>();
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+/// Test: InterNode insert_at_front on empty node
+#[test]
+fn test_inter_insert_at_front_empty() {
+    reset_alive_count();
+    unsafe {
+        // Create an empty internal node
+        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        node.set_left_ptr(0x1000 as *mut NodeHeader);
+        assert_eq!(node.key_count(), 0);
+        // Insert at front on empty node (child_ptr, key)
+        node.insert_at_front(0x2000 as *mut NodeHeader, CounterI32::new(100));
+
+        // Verify
+        assert_eq!(node.key_count(), 1);
+        assert_eq!(node.get_keys()[0].value, 100);
+        assert_eq!(node.get_child_ptr(0), 0x2000 as *mut NodeHeader);
+        // Original left_ptr should be shifted to child[1]
+        assert_eq!(node.get_child_ptr(1), 0x1000 as *mut NodeHeader);
+        // Clean up
+        node.dealloc::<true>();
+    }
+    assert_eq!(alive_count(), 0);
+}

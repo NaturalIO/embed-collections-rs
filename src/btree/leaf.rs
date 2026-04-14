@@ -123,9 +123,9 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn is_full(&self) -> Result<(), u32> {
+    pub fn is_full(&self) -> bool {
         let avail = Self::cap() - self.key_count();
-        if avail == 0 { Ok(()) } else { Err(avail) }
+        avail == 0
     }
 
     #[inline(always)]

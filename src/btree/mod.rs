@@ -278,12 +278,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     fn insert_with_split(
         &mut self, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u32,
     ) -> *mut V {
-        debug_assert!(leaf.is_full().is_ok());
+        debug_assert!(leaf.is_full());
         let cap = LeafNode::<K, V>::cap();
         if idx < cap {
             // random insert, try borrow space from left and right
             if let Some(mut left_node) = leaf.get_left_node()
-                && left_node.is_full().is_err()
+                && !left_node.is_full()
             {
                 let (idx, _is_equal) = leaf.search(&key);
                 debug_assert!(!_is_equal);
@@ -302,7 +302,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // insert into empty new node, left is probably full, right is probably none
         }
         if let Some(mut right_node) = leaf.get_right_node()
-            && right_node.is_full().is_err()
+            && !right_node.is_full()
         {
             let (idx, _is_equal) = leaf.search(&key);
             debug_assert!(!_is_equal);
@@ -325,6 +325,11 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Propagate node split up the tree using iteration (non-recursive)
+    /// First tries to borrow space from left/right sibling before splitting
+    ///
+    /// left_ptr: existing child
+    /// right_ptr: new_child split from left_ptr
+    /// promote_key: sep_key to split left_ptr & right_ptr
     #[inline(always)]
     fn propagate_split(
         &mut self, mut promote_key: K, mut left_ptr: *mut NodeHeader,
@@ -333,18 +338,55 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let cache = self.get_cache();
         let mut height = 0;
         // If we have parent nodes in cache, process them iteratively
-        while let Some((mut parent, _idx)) = cache.pop() {
-            if parent.is_full().is_err() {
-                parent.insert_no_split(promote_key, right_ptr);
+        while let Some((mut parent, idx)) = cache.pop() {
+            if !parent.is_full() {
+                // should insert next to left_ptr
+                parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
                 return;
+            } else {
+                // Parent is full, try to borrow space from sibling through grand_parent
+                if let Some((mut grand, grand_idx)) = cache.peak_next() {
+                    // Try to borrow from left sibling of parent
+                    if grand_idx > 0 {
+                        let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
+                        if !left_parent.is_full() {
+                            if idx == 0 {
+                                // special case: split from first child of parent
+                                let demote_key = grand.change_key(grand_idx - 1, promote_key);
+                                debug_assert_eq!(parent.get_child_ptr(0), left_ptr);
+                                unsafe { (*parent.child_ptr(0)) = right_ptr };
+                                left_parent.append(demote_key, left_ptr);
+                            } else {
+                                parent.rotate_left(&mut grand, grand_idx, &mut left_parent);
+                                parent.insert_no_split_with_idx(idx - 1, promote_key, right_ptr);
+                            }
+                            return;
+                        }
+                    }
+                    // Try to borrow from right sibling of parent
+                    if grand_idx < grand.key_count() {
+                        let mut right_parent = grand.get_child_as_inter(grand_idx + 1);
+                        if !right_parent.is_full() {
+                            if idx == parent.key_count() {
+                                // split from last child of parent
+                                let demote_key = grand.change_key(grand_idx, promote_key);
+                                right_parent.insert_at_front(right_ptr, demote_key);
+                            } else {
+                                parent.rotate_right(&mut grand, grand_idx, &mut right_parent);
+                                parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
+                            }
+                            return;
+                        }
+                    }
+                }
+                height += 1;
+                // Cannot borrow from siblings, need to split internal node
+                let (right, _promote_key) = parent.insert_split(promote_key, right_ptr);
+                promote_key = _promote_key;
+                right_ptr = right.get_ptr();
+                left_ptr = parent.get_ptr();
+                // Continue to next parent in cache (loop will pop next parent)
             }
-            height += 1;
-            // Parent is full, need to split internal node
-            let (right, _promote_key) = parent.insert_split(promote_key, right_ptr);
-            promote_key = _promote_key;
-            right_ptr = right.get_ptr();
-            left_ptr = parent.get_ptr();
-            // Continue to next parent in cache (loop will pop next parent)
         }
         // No more parents in cache, create new root
         let new_root = InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr);
@@ -508,7 +550,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if delete_idx == node.key_count() {
             // println!("delete last {delete_idx} from {:?}", node);
             // delete the last child of this node
-            node.remove_last_child(delete_idx);
+            node.remove_last_child();
             if let Some(key) = right_sep {
                 if let Some((grand_parent, grand_idx)) =
                     self.get_cache().peak_ancenstor(|_node: &InterNode<K, V>, idx: u32| -> bool {
@@ -530,7 +572,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else {
             // println!("delete first from {:?}", node);
             // delete_idx is the first but not the last
-            let mut sep_key = node.remove_first_child();
+            let (_, mut sep_key) = node.remove_first_child();
             if let Some(key) = right_sep {
                 sep_key = key;
             }

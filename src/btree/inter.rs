@@ -124,9 +124,9 @@ impl<K, V> InterNode<K, V> {
         }
     }
     #[inline(always)]
-    pub fn is_full(&self) -> Result<(), u32> {
+    pub fn is_full(&self) -> bool {
         let avail = Self::cap() - self.key_count();
-        if avail == 0 { Ok(()) } else { Err(avail) }
+        avail == 0
     }
 
     /// Get pointer to key at index
@@ -223,16 +223,19 @@ impl<K: Ord, V> InterNode<K, V> {
         idx
     }
 
-    #[inline(always)]
+    #[cfg(test)]
     pub fn insert_no_split(&mut self, key: K, ptr: *mut NodeHeader) {
         let idx = self.search_key(&key);
+        debug_assert!(!self.is_full());
         self.insert_no_split_with_idx(idx, key, ptr);
     }
 
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
+    ///
+    /// NOTE: idx is the idx of key
     #[inline(always)]
-    fn insert_no_split_with_idx(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
+    pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
         debug_assert!(self.key_count() < Self::cap());
         let _ = unsafe {
             self.base._insert::<K, *mut NodeHeader>(
@@ -245,9 +248,42 @@ impl<K: Ord, V> InterNode<K, V> {
         };
     }
 
+    /// Insert key and child pointer at the front of the node (index 0)
+    /// This is used when borrowing space from right sibling during split propagation
+    /// Shifts all existing keys and children to the right by one position
+    #[inline(always)]
+    pub fn insert_at_front(&mut self, left_ptr: *mut NodeHeader, key: K) {
+        let count = self.key_count();
+        debug_assert!((count as u32) < Self::cap(), "Node is full, cannot insert at front");
+        unsafe {
+            if count > 0 {
+                // Shift existing keys to the right by one position
+                let src_key = self.key_ptr(0);
+                let dst_key = self.key_ptr(1);
+                ptr::copy(src_key, dst_key, count as usize);
+
+                // Shift existing children to the right by one position
+                // Note: we copy count + 1 children to include the leftmost child pointer
+                let src_child = self.child_ptr(0);
+                let dst_child = self.child_ptr(1);
+                ptr::copy(src_child, dst_child, (count + 1) as usize);
+            } else {
+                // When node is empty, the current left_ptr becomes child[1]
+                *self.child_ptr(1) = *self.child_ptr(0);
+            }
+            // Insert the new key at position 0
+            (*self.key_ptr(0)).write(key);
+            // Insert the new leftmost child pointer
+            (*self.child_ptr(0)) = left_ptr;
+            // Update the count
+            self.get_header_mut().count += 1;
+        }
+    }
+
     /// # Safety
     ///
-    /// It does not change the count of current node (It only add the count of right node)
+    /// It does not change the count of current node (It only add the count of right node).
+    /// It does not change the left ptr of right node.
     #[inline(always)]
     fn copy_right(&mut self, right_node: &mut Self, start_idx: u32, copy_count: u32) {
         let right_count = right_node.key_count();
@@ -371,39 +407,48 @@ impl<K: Ord, V> InterNode<K, V> {
         unsafe { (*self.key_ptr(0)).assume_init_ref().clone() }
     }
 
+    /// old key is auto drop, replace with new key
     #[inline(always)]
-    pub fn change_key(&self, idx: u32, key: K) {
+    pub fn change_key(&self, idx: u32, key: K) -> K {
         debug_assert!(self.key_count() > idx);
-        let key_ref = unsafe { (*self.key_ptr(idx)).assume_init_mut() };
-        *key_ref = key;
+        unsafe {
+            let k_ptr = self.key_ptr(idx);
+            let old_key = (*k_ptr).assume_init_read();
+            (*k_ptr).write(key);
+            old_key
+        }
     }
 
     /// a special case of remove_mid_child
     #[inline]
-    pub fn remove_last_child(&mut self, idx: u32) {
-        let count = self.key_count();
-        debug_assert_eq!(idx, count);
-        debug_assert!(count > 0);
-        if needs_drop::<K>() {
-            unsafe { (*self.key_ptr(idx - 1)).assume_init_drop() };
+    pub fn remove_last_child(&mut self) -> (K, *mut NodeHeader) {
+        let idx = self.key_count();
+        debug_assert!(idx > 0);
+        self.get_header_mut().count = idx - 1;
+        unsafe {
+            let key = (*self.key_ptr(idx - 1)).assume_init_read();
+            let child = *self.child_ptr(idx);
+            (key, child)
         }
-        self.get_header_mut().count = count - 1;
     }
 
     /// If node has no key, return Err(());
     /// otherwise shift everything left and return Ok(first_key)
     #[inline(always)]
-    pub fn remove_first_child(&mut self) -> K {
+    pub fn remove_first_child(&mut self) -> (*mut NodeHeader, K) {
         let key_count = self.key_count();
         debug_assert!(key_count > 0);
         unsafe {
-            let key = (*self.key_ptr(0)).assume_init_read();
+            let first_key_ptr = self.key_ptr(0);
+            let first_child_ptr = self.child_ptr(0);
+            let first_key = (*first_key_ptr).assume_init_read();
+            let first_child = *first_child_ptr;
             // key[idx] is removed, move key[idx+1..] forward, (key_count - 1) keys's left
-            ptr::copy(self.key_ptr(1), self.key_ptr(0), (key_count - 1) as usize);
+            ptr::copy(first_key_ptr.add(1), first_key_ptr, (key_count - 1) as usize);
             // child_ptr(idx) is remove, key_count of ptrs left,
-            ptr::copy(self.child_ptr(1), self.child_ptr(0), key_count as usize);
+            ptr::copy(first_child_ptr.add(1), first_child_ptr, key_count as usize);
             self.get_header_mut().count = key_count - 1;
-            key
+            (first_child, first_key)
         }
     }
 
@@ -431,6 +476,27 @@ impl<K: Ord, V> InterNode<K, V> {
             self.get_header_mut().count = key_count - 1;
             return key;
         }
+    }
+
+    /// my_idx: parent.child_ptr[child_idx] == self
+    #[inline]
+    pub fn rotate_left(&mut self, parent: &mut Self, my_idx: u32, left: &mut Self) {
+        let (child, promote_key) = self.remove_first_child();
+        let demote_key = parent.change_key(my_idx - 1, promote_key);
+        left.append(demote_key, child);
+    }
+
+    /// my_idx: parent.child_ptr[child_idx] == self
+    #[inline]
+    pub fn rotate_right(&mut self, parent: &mut Self, my_idx: u32, right: &mut Self) {
+        let (promote_key, child) = self.remove_last_child();
+        let demote_key = parent.change_key(my_idx, promote_key);
+        right.insert_at_front(child, demote_key);
+    }
+
+    #[inline(always)]
+    pub fn append(&mut self, key: K, child: *mut NodeHeader) {
+        self.insert_no_split_with_idx(self.key_count(), key, child);
     }
 }
 
