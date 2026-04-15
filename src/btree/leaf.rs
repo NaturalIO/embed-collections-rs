@@ -129,13 +129,22 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[cfg(test)]
-    pub(super) fn get_keys(&self) -> &[K] {
+    pub fn get_keys(&self) -> &[K] {
         self.base.get_array::<K>(LEAF_HEAD_SIZE, 0)
     }
 
     #[cfg(test)]
-    pub(super) fn get_values(&self) -> &[V] {
+    pub fn get_values(&self) -> &[V] {
         self.base.get_array::<V>(AREA_SIZE + LEAF_HEAD_SIZE, 0)
+    }
+
+    #[inline]
+    pub fn get_raw_pair(&self, idx: u32) -> Option<(*mut K, *mut V)> {
+        if self.key_count() > idx {
+            unsafe { Some((self.key_ptr(idx) as *mut K, self.value_ptr(idx) as *mut V)) }
+        } else {
+            None
+        }
     }
 
     /// Get pointer to key at index

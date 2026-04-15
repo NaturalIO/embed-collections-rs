@@ -7,9 +7,9 @@ use core::mem::needs_drop;
 
 pub(super) struct IterForward<K, V> {
     /// Current leaf node for forward iteration
-    front_leaf: LeafNode<K, V>,
+    pub front_leaf: LeafNode<K, V>,
     /// Current index within the leaf for forward iteration
-    idx: u32,
+    pub idx: u32,
 }
 
 impl<K, V> IterForward<K, V> {
@@ -28,14 +28,20 @@ impl<K, V> IterForward<K, V> {
         self.idx = current_idx + 1;
         Some((&self.front_leaf, current_idx))
     }
+
+    #[inline]
+    pub unsafe fn next_pair(&mut self) -> Option<(*mut K, *mut V)> {
+        let (leaf, idx) = self.next()?;
+        leaf.get_raw_pair(idx)
+    }
 }
 
 pub(super) struct IterBackward<K, V> {
     /// Current leaf node for backward iteration
-    back_leaf: LeafNode<K, V>,
+    pub back_leaf: LeafNode<K, V>,
     /// back_idx - 1 is the next index within the back leaf, initial to key_count
     /// When back_idx == 0, should go to previous leaf
-    back_idx: u32,
+    pub back_idx: u32,
 }
 
 impl<K, V> IterBackward<K, V> {
@@ -52,6 +58,12 @@ impl<K, V> IterBackward<K, V> {
         }
         self.back_idx -= 1;
         Some((&self.back_leaf, self.back_idx))
+    }
+
+    #[inline]
+    pub unsafe fn prev_pair(&mut self) -> Option<(*mut K, *mut V)> {
+        let (leaf, idx) = self.prev()?;
+        leaf.get_raw_pair(idx)
     }
 }
 

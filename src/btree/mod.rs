@@ -241,14 +241,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let cache = self.get_cache();
         cache.clear();
         let leaf = match &self.root {
-            None => return Entry::Vacant(VacantEntry { map: self, key, idx: 0, node: None }),
+            None => return Entry::Vacant(VacantEntry { tree: self, key, idx: 0, leaf: None }),
             Some(root) => root.find_leaf_with_cache(cache, &key),
         };
         let (idx, is_equal) = leaf.search(&key);
         if is_equal {
-            Entry::Occupied(OccupiedEntry { map: self, idx, node: leaf })
+            Entry::Occupied(OccupiedEntry { tree: self, idx, leaf })
         } else {
-            Entry::Vacant(VacantEntry { map: self, key, idx, node: Some(leaf) })
+            Entry::Vacant(VacantEntry { tree: self, key, idx, leaf: Some(leaf) })
         }
     }
 
@@ -1017,7 +1017,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if leaf.key_count() == 0 {
             return None;
         }
-        Some(Entry::Occupied(OccupiedEntry { map: self, idx: 0, node: leaf }))
+        Some(Entry::Occupied(OccupiedEntry { tree: self, idx: 0, leaf }))
     }
 
     /// Returns an entry to the last key in the map
@@ -1037,7 +1037,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if count == 0 {
             return None;
         }
-        Some(Entry::Occupied(OccupiedEntry { map: self, idx: count - 1, node: leaf }))
+        Some(Entry::Occupied(OccupiedEntry { tree: self, idx: count - 1, leaf }))
     }
 
     /// Removes and returns the first key-value pair in the map
