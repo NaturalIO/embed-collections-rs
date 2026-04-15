@@ -308,7 +308,7 @@ impl<K: Ord, V> Node<K, V> {
     /// return value:
     /// - leaf node contains the bound
     /// - idx: regardless include or exclude, idx always return idx|0 for start_bound,
-    ///   retrun (idx + 1) | key_count() for end_bound
+    ///   return (idx + 1) | key_count() for end_bound
     #[inline]
     pub fn find_leaf_with_bound<Q>(&self, bound: Bound<&Q>, is_start: bool) -> (LeafNode<K, V>, u32)
     where

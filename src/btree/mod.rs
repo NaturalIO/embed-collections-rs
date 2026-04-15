@@ -1,21 +1,17 @@
 //! B+Tree Map - A in memory cache-optimized B+Tree for single-threaded use.
 //!
 //! ## Feature outlines
-//! - designed for CPU cache efficiency and memory efficiency:
-//! - It's B+tree. Data stores only at leaf level, with links at leaf level.
-//!   - Provids efficent iteration of data
+//! - Designed for CPU cache efficiency and memory efficiency:
+//! - Optimised for numeric key type
+//! - A B+tree. Data stores only at leaf level, with links at leaf level.
+//!   - Provides efficient iteration of data
 //!   - Linear search within nodes, respecting cacheline boundaries
 //! - Nodes are filled up in 4 cache lines (256 bytes on x86_64)
 //!   - keys stored in first 128B (with header)
 //!   - Values/pointers stored in last 128B
 //!   - the capacity is calculated according to the size of K, V, with limitations:
 //!     - K & V should <= CACHE_LINE_SIZE - 16  (If K & V is larger should put into `Box`)
-//! - Specialy Entry API which allow to modify after moving the cursor to adjacent data.
-//! - Comparing to std::collections::btree (rust 1.94):
-//!   - The std impl is pure btree (not b+tree) without horizonal links. Data store at both leaf and inter nodes.
-//!   - The std impl is optimised for point lookup,
-//!   - The std impl has fixed Cap=11, size is 288B for InterNode and 192B for LeafNode.
-//!   - The std cursor API is stll unstable (as of 1.94) and provides more complex features
+//! - Specially Entry API which allow to modify after moving the cursor to adjacent data.
 //! - The detail design notes are with the source in mod.rs and node.rs
 
 /*
@@ -24,12 +20,12 @@
 
  Target scenario:  To maintain slab tree for disk, lets say 1 billion nodes, this design is aim for high fan-out.
 
- Since There're no parent pointer, no fence keys. So we maintain a cache to accellerate the look
+ Since There're no parent pointer, no fence keys. So we maintain a cache to accelerate the look
  up for parent nodes.
- Since we support combinding cursor moving in Entry API (try to merge with previous or next adjacent
+ Since we support combining cursor moving in Entry API (try to merge with previous or next adjacent
  node). But user can call `remove()` on moved cursor.
 
-## Accelleration Search for finding the parent using PathCache
+## Acceleration Search for finding the parent using PathCache
 
 - Assume PathCache is for Node A, Node B is the right brother of node A. A's ptr is at ParentA[idx]
   - To find parent for Node B
@@ -39,26 +35,26 @@
 - Assume PathCache is for Node B, Node A is the left brother of node B, B's ptr is at ParentB[idx]
   - To find parent for Node A
     - If idx > 0, then A and B has common parent.
-    - otherwise A and B have no common parent. Should continue interation to upper PathCache. There will be common ancestor until idx > 0
+    - otherwise A and B have no common parent. Should continue iteration to upper PathCache. There will be common ancestor until idx > 0
 
 ## Rebalance
 
 - When insert on a full LeafNode, we try to move items to left/right brother, to delay split operation.
 
-- One entry remvoved, current node usage < 50% (the threshold can be adjust according to tree size)
+- One entry removed, current node usage < 50% (the threshold can be adjust according to tree size)
 
   - we don't need to borrow data from brothers (to avoid trashing), and we have already done borrowing on insert.
 
   - try to merge data, with left + current < cap, or current + right < cap, or left + current + right == 2 * cap
 
-  - No need to mere 3 -> 1, because before reaching 30% average usage, we aleady checked 3 -> 2.
+  - No need to mere 3 -> 1, because before reaching 30% average usage, we already checked 3 -> 2.
 
 - The threshold to check merge for InterNode can be lower (like 30%), to avoid trashing
 
 
 ## Future ideas
 
-- dynamicly incress InterNode size, or variable size
+- dynamically incress InterNode size, or variable size
 - borrow from leaf / right on InterNode split, increase fill ratio to 80%
 - 2 - 3 split (increase fill ratio to 90%)
 */
@@ -67,22 +63,22 @@ use core::borrow::Borrow;
 use core::cell::UnsafeCell;
 use core::fmt::Debug;
 use core::ops::RangeBounds;
-pub mod entry;
-use entry::*;
+mod entry;
+pub use entry::*;
 mod node;
 use node::*;
 mod inter;
 use inter::*;
 mod leaf;
 use leaf::*;
-pub mod iter;
+mod iter;
 use iter::RangeBase;
 pub use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
 
 #[cfg(test)]
 mod tests;
 
-/// B+Tree Map for single-threaded use
+/// B+Tree Map for single-threaded usage, optimized for numeric type.
 pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
     /// Root node (may be null for empty tree)
     root: Option<Node<K, V>>,
@@ -583,7 +579,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 right_avail = cap - right_count;
             }
         }
-        // if we require left_avail + right_avail > cur_count, not possible to contruct a 3-2
+        // if we require left_avail + right_avail > cur_count, not possible to construct a 3-2
         // merge, only either triggering merge left or merge right.
         if !can_unlink && left_avail > 0 && right_avail > 0 && left_avail + right_avail == cur_count
         {

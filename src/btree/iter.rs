@@ -671,7 +671,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
                 }
             }
             leaf.dealloc::<false>();
-            // We should free the rest internal nodes even after leaf iteraction done
+            // We should free the rest internal nodes even after leaf iteration done
             if self.is_forward {
                 while let Some((parent, idx)) =
                     self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>)

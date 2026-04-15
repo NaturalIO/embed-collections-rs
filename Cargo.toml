@@ -14,7 +14,8 @@ std = []
 slist = []
 dlist = []
 avl = []
-full = ["slist", "dlist", "avl"]
+btree = []
+full = ["slist", "dlist", "avl", "btree"]
 
 ## For profiling symbol
 #[profile.release]
@@ -39,6 +40,7 @@ harness = false
 [[bench]]
 name = "btree"
 harness = false
+required-features = ["btree"]
 
 [[bench]]
 name = "btree_std"

@@ -93,7 +93,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         // no split
         assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
-        // verify the spliter of middle_leaf has not changed
+        // verify the splitter of middle_leaf has not changed
         assert_eq!(root.get_keys()[0], middle_first_key);
 
         assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
@@ -194,7 +194,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
         // no split
         assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
-        // verify the spliter of middle_leaf has changed
+        // verify the splitter of middle_leaf has changed
         assert_eq!(root.get_keys()[0], old_middle_leaf_key1);
 
         assert_eq!(map.leaf_count, 3); // unchanged
@@ -288,7 +288,7 @@ fn test_borrow_from_right_height_2_not_last() {
         // no split
         assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
-        // verify the spliter of right_leaf has changed
+        // verify the splitter of right_leaf has changed
         assert_eq!(root.get_keys()[1], middle_last_key);
 
         assert_eq!(map.leaf_count, 3); // unchanged
@@ -382,7 +382,7 @@ fn test_borrow_from_right_height_2_last() {
         // no split
         assert_eq!(root.key_count(), 2);
         assert_eq!(root.height(), 1);
-        // verify the spliter of right_leaf has changed
+        // verify the splitter of right_leaf has changed
         assert_eq!(root.get_keys()[1], insert_key);
 
         assert_eq!(map.leaf_count, 3); // unchanged

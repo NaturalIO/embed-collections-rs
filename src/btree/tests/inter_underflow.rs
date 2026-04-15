@@ -22,7 +22,7 @@ use core::cell::UnsafeCell;
 ///   internal_a(h=1) -> merged with internal_b
 ///
 /// Key test: Verifies handle_inter_underflow when merging internal_a with right sibling internal_b
-/// causes parent to collaps (loop once).
+/// causes parent to collapse (loop once).
 /// Uses CounterI32 to verify key memory management.
 #[test]
 fn test_inter_underflow_merge_right_height_3_2() {
@@ -132,7 +132,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
             );
         }
         //map.dump();
-        // height collaps from 3 to 2
+        // height collapse from 3 to 2
         assert_eq!(map.height(), 2);
         assert_eq!(map.leaf_count, 4);
         assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
@@ -260,7 +260,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
             );
         }
         //map.dump();
-        // height collaps from 3 to 2
+        // height collapse from 3 to 2
         assert_eq!(map.height(), 2);
 
         assert_eq!(map.leaf_count, 4);
