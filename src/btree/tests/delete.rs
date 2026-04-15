@@ -61,6 +61,9 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
 ///
 /// This test verifies that the BTreeMap correctly handles mixed operations
 /// and properly manages memory during tree restructuring.
+///
+/// Environment variable:
+/// - `TEST_SEED`: Set a specific seed for reproducibility. If not set, a random seed is generated.
 #[rstest]
 #[case(100, 10)] // Small batch, more iterations
 #[case(1000, 10)] // Standard test: 1000 elements per batch, 10 iterations
@@ -70,8 +73,19 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
     reset_alive_count();
     assert_eq!(alive_count(), 0);
 
+    // Get seed from environment variable or generate a random one
+    let seed: u64 = match std::env::var("TEST_SEED") {
+        Ok(val) => val.parse().expect("TEST_SEED must be a valid u64"),
+        Err(_) => fastrand::u64(..),
+    };
+
+    println!(
+        "=== Test Parameters === seed: {}, batch_size: {}, iterations: {} ===",
+        seed, batch_size, iterations
+    );
+
     let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
-    let mut rng = fastrand::Rng::new();
+    let mut rng = fastrand::Rng::with_seed(seed);
 
     // Helper to compute value from key (use wrapping to avoid overflow)
     let value_from_key = |k: i32| k.wrapping_mul(10);
