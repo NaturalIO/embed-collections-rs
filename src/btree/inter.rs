@@ -53,7 +53,7 @@ impl<K, V> InterNode<K, V> {
     /// - inter_key_cap + 1 inter_value_cap;
     /// - leaf_key_cap = leaf_value_cap;
     ///
-    /// assert K, V can fit into the cacheline after devided by header.
+    /// assert K, V can fit into the cacheline after divided by header.
     const fn cal_layout() -> (u32, Layout) {
         let mut align = align_of::<K>();
         assert!(align <= 8);

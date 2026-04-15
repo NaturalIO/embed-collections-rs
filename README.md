@@ -9,10 +9,11 @@ This crate provides two categories:
 
 - Cache efficient collections:
     - [`ConstVec`]: Fixed capacity inline vec
-    - [`SegList`]:  A list to store elements with adaptive size segments
+    - [`SegList`]:  A cache aware list to store elements with adaptive size segments
     - [`Various`]: For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
+    - [`BTreeMap`]: A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
 
-- intrusive collection
+- Intrusive collection
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
     - [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
     - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
@@ -28,12 +29,78 @@ It's nice to the memory allocator (always allocate with fixed size segment).
 
 Benchmark: append + drain (x86_64, cache line 128 bytes):
 
+(platform: intel i7-8550U)
+
 | Elements | SegList | Vec | SegList vs Vec |
 |----------|---------|-----|----------------|
 | 10 | 40.5 ns | 147.0 ns | **3.6x faster** |
 | 32 | 99.1 ns | 237.8 ns | **2.4x faster** |
 | 100 | 471.1 ns | 464.0 ns | ~1.0x |
 | 500 | 2.77 µs | 895.5 ns | 3.1x slower |
+
+## B+tree
+
+We provide a BTreeMap for single-threaded long-term in-memory storage.
+It's a cache aware b+tree:
+
+- Nodes are filled up in 4 cache lines (256 bytes on x86_64).
+- Optimized for numeric type, and tight arrangement sequential inserting.
+- Capacity in compile-time determined according to the size of Key, Value.
+- Faster iteration and teardown
+- Key type needs `Clone`
+- Specially Entry API which allow to detect and modify previous/next key pairs
+
+Comparing to std::collections::btree (as of rust 1.94):
+- The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
+- The std impl is optimised for point lookup,
+- The std impl has fixed Cap=11, size is 288B for InterNode and 192B for LeafNode.
+- The std cursor API is still unstable (as of 1.94) and provides more complex features
+
+**benchmark**:
+
+(platform: intel i7-8550U)
+
+insert_seq (me/s)|btree|std
+-|-|-
+1k|29.564|20.001
+10k|23.103|16.04
+100k|15.984|11.207
+
+insert_rand (me/s)|btree|std|avl(box)|avl(arc)
+-|-|-|-|-
+1k|17.523|17.792|11.172|9.5397
+10k|12.005|11.587|6.3669|5.651
+100k|4.983|3.0691|0.78|0.732
+
+get_seq (me/s)|btree|std
+-|-|-
+1k|46.356|34.248
+10k|31.76|27.571
+100k|26.808|19.907
+
+get_rand (me/s)|btree|std|avl(box)|avl(arc)
+-|-|-|-|-
+1k|31.922|27.651|24.254|23.466
+10k|16.694|16.868|11.771|10.806
+100k|4.5472|3.2569|1.4423|1.2712
+
+remove_rand (me/s)|btree|std
+-|-|-
+1k|16.681|15.968
+10k|12.444|11.701
+100k|4.2183|3.0724
+
+iter (me/s)|btree|std
+-|-|-
+1k|1342.8|346.8
+10k|1209.4|303.83
+100k|152.57|51.147
+
+into_iter (me/s)|btree|std
+-|-|-
+1k|396.07|143.81
+10k|397.05|81.389
+100k|360.18|56.742
 
 
 ## Intrusive Collections
@@ -126,14 +193,12 @@ assert_eq!(io_list.pop_front().unwrap().val, 20);
 
 ## Feature Flags
 
-This crate uses [feature flags](https://doc.rust-lang.org/cargo/reference/features.html) to control
-the compilation of certain functionalities:
-
-*   **`default`**: Enabled by default. Includes the `std` and `full` features.
+*   **`default`**: Enabled by default. Includes the `std` features.
 *   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
 *   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
 *   **`dlist`**: Enables the doubly linked list (`dlist`) module.
-*   **`avl`**: Enables the `avl` and `range_tree` module.
+*   **`avl`**: Enables the `avl` module.
+*   **`btree`**: Enable the btree module.
 *   **`full`**: Enabled by default. Includes `slist`, `dlist`, and `avl`.
 
 To compile with `no_std` and only the `slist` module, you would use:

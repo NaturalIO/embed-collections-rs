@@ -149,7 +149,10 @@ pub mod slist;
 pub mod slist_owned;
 pub mod various;
 pub use various::Various;
+#[cfg(feature = "btree")]
 pub mod btree;
+#[cfg(feature = "btree")]
+pub use btree::BTreeMap;
 
 #[cfg(test)]
 pub mod test;
