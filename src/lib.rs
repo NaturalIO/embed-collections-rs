@@ -172,3 +172,29 @@ pub const CACHE_LINE_SIZE: usize = 64;
     target_arch = "powerpc64",
 )))]
 pub const CACHE_LINE_SIZE: usize = 32;
+
+/// logging macro for development
+#[macro_export(local_inner_macros)]
+macro_rules! trace_log {
+    ($($arg:tt)+)=>{
+        #[cfg(feature="trace_log")]
+        {
+            log::debug!($($arg)+);
+        }
+    };
+}
+
+/// logging macro for development
+#[macro_export(local_inner_macros)]
+macro_rules! print_log {
+    ($($arg:tt)+)=>{
+        #[cfg(feature="trace_log")]
+        {
+            log::debug!($($arg)+);
+        }
+        #[cfg(not(feature="trace_log"))]
+        {
+            std::println!($($arg)+);
+        }
+    };
+}

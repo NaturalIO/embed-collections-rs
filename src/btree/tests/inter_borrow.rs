@@ -91,7 +91,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
             leaf_count: 4 + inter_cap as usize - 1,
             triggers: 0,
         };
-        map.dump();
+        // map.dump();
 
         map.validate();
 
@@ -102,7 +102,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
         let insert_value = CounterI32::new(insert_key_raw * 10);
         map.insert(insert_key, insert_value);
         map.validate();
-        map.dump();
+        // map.dump();
 
         assert_eq!(
             map.get(&CounterI32::new(insert_key_raw)),
@@ -358,7 +358,7 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
             leaf_count: 4 + inter_cap as usize - 1,
             triggers: 0,
         };
-        //map.dump();
+        // map.dump();
 
         map.validate();
 

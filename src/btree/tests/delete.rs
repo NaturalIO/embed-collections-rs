@@ -1,16 +1,25 @@
 use super::super::*;
-use super::{CounterI32, alive_count, reset_alive_count};
+use crate::test::{CounterI32, alive_count, reset_alive_count, setup_log};
+use captains_log::logfn;
 use rstest::rstest;
 
 /// sequenctial delete all elements
 ///
 /// Note: Since we don't implement borrowing data from brothers, it's possible to produce single child
 /// tree structure
+#[logfn]
 #[rstest]
 #[case(100, 2)]
 #[case(1000, 3)]
 #[case(10000, 4)]
-fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
+fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u32) {
+    #[cfg(miri)]
+    {
+        if count > 100 {
+            println!("skip big test for miri");
+            return;
+        }
+    }
     // Reset counter at test start
     reset_alive_count();
     assert_eq!(alive_count(), 0);
@@ -64,12 +73,16 @@ fn test_delete_all_seq(#[case] count: u32, #[case] height: u32) {
 ///
 /// Environment variable:
 /// - `TEST_SEED`: Set a specific seed for reproducibility. If not set, a random seed is generated.
+#[logfn]
+#[cfg(not(miri))]
 #[rstest]
 #[case(100, 10)] // Small batch, more iterations
 #[case(1000, 10)] // Standard test: 1000 elements per batch, 10 iterations
 #[case(500, 5)] // Medium batch, fewer iterations
 #[case(10000, 3)] // Standard test: 1000 elements per batch, 10 iterations
-fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iterations: usize) {
+fn test_mixed_random_batch_insert_delete(
+    setup_log: (), #[case] batch_size: usize, #[case] iterations: usize,
+) {
     reset_alive_count();
     assert_eq!(alive_count(), 0);
 
@@ -92,9 +105,15 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
 
     // Generate first batch
     let mut prev_batch: Vec<i32> = Vec::with_capacity(batch_size);
-    for _ in 0..batch_size {
+    while prev_batch.len() < batch_size {
         let key: i32 = rng.i32(..);
+        crate::trace_log!("check contain {key:?}");
+        if map.contains_key(&key) {
+            // filter duplicated keys
+            continue;
+        }
         prev_batch.push(key);
+        crate::trace_log!("insert {key:?} {}th", map.len());
         map.insert(key.into(), value_from_key(key).into());
     }
     println!("---");
@@ -111,11 +130,13 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         let mut current_batch: Vec<i32> = Vec::with_capacity(batch_size);
         while current_batch.len() < batch_size {
             let key: i32 = rng.i32(..);
+            crate::trace_log!("check contain {key:?}");
             if map.contains_key(&key) {
                 // filter duplicated keys
                 continue;
             }
             current_batch.push(key);
+            crate::trace_log!("insert {key:?}");
             map.insert(key.into(), value_from_key(key).into());
         }
         map.validate();
@@ -126,13 +147,11 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         println!("height: {}", map.height());
 
         // Delete previous batch
-        for key in &prev_batch {
+        for (_i, key) in prev_batch.iter().enumerate() {
+            crate::trace_log!("remove {key} {_i}th");
             let v = map.remove(key);
-            assert!(
-                v.is_some() || current_batch.contains(key),
-                "Key {} from prev_batch should exist (unless duplicated in current)",
-                key
-            );
+            map.validate();
+            assert!(v.is_some(), "Key {} from prev_batch should exist", key);
             if let Some(val) = v {
                 assert_eq!(*val, value_from_key(*key));
             }
@@ -153,9 +172,9 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
     // Verify all remaining elements are accessible
     for key in &prev_batch {
         if !map.contains_key(key) {
-            println!("error: Remaining key {} should be accessible", key);
             map.dump();
             map.validate();
+            panic!("error: Remaining key {} should be accessible", key);
         }
     }
 
@@ -165,9 +184,9 @@ fn test_mixed_random_batch_insert_delete(#[case] batch_size: usize, #[case] iter
         assert!(v.is_some(), "Remaining key {} should be removable", key);
         assert_eq!(*v.unwrap(), value_from_key(*key));
         if height != map.height() {
-            println!("tree height dec to {}, len {}", map.height(), map.len());
             height = map.height();
             map.print_trigger_flags();
+            println!("tree height dec to {}, len {}", height, map.len());
         }
     }
     map.validate();
