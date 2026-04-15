@@ -1,5 +1,5 @@
 use super::node::*;
-use crate::CACHE_LINE_SIZE;
+use crate::{CACHE_LINE_SIZE, trace_log};
 use alloc::alloc::{Layout, dealloc};
 use core::borrow::Borrow;
 use core::fmt;
@@ -412,6 +412,7 @@ impl<K, V> LeafNode<K, V> {
             let insert_left = split_idx >= idx;
             let total_copy = count - split_idx;
             if insert_left {
+                trace_log!("split {self:?} {new_leaf:?} split_idx {split_idx} insert_left {idx}");
                 self.move_right(&mut new_leaf, split_idx, total_copy);
                 let ptr_v = self.insert_no_split_with_idx(idx, key, value);
                 (new_leaf, ptr_v)
@@ -419,6 +420,9 @@ impl<K, V> LeafNode<K, V> {
                 debug_assert!(idx > split_idx);
                 let first_copy = idx - split_idx;
                 self.copy_right::<true>(&mut new_leaf, split_idx, first_copy);
+                trace_log!(
+                    "split {self:?} {new_leaf:?} split_idx {split_idx} insert_right {first_copy}"
+                );
                 let ptr_v = new_leaf.insert_no_split_with_idx(first_copy, key, value);
                 if total_copy > first_copy {
                     self.copy_right::<true>(
@@ -431,6 +435,7 @@ impl<K, V> LeafNode<K, V> {
                 (new_leaf, ptr_v)
             }
         } else {
+            trace_log!("split {self:?} seq {new_leaf:?} insert 0");
             let ptr_v = new_leaf.insert_no_split_with_idx(0, key, value);
             (new_leaf, ptr_v)
         }

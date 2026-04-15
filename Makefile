@@ -25,7 +25,7 @@ test-release: init
 	RUST_BACKTRACE=1 cargo test ${ARGS} --release -F full --  --nocapture --test-threads=1
 
 test-leak:
-	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly nextest run ${ARGS} -F full -r --no-capture -j 1
+	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly nextest run ${ARGS} -F full,trace_log -r --no-capture -j 1
 
 .PHONY: build
 build: init

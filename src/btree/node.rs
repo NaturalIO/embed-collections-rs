@@ -1,5 +1,5 @@
 use super::{inter::*, leaf::*};
-use crate::{CACHE_LINE_SIZE, Various};
+use crate::{CACHE_LINE_SIZE, Various, trace_log};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
 use core::borrow::Borrow;
 use core::cmp::Ordering;
@@ -268,6 +268,7 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
+                    trace_log!("find_leaf {cur:?} {idx}");
                     match cur.get_child(idx) {
                         Node::Leaf(leaf) => return leaf,
                         Node::Inter(inter) => {
@@ -291,9 +292,13 @@ impl<K: Ord, V> Node<K, V> {
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
+                    trace_log!("find_leaf_with_cache {cur:?} {idx}");
                     cache.push(cur.clone(), idx);
                     match cur.get_child(idx) {
-                        Node::Leaf(leaf) => return leaf,
+                        Node::Leaf(leaf) => {
+                            trace_log!("find_leaf_with_cache got {leaf:?}");
+                            return leaf;
+                        }
                         Node::Inter(inter) => {
                             cur = inter;
                         }

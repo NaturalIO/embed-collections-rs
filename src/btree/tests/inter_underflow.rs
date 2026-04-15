@@ -378,7 +378,7 @@ fn test_inter_underflow_merge_right_height_3() {
         map.validate();
 
         assert_eq!(map.height(), 3, "Tree height should remain 3");
-        map.dump();
+        // map.dump();
 
         // Verify all data is accessible
         for i in 0..3 {

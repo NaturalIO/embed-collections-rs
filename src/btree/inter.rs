@@ -1,6 +1,6 @@
 use super::leaf::*;
 use super::node::*;
-use crate::CACHE_LINE_SIZE;
+use crate::{CACHE_LINE_SIZE, trace_log};
 use alloc::alloc::{Layout, dealloc};
 use core::borrow::Borrow;
 use core::fmt;
@@ -307,17 +307,18 @@ impl<K: Ord, V> InterNode<K, V> {
         }
     }
 
-    /// Merge right node into self, pulling down separator key from grandparent
+    /// Merge right node into self, delete `right`, pull down separator key from grandparent
     /// not including the left(0) child of right
     pub fn merge(&mut self, right: Self, grand: &mut Self, right_idx: u32) {
         let key = grand.remove_mid_child(right_idx);
         let right_count = right.key_count();
+        let mut self_count = self.key_count();
         // Insert separator key from grandparent with right's leftmost child
-        self.insert_no_split_with_idx(self.key_count(), key, right.get_child_ptr(0));
+        self.insert_no_split_with_idx(self_count, key, right.get_child_ptr(0));
         // Copy all keys and remaining children from right node
         if right_count > 0 {
             unsafe {
-                let self_count = self.key_count();
+                self_count += 1;
                 // Copy keys from right to self
                 let src_key = right.key_ptr(0) as *mut K;
                 let dst_key = self.key_ptr(self_count) as *mut K;
@@ -341,6 +342,7 @@ impl<K: Ord, V> InterNode<K, V> {
         let idx = self.search_key(&key);
         let mut new_node = unsafe { InterNode::<K, V>::alloc(self.height()) };
         if idx == cap {
+            trace_log!("{self:?} insert_split new_node {new_node:?} at cap {idx} {child_ptr:p}");
             // the right most position, new empty node
             new_node.set_left_ptr(child_ptr);
             return (new_node, key);
@@ -348,6 +350,9 @@ impl<K: Ord, V> InterNode<K, V> {
         let split_idx = cap >> 1;
         unsafe {
             if idx == split_idx {
+                trace_log!(
+                    "{self:?} insert_split new_node {new_node:?} at split_idx=idx {idx} {child_ptr:p}"
+                );
                 // key don't need to insert, just promote. key < split_key, so child_ptr is left_ptr
                 new_node.set_left_ptr(child_ptr);
                 self.copy_right(&mut new_node, split_idx, cap - split_idx);
@@ -356,8 +361,12 @@ impl<K: Ord, V> InterNode<K, V> {
             }
             let promote_key = (*self.key_ptr(split_idx)).assume_init_read();
             new_node.set_left_ptr(*self.child_ptr(split_idx + 1));
+
             // Determine which side the insertion should go
             if idx < split_idx {
+                trace_log!(
+                    "{self:?} insert_split new_node {new_node:?} insert {idx} < split_idx {idx} {child_ptr:p}"
+                );
                 let right_count = cap - split_idx - 1;
                 if right_count > 0 {
                     self.copy_right(&mut new_node, split_idx + 1, right_count);
@@ -367,6 +376,9 @@ impl<K: Ord, V> InterNode<K, V> {
                 // insert to the left node
                 self.insert_no_split_with_idx(idx, key, child_ptr);
             } else {
+                trace_log!(
+                    "{self:?} insert_split new_node {new_node:?} insert {idx} > split_idx {idx} {child_ptr:p}"
+                );
                 if idx > split_idx + 1 {
                     self.copy_right(&mut new_node, split_idx + 1, idx - split_idx - 1);
                 }
