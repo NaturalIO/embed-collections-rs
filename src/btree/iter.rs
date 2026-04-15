@@ -5,20 +5,63 @@ use super::node::*;
 use core::marker::PhantomData;
 use core::mem::needs_drop;
 
-/// Internal base iterator structure that handles the common logic
-/// for iterating over leaf nodes in both forward and backward directions.
-struct IterBase<K, V> {
+pub(super) struct IterForward<K, V> {
     /// Current leaf node for forward iteration
     front_leaf: LeafNode<K, V>,
     /// Current index within the leaf for forward iteration
     idx: u32,
+}
+
+impl<K, V> IterForward<K, V> {
+    #[inline]
+    pub fn next(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+        if self.idx >= self.front_leaf.key_count() {
+            if let Some(next) = self.front_leaf.get_right_node() {
+                debug_assert!(next.key_count() > 0);
+                self.front_leaf = next;
+                self.idx = 0;
+            } else {
+                return None;
+            }
+        }
+        let current_idx = self.idx;
+        self.idx = current_idx + 1;
+        Some((&self.front_leaf, current_idx))
+    }
+}
+
+pub(super) struct IterBackward<K, V> {
     /// Current leaf node for backward iteration
     back_leaf: LeafNode<K, V>,
     /// back_idx - 1 is the next index within the back leaf, initial to key_count
     /// When back_idx == 0, should go to previous leaf
     back_idx: u32,
-    /// Remaining elements to iterate
+}
+
+impl<K, V> IterBackward<K, V> {
+    #[inline]
+    pub fn prev(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+        if self.back_idx == 0 {
+            if let Some(prev) = self.back_leaf.get_left_node() {
+                self.back_idx = prev.key_count();
+                self.back_leaf = prev;
+                debug_assert!(self.back_idx > 0);
+            } else {
+                return None;
+            }
+        }
+        self.back_idx -= 1;
+        Some((&self.back_leaf, self.back_idx))
+    }
+}
+
+/// Internal base iterator structure that handles the common logic
+/// for iterating over leaf nodes in both forward and backward directions.
+struct IterBase<K, V> {
+    /// Remaining elements to iterate, it serve as a guard in case forward and backward rendezvous
     remaining: usize,
+    forward: IterForward<K, V>,
+    backward: IterBackward<K, V>,
 }
 
 impl<K, V> IterBase<K, V> {
@@ -27,7 +70,11 @@ impl<K, V> IterBase<K, V> {
     /// remaining: total remaining elements
     #[inline]
     fn new(front_leaf: LeafNode<K, V>, back_leaf: LeafNode<K, V>, remaining: usize) -> Self {
-        Self { front_leaf, idx: 0, back_idx: back_leaf.key_count(), back_leaf, remaining }
+        Self {
+            forward: IterForward { front_leaf, idx: 0 },
+            backward: IterBackward { back_idx: back_leaf.key_count(), back_leaf },
+            remaining,
+        }
     }
 
     /// Advance the forward iterator and return the current leaf and index
@@ -38,15 +85,7 @@ impl<K, V> IterBase<K, V> {
             return None;
         }
         self.remaining -= 1;
-        if self.idx >= self.front_leaf.key_count() {
-            let next = self.front_leaf.get_right_node().unwrap();
-            debug_assert!(next.key_count() > 0);
-            self.front_leaf = next;
-            self.idx = 0;
-        }
-        let current_idx = self.idx;
-        self.idx = current_idx + 1;
-        Some((&self.front_leaf, current_idx))
+        self.forward.next()
     }
 
     /// Advance the backward iterator and return the current leaf and index
@@ -57,14 +96,7 @@ impl<K, V> IterBase<K, V> {
             return None;
         }
         self.remaining -= 1;
-        if self.back_idx == 0 {
-            let prev = self.back_leaf.get_left_node().unwrap();
-            self.back_idx = prev.key_count();
-            self.back_leaf = prev;
-            debug_assert!(self.back_idx > 0);
-        }
-        self.back_idx -= 1;
-        Some((&self.back_leaf, self.back_idx))
+        self.backward.prev()
     }
 
     /// Get remaining count
@@ -352,6 +384,8 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
                 } else {
                     self.front_leaf = self.front_leaf.get_right_node().unwrap();
                     self.front_idx = 0;
+                    // Because we always need to compare front_leaf and back_leaf after cursor
+                    // moves, cannot use IterForward & IterBackward here.
                 }
             }
         }
@@ -376,6 +410,8 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
                 if self.back_idx == 0 {
                     self.back_leaf = self.back_leaf.get_left_node().unwrap();
                     self.back_idx = self.back_leaf.key_count();
+                    // Because we always need to compare front_leaf and back_leaf after cursor
+                    // moves, cannot use IterForward & IterBackward here.
                 } else {
                     self.back_idx -= 1;
                     return Some((&self.back_leaf, self.back_idx));
@@ -612,24 +648,23 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
     fn drop(&mut self) {
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
         if let Some(leaf) = self.leaf.take() {
-            if self.is_forward {
-                if needs_drop::<K>() {
+            if needs_drop::<K>() {
+                if self.is_forward {
                     for idx in self.idx..leaf.key_count() {
                         unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
                     }
-                }
-                if needs_drop::<V>() {
-                    for idx in self.idx..leaf.key_count() {
-                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
-                    }
-                }
-            } else {
-                if needs_drop::<K>() {
+                } else {
                     for idx in 0..self.idx {
                         unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
                     }
                 }
-                if needs_drop::<V>() {
+            }
+            if needs_drop::<V>() {
+                if self.is_forward {
+                    for idx in self.idx..leaf.key_count() {
+                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
+                    }
+                } else {
                     for idx in 0..self.idx {
                         unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
                     }
