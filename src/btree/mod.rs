@@ -749,7 +749,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 if let Some((mut grand, grand_idx)) = self.get_cache().pop() {
                     if grand_idx > 0 {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
-                        // the sep key should pull down
+                        // the sep key should pull down,  key+1 + key + 1 > cap + 1
                         if left.key_count() + node.key_count() < cap {
                             #[cfg(test)]
                             {
@@ -765,7 +765,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     }
                     if grand_idx < grand.key_count() {
                         let right = grand.get_child_as_inter(grand_idx + 1);
-                        // the sep key should pull down,
+                        // the sep key should pull down,  key+1 + key + 1 > cap + 1
                         if right.key_count() + node.key_count() < cap {
                             #[cfg(test)]
                             {
