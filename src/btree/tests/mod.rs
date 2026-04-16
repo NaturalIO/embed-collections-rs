@@ -1,5 +1,6 @@
 mod api;
 mod delete;
+mod entry_move;
 mod inter;
 mod inter_borrow;
 mod inter_underflow;
