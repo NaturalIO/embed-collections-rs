@@ -80,6 +80,50 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
             Entry::Vacant(entry) => Entry::Vacant(entry),
         }
     }
+
+    #[inline]
+    pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
+        match self {
+            Entry::Occupied(ent) => match ent.move_forward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Occupied(_ent)),
+            },
+            Entry::Vacant(ent) => match ent.move_forward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Vacant(_ent)),
+            },
+        }
+    }
+
+    #[inline]
+    pub fn move_backward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
+        match self {
+            Entry::Occupied(ent) => match ent.move_backward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Occupied(_ent)),
+            },
+            Entry::Vacant(ent) => match ent.move_backward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Vacant(_ent)),
+            },
+        }
+    }
+
+    #[inline(always)]
+    pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
+        match self {
+            Entry::Occupied(ent) => ent.peak_backward(),
+            Entry::Vacant(ent) => ent.peak_backward(),
+        }
+    }
+
+    #[inline(always)]
+    pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
+        match self {
+            Entry::Occupied(ent) => ent.peak_forward(),
+            Entry::Vacant(ent) => ent.peak_forward(),
+        }
+    }
 }
 
 impl<'a, K: Ord + Clone + Sized + fmt::Debug, V: Sized + fmt::Debug> fmt::Debug
@@ -127,7 +171,13 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Remove the key-value pair from the tree and return the key and value
     #[inline]
-    pub fn remove_entry(mut self) -> (K, V) {
+    pub fn remove_entry(self) -> (K, V) {
+        self._remove_entry(true)
+    }
+
+    /// Remove the key-value pair from the tree and return the key and value
+    #[inline(always)]
+    pub(crate) fn _remove_entry(mut self, merge: bool) -> (K, V) {
         let (key, val) = self.leaf.remove_pair_no_borrow(self.idx);
         self.tree.len -= 1;
         // Check for underflow and handle merge
@@ -135,7 +185,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         let min_count = LeafNode::<K, V>::cap() >> 1;
         if new_count < min_count && !self.tree.get_root_unwrap().is_leaf() {
             // The cache should already contain the path from the entry lookup
-            self.tree.handle_leaf_underflow(self.leaf);
+            self.tree.handle_leaf_underflow(self.leaf, merge);
         }
         (key, val)
     }
