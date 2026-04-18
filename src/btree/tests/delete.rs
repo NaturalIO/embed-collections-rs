@@ -198,3 +198,68 @@ fn test_mixed_random_batch_insert_delete(
     drop(map);
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
+
+#[logfn]
+#[cfg(not(miri))]
+#[rstest]
+#[case(500, 20)]
+fn test_remove_range_random(setup_log: (), #[case] count: usize, #[case] iterations: usize) {
+    reset_alive_count();
+    let seed: u64 = match std::env::var("TEST_SEED") {
+        Ok(val) => val.parse().expect("TEST_SEED must be a valid u64"),
+        Err(_) => fastrand::u64(..),
+    };
+    println!("=== test_remove_range_random seed: {} ===", seed);
+    let mut rng = fastrand::Rng::with_seed(seed);
+    let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
+
+    for i in 0..iterations {
+        // 1. Insert random elements
+        let mut inserted = 0;
+        for _ in 0..count {
+            let k = rng.i32(0..20000);
+            if !map.contains_key(&k) {
+                map.insert(k.into(), (k * 10).into());
+                inserted += 1;
+            }
+        }
+        map.validate();
+        println!(
+            "Iter {}: Inserted {} elements, len: {}, height: {}",
+            i,
+            inserted,
+            map.len(),
+            map.height()
+        );
+
+        // 2. Select a random range and remove it
+        if map.len() > 0 {
+            let mut k1 = rng.i32(0..20000);
+            let mut k2 = rng.i32(0..20000);
+            if k1 > k2 {
+                std::mem::swap(&mut k1, &mut k2);
+            }
+
+            let range = CounterI32::from(k1)..=CounterI32::from(k2);
+            println!("Removing range [{}, {}]", k1, k2);
+            map.remove_range(range);
+            map.validate();
+
+            // Verify all keys in [k1, k2] are gone
+            // Note: iterating 20000 might be slow, but it's acceptable for a few iterations
+            for k in k1..=k2 {
+                assert!(!map.contains_key(&k), "Key {} should be removed", k);
+            }
+        }
+    }
+
+    // 3. Clear all remaining
+    println!("Final clear all, current len: {}", map.len());
+    map.remove_range(..);
+    map.validate();
+    assert_eq!(map.len(), 0);
+    assert_eq!(map.height(), 1);
+
+    drop(map);
+    assert_eq!(alive_count(), 0, "Memory leak detected after remove_range");
+}

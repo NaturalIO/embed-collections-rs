@@ -62,7 +62,7 @@
 use core::borrow::Borrow;
 use core::cell::UnsafeCell;
 use core::fmt::Debug;
-use core::ops::RangeBounds;
+use core::ops::{Bound, RangeBounds};
 mod entry;
 pub use entry::*;
 mod node;
@@ -340,7 +340,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 let min_count = LeafNode::<K, V>::cap() >> 1;
                 if new_count < min_count && !root.is_leaf() {
                     // The cache should already contain the path from the entry lookup
-                    self.handle_leaf_underflow(leaf);
+                    self.handle_leaf_underflow(leaf, true);
                 }
                 Some(val)
             } else {
@@ -348,6 +348,63 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
         } else {
             None
+        }
+    }
+
+    /// Perform removal in batch mode and return the last item removed
+    ///
+    /// NOTE: this function speed up by skipping the underflow of LeafNode until the last operation.
+    pub fn remove_range<R>(&mut self, range: R) -> Option<(K, V)>
+    where
+        R: RangeBounds<K>,
+    {
+        // Note: do not use find_leaf_with_bound, it's a different behavior
+        let mut ent = match range.start_bound() {
+            Bound::Excluded(k) => match self.entry(k.clone()).move_forward() {
+                Ok(ent) => {
+                    if !range.contains(ent.key()) {
+                        return None;
+                    }
+                    ent
+                }
+                Err(_) => return None,
+            },
+            Bound::Included(k) => match self.entry(k.clone()) {
+                Entry::Occupied(ent) => ent,
+                Entry::Vacant(ent) => match ent.move_forward() {
+                    Ok(ent) => {
+                        if !range.contains(ent.key()) {
+                            return None;
+                        }
+                        ent
+                    }
+                    Err(_) => return None,
+                },
+            },
+            Bound::Unbounded => {
+                if let Some(ent) = self.first_entry() {
+                    ent
+                } else {
+                    return None;
+                }
+            }
+        };
+        loop {
+            if let Some((_next_k, _next_v)) = ent.peak_forward() {
+                if range.contains(_next_k) {
+                    let next_key = _next_k.clone();
+                    let _ = ent._remove_entry(false);
+                    if let Entry::Occupied(_ent) = self.entry(next_key) {
+                        ent = _ent;
+                    } else {
+                        unreachable!();
+                    }
+                } else {
+                    return Some(ent._remove_entry(true));
+                }
+            } else {
+                return Some(ent._remove_entry(true));
+            }
         }
     }
 
@@ -565,7 +622,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// - Try merge with left sibling (if left + current <= cap)
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
-    fn handle_leaf_underflow(&mut self, mut leaf: LeafNode<K, V>) {
+    fn handle_leaf_underflow(&mut self, mut leaf: LeafNode<K, V>, merge: bool) {
         debug_assert!(!self.get_root_unwrap().is_leaf());
         let cur_count = leaf.key_count();
         let cap = LeafNode::<K, V>::cap();
@@ -578,54 +635,64 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // if the right and left are full, or they not exist, can come to this
             can_unlink = true;
         }
-        if !can_unlink && let Some(mut left_node) = leaf.get_left_node() {
-            let left_count = left_node.key_count();
-            if left_count + cur_count <= cap {
-                trace_log!("handle_leaf_underflow {leaf:?} merge left {left_node:?} {cur_count}");
-                leaf.copy_left(&mut left_node, cur_count);
-                can_unlink = true;
-                #[cfg(test)]
-                {
-                    self.triggers |= TestFlag::LeafMergeLeft as u32;
+        if merge {
+            if !can_unlink && let Some(mut left_node) = leaf.get_left_node() {
+                let left_count = left_node.key_count();
+                if left_count + cur_count <= cap {
+                    trace_log!(
+                        "handle_leaf_underflow {leaf:?} merge left {left_node:?} {cur_count}"
+                    );
+                    leaf.copy_left(&mut left_node, cur_count);
+                    can_unlink = true;
+                    #[cfg(test)]
+                    {
+                        self.triggers |= TestFlag::LeafMergeLeft as u32;
+                    }
+                } else {
+                    left_avail = cap - left_count;
                 }
-            } else {
-                left_avail = cap - left_count;
             }
-        }
-        if !can_unlink && let Some(mut right_node) = leaf.get_right_node() {
-            let right_count = right_node.key_count();
-            if right_count + cur_count <= cap {
-                trace_log!("handle_leaf_underflow {leaf:?} merge right {right_node:?} {cur_count}");
-                leaf.copy_right::<false>(&mut right_node, 0, cur_count);
-                can_unlink = true;
-                merge_right = true;
-                #[cfg(test)]
-                {
-                    self.triggers |= TestFlag::LeafMergeRight as u32;
+            if !can_unlink && let Some(mut right_node) = leaf.get_right_node() {
+                let right_count = right_node.key_count();
+                if right_count + cur_count <= cap {
+                    trace_log!(
+                        "handle_leaf_underflow {leaf:?} merge right {right_node:?} {cur_count}"
+                    );
+                    leaf.copy_right::<false>(&mut right_node, 0, cur_count);
+                    can_unlink = true;
+                    merge_right = true;
+                    #[cfg(test)]
+                    {
+                        self.triggers |= TestFlag::LeafMergeRight as u32;
+                    }
+                } else {
+                    right_avail = cap - right_count;
                 }
-            } else {
-                right_avail = cap - right_count;
             }
-        }
-        // if we require left_avail + right_avail > cur_count, not possible to construct a 3-2
-        // merge, only either triggering merge left or merge right.
-        if !can_unlink && left_avail > 0 && right_avail > 0 && left_avail + right_avail == cur_count
-        {
-            let mut left_node = leaf.get_left_node().unwrap();
-            let mut right_node = leaf.get_right_node().unwrap();
-            debug_assert!(left_avail < cur_count);
-            trace_log!("handle_leaf_underflow {leaf:?} merge left {left_node:?} {left_avail}");
-            leaf.copy_left(&mut left_node, left_avail);
-            trace_log!(
-                "handle_leaf_underflow {leaf:?} merge right {right_node:?} {}",
-                cur_count - left_avail
-            );
-            leaf.copy_right::<false>(&mut right_node, left_avail, cur_count - left_avail);
-            merge_right = true;
-            can_unlink = true;
-            #[cfg(test)]
+            // if we require left_avail + right_avail > cur_count, not possible to construct a 3-2
+            // merge, only either triggering merge left or merge right.
+            if !can_unlink
+                && left_avail > 0
+                && right_avail > 0
+                && left_avail + right_avail == cur_count
             {
-                self.triggers |= TestFlag::LeafMergeLeft as u32 | TestFlag::LeafMergeRight as u32;
+                let mut left_node = leaf.get_left_node().unwrap();
+                let mut right_node = leaf.get_right_node().unwrap();
+                debug_assert!(left_avail < cur_count);
+                trace_log!("handle_leaf_underflow {leaf:?} merge left {left_node:?} {left_avail}");
+                leaf.copy_left(&mut left_node, left_avail);
+                trace_log!(
+                    "handle_leaf_underflow {leaf:?} merge right {right_node:?} {}",
+                    cur_count - left_avail
+                );
+                leaf.copy_right::<false>(&mut right_node, left_avail, cur_count - left_avail);
+                merge_right = true;
+                can_unlink = true;
+                #[cfg(test)]
+                {
+                    self.triggers |=
+                        TestFlag::LeafMergeLeft as u32 | TestFlag::LeafMergeRight as u32;
+                }
             }
         }
         if !can_unlink {
@@ -1004,7 +1071,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns an entry to the first key in the map
     /// Returns `None` if the map is empty
     #[inline]
-    pub fn first_entry(&mut self) -> Option<Entry<'_, K, V>> {
+    pub fn first_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
         let cache = self.get_cache();
         cache.clear();
         let leaf = match &self.root {
@@ -1017,13 +1084,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if leaf.key_count() == 0 {
             return None;
         }
-        Some(Entry::Occupied(OccupiedEntry { tree: self, idx: 0, leaf }))
+        Some(OccupiedEntry { tree: self, idx: 0, leaf })
     }
 
     /// Returns an entry to the last key in the map
     /// Returns `None` if the map is empty
     #[inline]
-    pub fn last_entry(&mut self) -> Option<Entry<'_, K, V>> {
+    pub fn last_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
         let cache = self.get_cache();
         cache.clear();
         let leaf = match &self.root {
@@ -1037,7 +1104,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if count == 0 {
             return None;
         }
-        Some(Entry::Occupied(OccupiedEntry { tree: self, idx: count - 1, leaf }))
+        Some(OccupiedEntry { tree: self, idx: count - 1, leaf })
     }
 
     /// Removes and returns the first key-value pair in the map
@@ -1045,7 +1112,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     pub fn pop_first(&mut self) -> Option<(K, V)> {
         match self.first_entry() {
-            Some(Entry::Occupied(entry)) => Some(entry.remove_entry()),
+            Some(entry) => Some(entry.remove_entry()),
             _ => None,
         }
     }
@@ -1055,7 +1122,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     pub fn pop_last(&mut self) -> Option<(K, V)> {
         match self.last_entry() {
-            Some(Entry::Occupied(entry)) => Some(entry.remove_entry()),
+            Some(entry) => Some(entry.remove_entry()),
             _ => None,
         }
     }
