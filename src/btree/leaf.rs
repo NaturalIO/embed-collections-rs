@@ -154,6 +154,16 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
+    pub fn from_root_ptr(mut p: NonNull<NodeHeader>) -> Self {
+        p = unsafe {
+            NonNull::new_unchecked(
+                ((p.as_ptr() as usize) ^ NodeHeader::LEAF_MASK) as *mut NodeHeader,
+            )
+        };
+        Self::from(p)
+    }
+
+    #[inline(always)]
     pub fn is_full(&self) -> bool {
         let avail = Self::cap() - self.key_count();
         avail == 0
@@ -306,6 +316,16 @@ impl<K, V> LeafNode<K, V> {
     #[inline]
     pub const fn cap() -> u32 {
         Self::LAYOUT.0
+    }
+
+    #[inline(always)]
+    pub fn replace(&mut self, idx: u32, value: V) -> V {
+        unsafe {
+            let val_ptr = self.value_ptr(idx);
+            let old = (*val_ptr).assume_init_read();
+            (*val_ptr).write(value);
+            old
+        }
     }
 
     /// move items at the beginning of this node to the tail of left_node

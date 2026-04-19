@@ -235,6 +235,49 @@ impl<K: Ord, V> InterNode<K, V> {
         idx
     }
 
+    #[inline]
+    pub fn find_leaf<Q>(self, key: &Q) -> LeafNode<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let mut height = self.height();
+        let mut cur = self;
+        loop {
+            let idx = cur.search_child(key);
+            trace_log!("find_leaf {cur:?} {idx}");
+            if height > 1 {
+                height -= 1;
+                cur = cur.get_child_as_inter(idx);
+            } else {
+                return cur.get_child_as_leaf(idx);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn find_leaf_with_cache<Q>(self, cache: &mut PathCache<K, V>, key: &Q) -> LeafNode<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let mut height = self.height();
+        let mut cur = self;
+        loop {
+            let idx = cur.search_child(key);
+            trace_log!("find_leaf_with_cache {cur:?} {idx}");
+            cache.push(cur.clone(), idx);
+            if height > 1 {
+                height -= 1;
+                cur = cur.get_child_as_inter(idx);
+            } else {
+                let leaf = cur.get_child_as_leaf(idx);
+                trace_log!("find_leaf_with_cache got {leaf:?}");
+                return leaf;
+            }
+        }
+    }
+
     #[cfg(test)]
     pub fn insert_no_split(&mut self, key: K, ptr: *mut NodeHeader) {
         let idx = self.search_key(&key);

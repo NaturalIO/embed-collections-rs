@@ -193,7 +193,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         // Check for underflow and handle merge
         let new_count = self.leaf.key_count();
         let min_count = LeafNode::<K, V>::cap() >> 1;
-        if new_count < min_count && !self.tree.get_root_unwrap().is_leaf() {
+        if new_count < min_count && self.tree.root_is_inter() {
             // The cache should already contain the path from the entry lookup
             self.tree.handle_leaf_underflow(self.leaf, merge);
         }
@@ -231,12 +231,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// replace a value into the tree and return the old value
     #[inline]
     pub fn insert(&mut self, value: V) -> V {
-        unsafe {
-            let val_ptr = self.leaf.value_ptr(self.idx);
-            let old = (*val_ptr).assume_init_read();
-            (*val_ptr).write(value);
-            old
-        }
+        self.leaf.replace(self.idx, value)
     }
 
     /// Peak previous OccupiedEntry
@@ -334,14 +329,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     pub fn insert(self, value: V) -> &'a mut V {
         let (key, tree, idx) = (self.key, self.tree, self.idx);
         if tree.root.is_none() {
-            unsafe {
-                // empty tree
-                let mut leaf = LeafNode::<K, V>::alloc();
-                tree.root = Some(leaf.to_root_ptr());
-                tree.len = 1;
-                tree.leaf_count += 1;
-                return &mut *leaf.insert_no_split_with_idx(0, key, value);
-            }
+            return tree.init_empty(key, value);
         }
         tree.len += 1;
         // Get the leaf node where we should insert

@@ -96,7 +96,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
         // Use find_leaf_with_cache to populate cache
         let cache = map.get_cache();
         cache.clear();
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, &leaf_1_first);
+        let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_a) from cache
         let (popped_node, _) = cache.pop().unwrap();
@@ -227,7 +227,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
         cache.clear();
         // Use a reference to leaf_3's first key for lookup
         let leaf_3_lookup = &leaf_3.get_keys()[0];
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, leaf_3_lookup);
+        let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, leaf_3_lookup);
 
         // Pop height=1 InterNode (internal_b) from cache
         let (popped_node, _) = cache.pop().unwrap();
@@ -368,7 +368,8 @@ fn test_inter_underflow_merge_right_height_3() {
         // Use find_leaf_with_cache to populate cache
         let cache = map.get_cache();
         cache.clear();
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, &leaf_1.get_keys()[0]);
+        let _ =
+            map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1.get_keys()[0]);
 
         // Pop height=1 InterNode (internal_a) from cache
         let (popped_node, _) = cache.pop().unwrap();
@@ -518,7 +519,7 @@ fn test_inter_underflow_merge_left_height_3() {
         cache.clear();
         // Use a reference to leaf_3's first key for lookup
         let leaf_3_lookup = &leaf_3.get_keys()[0];
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, leaf_3_lookup);
+        let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, leaf_3_lookup);
 
         // Pop height=1 InterNode (internal_b) from cache
         let (popped_node, _) = cache.pop().unwrap();
@@ -634,7 +635,7 @@ fn test_inter_underflow_root_becomes_leaf() {
         // Use find_leaf_with_cache to populate cache
         let cache = map.get_cache();
         cache.clear();
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, &leaf_1_first);
+        let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_b) from cache
         let (popped_node, _) = cache.pop().unwrap();
@@ -744,7 +745,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
         // Use find_leaf_with_cache to populate cache
         let cache = map.get_cache();
         cache.clear();
-        let _ = map.get_root().unwrap().find_leaf_with_cache(cache, &leaf_1_first);
+        let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_a) from cache
         let (popped_node, _) = cache.pop().unwrap();

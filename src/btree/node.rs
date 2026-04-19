@@ -1,5 +1,5 @@
 use super::{inter::*, leaf::*};
-use crate::{CACHE_LINE_SIZE, Various, trace_log};
+use crate::{CACHE_LINE_SIZE, Various};
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
 use core::borrow::Borrow;
 use core::cmp::Ordering;
@@ -219,14 +219,18 @@ impl<K: Ord, V> Clone for Node<K, V> {
 }
 
 impl<K: Ord, V> Node<K, V> {
-    pub fn from_root_ptr(mut p: NonNull<NodeHeader>) -> Self {
-        let _p = p.as_ptr() as usize;
-        if _p & NodeHeader::LEAF_MASK > 0 {
-            p = unsafe { NonNull::new_unchecked((_p ^ NodeHeader::LEAF_MASK) as *mut NodeHeader) };
-            Self::Leaf(LeafNode::<K, V>::from(p))
+    #[inline(always)]
+    pub fn from_root_ptr(p: NonNull<NodeHeader>) -> Self {
+        if Self::root_is_leaf(p) {
+            Self::Leaf(LeafNode::<K, V>::from_root_ptr(p))
         } else {
             Self::Inter(InterNode::<K, V>::from(p))
         }
+    }
+
+    #[inline(always)]
+    pub fn root_is_leaf(p: NonNull<NodeHeader>) -> bool {
+        p.as_ptr() as usize & NodeHeader::LEAF_MASK > 0
     }
 
     #[inline(always)]
@@ -251,68 +255,6 @@ impl<K: Ord, V> Node<K, V> {
             node
         } else {
             unreachable!();
-        }
-    }
-
-    #[inline]
-    pub fn into_leaf(self) -> LeafNode<K, V> {
-        if let Self::Leaf(node) = self {
-            node
-        } else {
-            unreachable!();
-        }
-    }
-
-    #[inline]
-    pub fn find_leaf<Q>(&self, key: &Q) -> LeafNode<K, V>
-    where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        match self {
-            Self::Leaf(node) => node.clone(),
-            Self::Inter(node) => {
-                let mut height = node.height();
-                let mut cur = node.clone();
-                loop {
-                    let idx = cur.search_child(key);
-                    trace_log!("find_leaf {cur:?} {idx}");
-                    if height > 1 {
-                        height -= 1;
-                        cur = cur.get_child_as_inter(idx);
-                    } else {
-                        return cur.get_child_as_leaf(idx);
-                    }
-                }
-            }
-        }
-    }
-
-    #[inline]
-    pub fn find_leaf_with_cache<Q>(&self, cache: &mut PathCache<K, V>, key: &Q) -> LeafNode<K, V>
-    where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
-    {
-        match &self {
-            Self::Leaf(node) => node.clone(),
-            Self::Inter(node) => {
-                let mut height = node.height();
-                let mut cur = node.clone();
-                loop {
-                    let idx = cur.search_child(key);
-                    trace_log!("find_leaf_with_cache {cur:?} {idx}");
-                    cache.push(cur.clone(), idx);
-                    if height > 1 {
-                        height -= 1;
-                        cur = cur.get_child_as_inter(idx);
-                    } else {
-                        let leaf = cur.get_child_as_leaf(idx);
-                        trace_log!("find_leaf_with_cache got {leaf:?}");
-                        return leaf;
-                    }
-                }
-            }
         }
     }
 
