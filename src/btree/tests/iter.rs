@@ -1,15 +1,20 @@
 use super::super::*;
+use crate::test::{CounterI32, alive_count, reset_alive_count, setup_log};
+use captains_log::logfn;
 use core::ops::Bound;
+use rstest::rstest;
 
-#[test]
-fn test_iter_empty() {
+#[logfn]
+#[rstest]
+fn test_iter_empty(setup_log: ()) {
     let map: BTreeMap<i32, i32> = BTreeMap::new();
     let mut iter = map.iter();
     assert_eq!(iter.next(), None);
 }
 
-#[test]
-fn test_iter_single() {
+#[logfn]
+#[rstest]
+fn test_iter_single(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
     let mut iter = map.iter();
@@ -17,8 +22,9 @@ fn test_iter_single() {
     assert_eq!(iter.next(), None);
 }
 
-#[test]
-fn test_iter_multiple() {
+#[logfn]
+#[rstest]
+fn test_iter_multiple(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -28,8 +34,9 @@ fn test_iter_multiple() {
     assert_eq!(collected, vec![(&1, &"a"), (&2, &"b"), (&3, &"c")]);
 }
 
-#[test]
-fn test_iter_large() {
+#[logfn]
+#[rstest]
+fn test_iter_large(setup_log: ()) {
     let mut map = BTreeMap::new();
     // Use at least 3x leaf capacity to ensure multiple leaf nodes
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
@@ -44,8 +51,9 @@ fn test_iter_large() {
     assert_eq!(collected, expected);
 }
 
-#[test]
-fn test_iter_mut() {
+#[logfn]
+#[rstest]
+fn test_iter_mut(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, 10);
     map.insert(2, 20);
@@ -60,8 +68,9 @@ fn test_iter_mut() {
     assert_eq!(map.get(&3), Some(&60));
 }
 
-#[test]
-fn test_keys() {
+#[logfn]
+#[rstest]
+fn test_keys(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(3, "c");
     map.insert(1, "a");
@@ -71,8 +80,9 @@ fn test_keys() {
     assert_eq!(keys, vec![&1, &2, &3]);
 }
 
-#[test]
-fn test_values() {
+#[logfn]
+#[rstest]
+fn test_values(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(3, "c");
     map.insert(1, "a");
@@ -82,8 +92,9 @@ fn test_values() {
     assert_eq!(values, vec![&"a", &"b", &"c"]);
 }
 
-#[test]
-fn test_values_mut() {
+#[logfn]
+#[rstest]
+fn test_values_mut(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, 10);
     map.insert(2, 20);
@@ -98,8 +109,9 @@ fn test_values_mut() {
     assert_eq!(map.get(&3), Some(&31));
 }
 
-#[test]
-fn test_for_loop() {
+#[logfn]
+#[rstest]
+fn test_for_loop(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -112,8 +124,9 @@ fn test_for_loop() {
     assert_eq!(collected, vec![(1, "a"), (2, "b"), (3, "c")]);
 }
 
-#[test]
-fn test_for_loop_mut() {
+#[logfn]
+#[rstest]
+fn test_for_loop_mut(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, 10);
     map.insert(2, 20);
@@ -128,8 +141,9 @@ fn test_for_loop_mut() {
     assert_eq!(map.get(&3), Some(&60));
 }
 
-#[test]
-fn test_iter_after_split() {
+#[logfn]
+#[rstest]
+fn test_iter_after_split(setup_log: ()) {
     let mut map = BTreeMap::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
@@ -143,8 +157,9 @@ fn test_iter_after_split() {
     assert_eq!(collected, expected);
 }
 
-#[test]
-fn test_iter_with_deletes() {
+#[logfn]
+#[rstest]
+fn test_iter_with_deletes(setup_log: ()) {
     let mut map = BTreeMap::new();
 
     for i in 0..20 {
@@ -162,8 +177,9 @@ fn test_iter_with_deletes() {
     assert!(!collected.iter().any(|(k, _)| *k == 5 || *k == 10 || *k == 15));
 }
 
-#[test]
-fn test_iter_exact_size() {
+#[logfn]
+#[rstest]
+fn test_iter_exact_size(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..10 {
         map.insert(i, i * 10);
@@ -180,8 +196,9 @@ fn test_iter_exact_size() {
     assert_eq!(iter.len(), 8);
 }
 
-#[test]
-fn test_iter_double_ended_single_leaf() {
+#[logfn]
+#[rstest]
+fn test_iter_double_ended_single_leaf(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..5 {
         map.insert(i, i * 10);
@@ -191,8 +208,9 @@ fn test_iter_double_ended_single_leaf() {
     assert_eq!(collected, vec![(4, 40), (3, 30), (2, 20), (1, 10), (0, 0)]);
 }
 
-#[test]
-fn test_iter_double_ended_multi_leaf() {
+#[logfn]
+#[rstest]
+fn test_iter_double_ended_multi_leaf(setup_log: ()) {
     // Test with at least 3 leaf nodes to ensure proper multi-leaf navigation
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
     let n = leaf_cap * 3 + 10;
@@ -216,8 +234,9 @@ fn test_iter_double_ended_multi_leaf() {
     assert_eq!(last, Some(((n - 1) as i32, (n - 1) as i32 * 10)));
 }
 
-#[test]
-fn test_iter_mixed_forward_backward_multi_leaf() {
+#[logfn]
+#[rstest]
+fn test_iter_mixed_forward_backward_multi_leaf(setup_log: ()) {
     // Test mixed iteration with at least 3 leaf nodes
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
     let n = leaf_cap * 3 + 10;
@@ -259,8 +278,9 @@ fn test_iter_mixed_forward_backward_multi_leaf() {
     }
 }
 
-#[test]
-fn test_iter_mixed_forward_backward() {
+#[logfn]
+#[rstest]
+fn test_iter_mixed_forward_backward(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..6 {
         map.insert(i, i * 10);
@@ -277,8 +297,9 @@ fn test_iter_mixed_forward_backward() {
     assert_eq!(iter.next_back(), None);
 }
 
-#[test]
-fn test_iter_mut_double_ended() {
+#[logfn]
+#[rstest]
+fn test_iter_mut_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..5 {
         map.insert(i, i * 10);
@@ -289,8 +310,9 @@ fn test_iter_mut_double_ended() {
     assert_eq!(collected, vec![(4, 40), (3, 30), (2, 20), (1, 10), (0, 0)]);
 }
 
-#[test]
-fn test_iter_mut_exact_size() {
+#[logfn]
+#[rstest]
+fn test_iter_mut_exact_size(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..10 {
         map.insert(i, i * 10);
@@ -300,8 +322,9 @@ fn test_iter_mut_exact_size() {
     assert_eq!(iter.len(), 10);
 }
 
-#[test]
-fn test_keys_double_ended() {
+#[logfn]
+#[rstest]
+fn test_keys_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..5 {
         map.insert(i, i * 10);
@@ -311,8 +334,9 @@ fn test_keys_double_ended() {
     assert_eq!(collected, vec![4, 3, 2, 1, 0]);
 }
 
-#[test]
-fn test_values_double_ended() {
+#[logfn]
+#[rstest]
+fn test_values_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..5 {
         map.insert(i, i * 10);
@@ -322,8 +346,9 @@ fn test_values_double_ended() {
     assert_eq!(collected, vec![40, 30, 20, 10, 0]);
 }
 
-#[test]
-fn test_values_mut_double_ended() {
+#[logfn]
+#[rstest]
+fn test_values_mut_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..5 {
         map.insert(i, i * 10);
@@ -333,16 +358,18 @@ fn test_values_mut_double_ended() {
     assert_eq!(collected, vec![40, 30, 20, 10, 0]);
 }
 
-#[test]
-fn test_iter_empty_double_ended() {
+#[logfn]
+#[rstest]
+fn test_iter_empty_double_ended(setup_log: ()) {
     let map: BTreeMap<i32, i32> = BTreeMap::new();
     let mut iter = map.iter();
     assert_eq!(iter.next_back(), None);
     assert_eq!(iter.len(), 0);
 }
 
-#[test]
-fn test_iter_single_double_ended() {
+#[logfn]
+#[rstest]
+fn test_iter_single_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
 
@@ -351,8 +378,9 @@ fn test_iter_single_double_ended() {
     assert_eq!(iter.next_back(), None);
 }
 
-#[test]
-fn test_range_basic() {
+#[logfn]
+#[rstest]
+fn test_range_basic(setup_log: ()) {
     let mut map = BTreeMap::<u32, u32>::new();
 
     for i in 0..10 {
@@ -375,8 +403,9 @@ fn test_range_basic() {
     assert_eq!(collected.len(), 10);
 }
 
-#[test]
-fn test_range_mut() {
+#[logfn]
+#[rstest]
+fn test_range_mut(setup_log: ()) {
     let mut map = BTreeMap::<u32, u32>::new();
 
     for i in 0..10 {
@@ -392,15 +421,17 @@ fn test_range_mut() {
     assert_eq!(map.get(&7), Some(&70)); // Unchanged
 }
 
-#[test]
-fn test_range_empty() {
+#[logfn]
+#[rstest]
+fn test_range_empty(setup_log: ()) {
     let map: BTreeMap<i32, i32> = BTreeMap::new();
     let collected: Vec<_> = map.range(0..10).collect();
     assert!(collected.is_empty());
 }
 
-#[test]
-fn test_range_boundaries() {
+#[logfn]
+#[rstest]
+fn test_range_boundaries(setup_log: ()) {
     let mut map = BTreeMap::new();
 
     // Insert even numbers only: 0, 2, 4, 6, 8
@@ -460,8 +491,9 @@ fn test_range_boundaries() {
     assert_eq!(collected, vec![]);
 }
 
-#[test]
-fn test_range_double_ended_single_leaf() {
+#[logfn]
+#[rstest]
+fn test_range_double_ended_single_leaf(setup_log: ()) {
     let mut map = BTreeMap::new();
     for i in 0..10 {
         map.insert(i, i * 10);
@@ -491,8 +523,9 @@ fn test_range_double_ended_single_leaf() {
     assert_eq!(iter.next(), None);
 }
 
-#[test]
-fn test_range_double_ended_multi_leaf() {
+#[logfn]
+#[rstest]
+fn test_range_double_ended_multi_leaf(setup_log: ()) {
     // Test with at least 3 leaf nodes
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
     let n = leaf_cap * 3 + 10;
@@ -562,8 +595,9 @@ fn test_range_double_ended_multi_leaf() {
     assert_eq!(remaining_forward, expected_remaining);
 }
 
-#[test]
-fn test_into_iter() {
+#[logfn]
+#[rstest]
+fn test_into_iter(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -573,15 +607,17 @@ fn test_into_iter() {
     assert_eq!(collected, vec![(1, "a"), (2, "b"), (3, "c")]);
 }
 
-#[test]
-fn test_into_iter_empty() {
+#[logfn]
+#[rstest]
+fn test_into_iter_empty(setup_log: ()) {
     let map: BTreeMap<i32, i32> = BTreeMap::new();
     let mut iter = map.into_iter();
     assert_eq!(iter.next(), None);
 }
 
-#[test]
-fn test_into_iter_large() {
+#[logfn]
+#[rstest]
+fn test_into_iter_large(setup_log: ()) {
     let mut map = BTreeMap::new();
     let n = 1000;
 
@@ -592,4 +628,62 @@ fn test_into_iter_large() {
     let collected: Vec<_> = map.into_iter().collect();
     let expected: Vec<_> = (0..n).map(|i| (i, i * 2)).collect();
     assert_eq!(collected, expected);
+}
+
+#[logfn]
+#[rstest]
+fn test_into_iter_rev_large(setup_log: ()) {
+    let mut map = BTreeMap::new();
+    let n = 1000;
+
+    for i in 0..n {
+        map.insert(i, i * 2);
+    }
+    // map.dump();
+
+    let collected: Vec<_> = map.into_iter().rev().collect();
+    let expected: Vec<_> = (0..n).rev().map(|i| (i, i * 2)).collect();
+    assert_eq!(collected, expected);
+}
+
+#[logfn]
+#[rstest]
+fn test_into_iter_drop_halfway_forward(setup_log: ()) {
+    reset_alive_count();
+    let n = 1000;
+    {
+        let mut map = BTreeMap::new();
+
+        for i in 0..n {
+            map.insert(CounterI32::from(i), CounterI32::from(i * 2));
+        }
+
+        let mut iter = map.into_iter();
+        for _ in 0..n / 2 {
+            iter.next();
+        }
+        // iter is dropped here
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+fn test_into_iter_drop_halfway_reverse(setup_log: ()) {
+    reset_alive_count();
+    let n = 1000;
+    {
+        let mut map = BTreeMap::new();
+
+        for i in 0..n {
+            map.insert(CounterI32::from(i), CounterI32::from(i * 2));
+        }
+
+        let mut iter = map.into_iter().rev();
+        for _ in 0..n / 2 {
+            iter.next();
+        }
+        // iter is dropped here
+    }
+    assert_eq!(alive_count(), 0);
 }
