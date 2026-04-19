@@ -79,6 +79,11 @@ impl NodeBase {
         self.header.as_ptr()
     }
 
+    #[inline(always)]
+    pub fn get_nonnull(&self) -> NonNull<NodeHeader> {
+        unsafe { NonNull::new_unchecked(self.get_ptr()) }
+    }
+
     #[cfg(test)]
     #[inline(always)]
     pub fn get_array<T>(&self, header_size: usize, delta: usize) -> &[T] {
@@ -216,18 +221,27 @@ impl<K: Ord, V> Clone for Node<K, V> {
     }
 }
 
-impl<K: Ord, V> Node<K, V> {
+impl<K: Ord, V> From<&NonNull<NodeHeader>> for Node<K, V> {
     #[inline(always)]
-    pub unsafe fn from_header(header: *mut NodeHeader) -> Self {
+    fn from(header: &NonNull<NodeHeader>) -> Self {
+        Self::from(*header)
+    }
+}
+
+impl<K: Ord, V> From<NonNull<NodeHeader>> for Node<K, V> {
+    #[inline(always)]
+    fn from(header: NonNull<NodeHeader>) -> Self {
         unsafe {
-            if (*header).is_leaf() {
-                Self::Leaf(LeafNode::<K, V>::from_header(header))
+            if header.as_ref().is_leaf() {
+                Self::Leaf(LeafNode::<K, V>::from(header))
             } else {
-                Self::Inter(InterNode::<K, V>::from_header(header))
+                Self::Inter(InterNode::<K, V>::from(header))
             }
         }
     }
+}
 
+impl<K: Ord, V> Node<K, V> {
     #[inline(always)]
     pub fn is_leaf(&self) -> bool {
         match self {
@@ -245,8 +259,8 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[cfg(test)]
-    pub fn as_inter(&self) -> &InterNode<K, V> {
-        if let Self::Inter(node) = &self {
+    pub fn into_inter(self) -> InterNode<K, V> {
+        if let Self::Inter(node) = self {
             node
         } else {
             unreachable!();
@@ -452,6 +466,7 @@ impl<K: Ord, V> PathCache<K, V> {
         self.pos = 0;
     }
 
+    /// Take the cache out, and make sure it's clear
     #[inline(always)]
     pub fn take(&mut self) -> Self {
         let mut inner = self.inner.take();

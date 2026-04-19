@@ -42,6 +42,17 @@ impl<K, V> DerefMut for InterNode<K, V> {
     }
 }
 
+impl<K, V> From<NonNull<NodeHeader>> for InterNode<K, V> {
+    /// Create InterNode from header pointer
+    #[inline(always)]
+    fn from(header: NonNull<NodeHeader>) -> Self {
+        unsafe {
+            debug_assert!(!header.as_ref().is_leaf());
+            Self { base: NodeBase { header }, _phan: Default::default() }
+        }
+    }
+}
+
 impl<K, V> InterNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
     const LAYOUT: (u32, Layout) = Self::cal_layout();
@@ -108,18 +119,12 @@ impl<K, V> InterNode<K, V> {
 
     /// Create InterNode from header pointer
     #[inline(always)]
-    pub(crate) unsafe fn from_header(header: *mut NodeHeader) -> Self {
-        unsafe {
-            debug_assert!(!(*header).is_leaf());
-            Self {
-                base: NodeBase { header: NonNull::new_unchecked(header) },
-                _phan: Default::default(),
-            }
-        }
+    pub unsafe fn from_header(header: *mut NodeHeader) -> Self {
+        Self::from(unsafe { NonNull::new_unchecked(header) })
     }
 
     #[inline(always)]
-    pub(crate) fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
+    pub fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
         unsafe {
             let p = self.child_ptr(0);
             p.write(child_ptr)

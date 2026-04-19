@@ -51,6 +51,17 @@ impl<K, V> PartialEq for LeafNode<K, V> {
     }
 }
 
+impl<K, V> From<NonNull<NodeHeader>> for LeafNode<K, V> {
+    /// Create LeafNode from header pointer
+    #[inline(always)]
+    fn from(header: NonNull<NodeHeader>) -> Self {
+        unsafe {
+            debug_assert!(header.as_ref().is_leaf());
+            Self { base: NodeBase { header }, _phan: Default::default() }
+        }
+    }
+}
+
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
     const LAYOUT: (u32, Layout) = Self::cal_layout();
@@ -89,6 +100,11 @@ impl<K, V> LeafNode<K, V> {
             Ok(l) => (leaf_key_cap as u32, l),
             Err(_) => panic!("invalid layout"),
         }
+    }
+
+    #[inline(always)]
+    pub unsafe fn from_header(header: *mut NodeHeader) -> Self {
+        Self::from(unsafe { NonNull::new_unchecked(header) })
     }
 
     #[inline(always)]
@@ -188,18 +204,6 @@ impl<K, V> LeafNode<K, V> {
                 return None;
             }
             Some(Self::from_header(p))
-        }
-    }
-
-    /// Create LeafNode from header pointer
-    #[inline(always)]
-    pub unsafe fn from_header(header: *mut NodeHeader) -> Self {
-        unsafe {
-            debug_assert!((*header).is_leaf());
-            Self {
-                base: NodeBase { header: NonNull::new_unchecked(header) },
-                _phan: Default::default(),
-            }
         }
     }
 
