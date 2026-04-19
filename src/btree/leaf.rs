@@ -72,11 +72,15 @@ impl<K, V> LeafNode<K, V> {
             align = PTR_ALIGN;
         }
         let key_size = size_of::<K>();
-        let value_size = size_of::<V>();
+        let mut value_size = size_of::<V>();
         // should be align to align_of
         assert!(key_size <= CACHE_LINE_SIZE - 16);
         assert!(value_size <= CACHE_LINE_SIZE - 16);
         let mut leaf_key_cap = (AREA_SIZE - LEAF_HEAD_SIZE) / key_size;
+        if value_size == 0 {
+            // make sure we don't divide by zero
+            value_size = 1;
+        }
         let leaf_value_cap = (AREA_SIZE - LEAF_HEAD_SIZE) / value_size;
         if leaf_key_cap > leaf_value_cap {
             leaf_key_cap = leaf_value_cap;

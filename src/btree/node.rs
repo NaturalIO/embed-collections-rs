@@ -94,9 +94,11 @@ impl NodeBase {
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *mut T {
-        unsafe {
-            NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * size_of::<T>())
+        let mut v_size = size_of::<T>();
+        if v_size == 0 {
+            v_size = 1;
         }
+        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
     }
 
     /// Get count of items in the node

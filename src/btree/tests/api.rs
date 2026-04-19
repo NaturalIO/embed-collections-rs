@@ -1,4 +1,16 @@
+use super::super::node::PathCache;
 use super::super::*;
+use core::mem::size_of;
+
+#[test]
+fn test_size() {
+    let path_cache = size_of::<PathCache<u32, u32>>();
+    println!("size: path_cache {}", path_cache);
+    let tree = size_of::<BTreeMap<u32, u32>>();
+    println!("size: BTreeMap {}", tree);
+    let s_tree = size_of::<alloc::collections::BTreeMap<u32, u32>>();
+    println!("size: std BTreeMap {}", s_tree);
+}
 
 #[test]
 fn test_simple() {
@@ -26,6 +38,19 @@ fn test_simple() {
     assert_eq!(map.get(&1), Some(&"c"));
     assert!(map.contains_key(&1));
     assert!(!map.contains_key(&2));
+}
+
+#[test]
+fn test_zero_size() {
+    let (inter_cap, leaf_cap) = BTreeMap::<u8, ()>::cap();
+    println!("cap: inter {inter_cap} leaf {leaf_cap}");
+    let mut map: BTreeMap<u8, ()> = BTreeMap::new();
+    for i in 0u8..=u8::MAX {
+        map.insert(i, ());
+    }
+    for i in 0u8..=u8::MAX {
+        assert_eq!(map.get(&i), Some(&()));
+    }
 }
 
 #[test]
