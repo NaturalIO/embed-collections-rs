@@ -290,6 +290,7 @@ fn test_alter_key_update_sep_height_2() {
             len: 3,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -352,6 +353,7 @@ fn test_alter_key_update_sep_height_3() {
             len: 4,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();

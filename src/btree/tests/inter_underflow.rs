@@ -87,6 +87,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         //map.dump();
@@ -135,6 +136,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
         // height collapse from 3 to 2
         assert_eq!(map.height(), 2);
         assert_eq!(map.leaf_count, 4);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
     }
     // After map is dropped, all CounterI32 should be dropped
@@ -214,6 +216,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         assert_eq!(map.height(), 3);
@@ -264,6 +267,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
         assert_eq!(map.height(), 2);
 
         assert_eq!(map.leaf_count, 4);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -355,6 +359,7 @@ fn test_inter_underflow_merge_right_height_3() {
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 6,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         assert_eq!(map.height(), 3, "Tree height should remain 3");
@@ -409,6 +414,7 @@ fn test_inter_underflow_merge_right_height_3() {
                 (50 + i) * 2
             );
             assert_eq!(map.leaf_count, 6);
+            #[cfg(feature = "trace_log")]
             assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
         }
     }
@@ -501,6 +507,7 @@ fn test_inter_underflow_merge_left_height_3() {
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 6,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         //map.dump();
@@ -558,6 +565,7 @@ fn test_inter_underflow_merge_left_height_3() {
             );
 
             assert_eq!(map.leaf_count, 6);
+            #[cfg(feature = "trace_log")]
             assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
         }
     }
@@ -618,6 +626,7 @@ fn test_inter_underflow_root_becomes_leaf() {
             len: 3,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 1,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -648,6 +657,7 @@ fn test_inter_underflow_root_becomes_leaf() {
             assert!(map.contains_key(&CounterI32::new(i * 2)), "Key {} should exist", i * 2);
         }
         assert_eq!(map.leaf_count, 1);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -725,6 +735,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
             len: 9,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         assert_eq!(map.height(), 3, "Tree height should be 3");
@@ -771,6 +782,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
             );
         }
         assert_eq!(map.leaf_count, 3);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");

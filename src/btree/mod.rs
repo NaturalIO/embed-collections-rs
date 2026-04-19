@@ -112,11 +112,11 @@ pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
     cache: UnsafeCell<PathCache<K, V>>,
     // count of leaf nodes
     leaf_count: usize,
-    #[cfg(test)]
+    #[cfg(all(test, feature = "trace_log"))]
     triggers: u32,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "trace_log"))]
 #[repr(u32)]
 enum TestFlag {
     LeafSplit = 1,
@@ -152,7 +152,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             len: 0,
             cache: UnsafeCell::new(PathCache::<K, V>::new()),
             leaf_count: 0,
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             triggers: 0,
         }
     }
@@ -183,7 +183,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         self.leaf_count
     }
 
-    #[cfg(all(test, feature = "std"))]
+    #[cfg(all(test, feature = "std", feature = "trace_log"))]
     pub fn print_trigger_flags(&self) {
         let mut s = String::from("");
         if self.triggers & TestFlag::InterSplit as u32 > 0 {
@@ -474,7 +474,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         };
         if let Some((parent, parent_idx)) = ret {
             trace_log!("update_ancestor_sep_key move={MOVE} at {parent:?}:{}", parent_idx - 1);
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             {
                 self.triggers |= TestFlag::UpdateSepKey as u32;
             }
@@ -501,7 +501,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 } else {
                     leaf.insert_borrow_left(&mut left_node, idx, key, value)
                 };
-                #[cfg(test)]
+                #[cfg(all(test, feature = "trace_log"))]
                 {
                     self.triggers |= TestFlag::LeafMoveLeft as u32;
                 }
@@ -523,7 +523,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 leaf.borrow_right(&mut right_node);
                 leaf.insert_no_split_with_idx(idx, key, value)
             };
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             {
                 self.triggers |= TestFlag::LeafMoveRight as u32;
             }
@@ -531,7 +531,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             self.update_ancestor_sep_key::<true>(right_node.clone_first_key());
             return val_p;
         }
-        #[cfg(test)]
+        #[cfg(all(test, feature = "trace_log"))]
         {
             self.triggers |= TestFlag::LeafSplit as u32;
         }
@@ -568,7 +568,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx > 0 {
                         let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
                         if !left_parent.is_full() {
-                            #[cfg(test)]
+                            #[cfg(all(test, feature = "trace_log"))]
                             {
                                 self.triggers |= TestFlag::InterMoveLeft as u32;
                             }
@@ -582,7 +582,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                 debug_assert_eq!(parent.get_child_ptr(0), left_ptr);
                                 unsafe { (*parent.child_ptr(0)) = right_ptr };
                                 left_parent.append(demote_key, left_ptr);
-                                #[cfg(test)]
+                                #[cfg(all(test, feature = "trace_log"))]
                                 {
                                     self.triggers |= TestFlag::InterMoveLeftFirst as u32;
                                 }
@@ -606,7 +606,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     if grand_idx < grand.key_count() {
                         let mut right_parent = grand.get_child_as_inter(grand_idx + 1);
                         if !right_parent.is_full() {
-                            #[cfg(test)]
+                            #[cfg(all(test, feature = "trace_log"))]
                             {
                                 self.triggers |= TestFlag::InterMoveRight as u32;
                             }
@@ -617,7 +617,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                 // split from last child of parent
                                 let demote_key = grand.change_key(grand_idx, promote_key);
                                 right_parent.insert_at_front(right_ptr, demote_key);
-                                #[cfg(test)]
+                                #[cfg(all(test, feature = "trace_log"))]
                                 {
                                     self.triggers |= TestFlag::InterMoveRightLast as u32;
                                 }
@@ -639,7 +639,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 promote_key = _promote_key;
                 right_ptr = right.get_ptr();
                 left_ptr = parent.get_ptr();
-                #[cfg(test)]
+                #[cfg(all(test, feature = "trace_log"))]
                 {
                     self.triggers |= TestFlag::InterSplit as u32;
                 }
@@ -692,7 +692,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     );
                     leaf.copy_left(&mut left_node, cur_count);
                     can_unlink = true;
-                    #[cfg(test)]
+                    #[cfg(all(test, feature = "trace_log"))]
                     {
                         self.triggers |= TestFlag::LeafMergeLeft as u32;
                     }
@@ -709,7 +709,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     leaf.copy_right::<false>(&mut right_node, 0, cur_count);
                     can_unlink = true;
                     merge_right = true;
-                    #[cfg(test)]
+                    #[cfg(all(test, feature = "trace_log"))]
                     {
                         self.triggers |= TestFlag::LeafMergeRight as u32;
                     }
@@ -736,7 +736,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 leaf.copy_right::<false>(&mut right_node, left_avail, cur_count - left_avail);
                 merge_right = true;
                 can_unlink = true;
-                #[cfg(test)]
+                #[cfg(all(test, feature = "trace_log"))]
                 {
                     self.triggers |=
                         TestFlag::LeafMergeLeft as u32 | TestFlag::LeafMergeRight as u32;
@@ -784,7 +784,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
         if delete_idx == node.key_count() {
             trace_log!("remove_child_from_inter {node:?}:{delete_idx} last");
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             {
                 self.triggers |= TestFlag::RemoveChildLast as u32;
             }
@@ -796,7 +796,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         _node.key_count() > idx
                     })
             {
-                #[cfg(test)]
+                #[cfg(all(test, feature = "trace_log"))]
                 {
                     self.triggers |= TestFlag::UpdateSepKey as u32;
                 }
@@ -807,7 +807,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else if delete_idx > 0 {
             trace_log!("remove_child_from_inter {node:?}:{delete_idx} mid");
             node.remove_mid_child(delete_idx);
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             {
                 self.triggers |= TestFlag::RemoveChildMid as u32;
             }
@@ -815,7 +815,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             if let Some(key) = right_sep {
                 trace_log!("remove_child_from_inter change_key {node:?}:{}", delete_idx - 1);
                 node.change_key(delete_idx - 1, key);
-                #[cfg(test)]
+                #[cfg(all(test, feature = "trace_log"))]
                 {
                     self.triggers |= TestFlag::UpdateSepKey as u32;
                 }
@@ -824,7 +824,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             trace_log!("remove_child_from_inter {node:?}:{delete_idx} first");
             // delete_idx is the first but not the last
             let mut sep_key = node.remove_first_child();
-            #[cfg(test)]
+            #[cfg(all(test, feature = "trace_log"))]
             {
                 self.triggers |= TestFlag::RemoveChildFirst as u32;
             }
@@ -866,7 +866,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
                         // the sep key should pull down,  key+1 + key + 1 > cap + 1
                         if left.key_count() + node.key_count() < cap {
-                            #[cfg(test)]
+                            #[cfg(all(test, feature = "trace_log"))]
                             {
                                 self.triggers |= TestFlag::InterMergeLeft as u32;
                             }
@@ -882,7 +882,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                         let right = grand.get_child_as_inter(grand_idx + 1);
                         // the sep key should pull down,  key+1 + key + 1 > cap + 1
                         if right.key_count() + node.key_count() < cap {
-                            #[cfg(test)]
+                            #[cfg(all(test, feature = "trace_log"))]
                             {
                                 self.triggers |= TestFlag::InterMergeRight as u32;
                             }
@@ -904,7 +904,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn remove_only_child(&mut self, node: InterNode<K, V>) -> Option<(InterNode<K, V>, u32)> {
         debug_assert_eq!(node.key_count(), 0);
-        #[cfg(test)]
+        #[cfg(all(test, feature = "trace_log"))]
         {
             self.triggers |= TestFlag::RemoveOnlyChild as u32;
         }

@@ -89,6 +89,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -123,7 +124,13 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
             assert_eq!(map.get(&k), Some(&CounterI32::new(*k * 5)));
         }
         drop(dummy_leaves);
-        assert!(map.triggers & TestFlag::InterMoveLeftFirst as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(
+            map.triggers,
+            TestFlag::InterMoveLeftFirst as u32
+                | TestFlag::InterMoveLeft as u32
+                | TestFlag::LeafSplit as u32
+        );
         assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
@@ -219,6 +226,7 @@ fn test_inter_borrow_case2_rotate_left() {
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -251,7 +259,8 @@ fn test_inter_borrow_case2_rotate_left() {
             assert_eq!(map.get(&k), Some(&CounterI32::new(*k * 5)));
         }
         drop(dummy_leaves);
-        assert!(map.triggers & TestFlag::InterMoveLeft as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::InterMoveLeft as u32 | TestFlag::LeafSplit as u32);
         assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
@@ -356,6 +365,7 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -392,7 +402,13 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
         }
         drop(dummy_leaves);
 
-        assert!(map.triggers & TestFlag::InterMoveRightLast as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(
+            map.triggers,
+            TestFlag::InterMoveRightLast as u32
+                | TestFlag::InterMoveRight as u32
+                | TestFlag::LeafSplit as u32
+        );
         assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }
@@ -484,6 +500,7 @@ fn test_inter_borrow_case4_rotate_right() {
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -516,7 +533,8 @@ fn test_inter_borrow_case4_rotate_right() {
             assert_eq!(map.get(&CounterI32::new(i * 2)), Some(&CounterI32::new(i * 10)));
         }
         drop(dummy_leaves);
-        assert!(map.triggers & TestFlag::InterMoveRight as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::InterMoveRight as u32 | TestFlag::LeafSplit as u32);
         assert_eq!(map.leaf_count, 4 + inter_cap as usize);
         drop(map);
     }

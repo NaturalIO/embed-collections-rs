@@ -69,6 +69,7 @@ fn test_leaf_del_merge_with_left_height_2() {
             len: (2 * min_count + leaf_cap) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -130,6 +131,7 @@ fn test_leaf_del_merge_with_left_height_2() {
 
         assert_eq!(map.height(), 2);
         assert_eq!(map.leaf_count, 2);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildMid as u32);
         // Cleanup
         drop(map);
@@ -206,6 +208,7 @@ fn test_merge_left_with_right_height_2() {
             len: (leaf_cap + 2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -240,6 +243,7 @@ fn test_merge_left_with_right_height_2() {
         }
         assert_eq!(map.height(), 2);
         assert_eq!(map.leaf_count, 2);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::LeafMergeRight as u32
@@ -324,6 +328,7 @@ fn test_leaf_del_merge_3_2_height_2() {
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -354,6 +359,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         assert!(root.get_keys()[0] != right_first_key);
         assert_eq!(map.height(), 2);
         assert_eq!(map.leaf_count, 2);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::LeafMergeLeft as u32
@@ -425,6 +431,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -476,6 +483,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         println!("before drop map, alive count: {}", alive_count());
 
         assert_eq!(map.leaf_count, 1);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::LeafMergeRight as u32 | TestFlag::RemoveChildFirst as u32
@@ -543,6 +551,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         assert_eq!(map.height(), 2);
@@ -592,6 +601,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
         assert_eq!(map.height(), 1);
 
         assert_eq!(map.leaf_count, 1);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildLast as u32);
 
         drop(map);
@@ -688,6 +698,7 @@ fn test_leaf_del_merge_with_left_height_3() {
             len: (4 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -744,6 +755,7 @@ fn test_leaf_del_merge_with_left_height_3() {
             leaf_1_remaining_key
         );
         assert_eq!(map.leaf_count, 3);
+        #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildLast as u32);
 
         drop(map);
@@ -851,6 +863,7 @@ fn test_leaf_del_merge_with_right_height_3() {
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         // map.dump();
@@ -898,6 +911,7 @@ fn test_leaf_del_merge_with_right_height_3() {
             }
         }
         assert_eq!(map.leaf_count, 3);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::LeafMergeRight as u32
@@ -1007,6 +1021,7 @@ fn test_leaf_del_merge_2_3_height_3() {
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -1037,6 +1052,7 @@ fn test_leaf_del_merge_2_3_height_3() {
             }
         }
         assert_eq!(map.leaf_count, 3);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::LeafMergeRight as u32
@@ -1149,6 +1165,7 @@ fn test_leaf_del_remove_only_child_cascade() {
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
         map.validate();
@@ -1214,6 +1231,7 @@ fn test_leaf_del_remove_only_child_cascade() {
         }
         // map.dump();
         assert_eq!(map.leaf_count, 2);
+        #[cfg(feature = "trace_log")]
         assert_eq!(
             map.triggers,
             TestFlag::RemoveOnlyChild as u32

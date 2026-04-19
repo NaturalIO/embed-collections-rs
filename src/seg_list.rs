@@ -1096,6 +1096,8 @@ mod tests {
 
     #[test]
     fn test_size() {
+        println!("SegList<u64>: {}", size_of::<SegList<u64>>());
+        println!("SegList<(u64, u32)>: {}", size_of::<SegList<(u64, u32)>>());
         assert_eq!(size_of::<SegHeader::<LargeStruct>>(), 24);
         let data_offset = Segment::<LargeStruct>::data_offset();
         let base_cap = Segment::<LargeStruct>::base_cap();

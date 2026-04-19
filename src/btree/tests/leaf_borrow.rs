@@ -71,6 +71,7 @@ fn test_borrow_from_left_insert_first_height_2() {
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -99,9 +100,8 @@ fn test_borrow_from_left_insert_first_height_2() {
         assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
 
         assert_eq!(map.leaf_count, 3); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
-        // Cleanup
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
         drop(map); // This will deallocate all nodes
     }
 }
@@ -160,6 +160,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -198,8 +199,8 @@ fn test_borrow_from_left_insert_mid_height_2() {
         assert_eq!(root.get_keys()[0], old_middle_leaf_key1);
 
         assert_eq!(map.leaf_count, 3); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
 
         // Cleanup
         drop(map); // This will deallocate all nodes
@@ -258,6 +259,7 @@ fn test_borrow_from_right_height_2_not_last() {
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -292,8 +294,8 @@ fn test_borrow_from_right_height_2_not_last() {
         assert_eq!(root.get_keys()[1], middle_last_key);
 
         assert_eq!(map.leaf_count, 3); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
         // Cleanup
         drop(map);
     }
@@ -349,6 +351,7 @@ fn test_borrow_from_right_height_2_last() {
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -386,8 +389,8 @@ fn test_borrow_from_right_height_2_last() {
         assert_eq!(root.get_keys()[1], insert_key);
 
         assert_eq!(map.leaf_count, 3); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
         // Cleanup
         drop(map);
     }
@@ -461,6 +464,7 @@ fn test_borrow_from_left_insert_first_height_3() {
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -486,8 +490,8 @@ fn test_borrow_from_left_insert_first_height_3() {
 
         map.validate();
         assert_eq!(map.leaf_count, 4); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
         // Cleanup
         drop(map);
     }
@@ -562,6 +566,7 @@ fn test_borrow_from_left_insert_mid_height_3() {
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -585,8 +590,8 @@ fn test_borrow_from_left_insert_mid_height_3() {
         assert_eq!(internal_right.key_count(), 1);
 
         assert_eq!(map.leaf_count, 4); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveLeft as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
         // Cleanup
         drop(map);
     }
@@ -662,6 +667,7 @@ fn test_borrow_from_right_insert_not_last_height_3() {
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -687,10 +693,8 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         assert_eq!(internal_right.key_count(), 1);
 
         assert_eq!(map.leaf_count, 4); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
-        // as long as right sibling changed, sep key should be update
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
-        // Cleanup
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
         drop(map);
     }
 }
@@ -765,6 +769,7 @@ fn test_borrow_from_right_insert_last_height_3() {
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
+            #[cfg(feature = "trace_log")]
             triggers: 0,
         };
 
@@ -789,9 +794,8 @@ fn test_borrow_from_right_insert_last_height_3() {
         assert_eq!(internal_left.key_count(), 1);
         assert_eq!(internal_right.key_count(), 1);
         assert_eq!(map.leaf_count, 4); // unchanged
-        assert!(map.triggers & TestFlag::LeafMoveRight as u32 > 0);
-        assert!(map.triggers & TestFlag::UpdateSepKey as u32 > 0);
-        // Cleanup
+        #[cfg(feature = "trace_log")]
+        assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
         drop(map);
     }
 }
