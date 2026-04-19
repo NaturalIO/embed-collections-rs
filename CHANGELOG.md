@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.0] - 2026-04-19
+
+### Added
+
+- btree: A b+tree implementation with special api
+
 ## [0.7.2] - 2026-04-06
 
 ### Added

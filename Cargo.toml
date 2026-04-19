@@ -1,10 +1,10 @@
 [package]
 name = "embed-collections"
-version = "0.7.2"
+version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A collection of memory efficient and intrusive data structures"
-keywords = ["intrusive", "linked-list", "collection", "avl"]
+keywords = ["intrusive", "linked-list", "collection", "avl", "btree"]
 categories = ["data-structures", "no-std"]
 homepage = "https://github.com/NaturalIO/embed-collections-rs"
 
