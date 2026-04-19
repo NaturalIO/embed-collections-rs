@@ -248,8 +248,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// When root is leaf, returns 1, otherwise return the number of layers of inter node
     #[inline(always)]
     pub fn height(&self) -> u32 {
-        if let Some(header) = &self.root {
-            return unsafe { header.as_ref() }.height + 1;
+        if let Some(root) = self.get_root() {
+            return root.height() + 1;
         }
         1
     }
@@ -455,12 +455,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     #[inline(always)]
     fn get_root_unwrap(&self) -> Node<K, V> {
-        Node::<K, V>::from(self.root.as_ref().unwrap())
+        Node::<K, V>::from_root_ptr(*self.root.as_ref().unwrap())
     }
 
     #[inline(always)]
     fn get_root(&self) -> Option<Node<K, V>> {
-        Some(Node::<K, V>::from(self.root.as_ref()?))
+        Some(Node::<K, V>::from_root_ptr(*self.root.as_ref()?))
     }
 
     /// update the separate_key in parent after borrowing space from left/right node
@@ -650,10 +650,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         }
         // No more parents in cache, create new root
         let new_root = InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr);
-        let _old_root = self.root.replace(new_root.get_nonnull()).expect("should have old root");
+        let _old_root = self.root.replace(new_root.to_root_ptr()).expect("should have old root");
         #[cfg(debug_assertions)]
         {
-            match Node::<K, V>::from(_old_root) {
+            match Node::<K, V>::from_root_ptr(_old_root) {
                 Node::Inter(node) => {
                     debug_assert_eq!(height, node.height(), "old inter root at {height}");
                     debug_assert_eq!(node.get_ptr(), left_ptr);
@@ -840,10 +840,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn handle_inter_underflow(&mut self, mut node: InterNode<K, V>) {
         let cap = InterNode::<K, V>::cap();
+        let mut root_height = 0;
         while node.key_count() <= InterNode::<K, V>::UNDERFLOW_CAP {
             if node.key_count() == 0 {
-                let root_height = self.get_root_unwrap().height();
-                if node.height() == root_height
+                if root_height == 0 {
+                    root_height = self.get_root_unwrap().height();
+                }
+                let node_height = node.height();
+                if node_height == root_height
                     || self
                         .get_cache()
                         .peak_ancenstor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
@@ -853,10 +857,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 {
                     let child_ptr = unsafe { *node.child_ptr(0) };
                     debug_assert!(!child_ptr.is_null());
-                    let root = unsafe { NonNull::new_unchecked(child_ptr) };
+                    let root = if node_height == 1 {
+                        LeafNode::<K, V>::wrap_root_ptr(child_ptr)
+                    } else {
+                        unsafe { NonNull::new_unchecked(child_ptr) }
+                    };
                     trace_log!(
                         "handle_inter_underflow downgrade root {:?}",
-                        Node::<K, V>::from(root)
+                        Node::<K, V>::from_root_ptr(root)
                     );
                     let _old_root = self.root.replace(root);
                     debug_assert!(_old_root.is_some());

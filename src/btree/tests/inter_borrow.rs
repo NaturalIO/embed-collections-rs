@@ -85,7 +85,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
         // Create BTreeMap
         let total_elements = (leaf_cap * 4 + (inter_cap - 1)) as usize;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
@@ -222,7 +222,7 @@ fn test_inter_borrow_case2_rotate_left() {
         // Create BTreeMap
         let total_elements = (leaf_cap * 5 + (inter_cap - 2)) as usize;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
@@ -361,7 +361,7 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
 
         let total_elements = (leaf_cap * 3 + (inter_cap - 1) + min_count) as usize;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,
@@ -496,7 +496,7 @@ fn test_inter_borrow_case4_rotate_right() {
 
         let total_elements = (leaf_cap * 2 + (inter_cap - 1) + min_count * 2) as usize;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_elements,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4 + inter_cap as usize - 1,

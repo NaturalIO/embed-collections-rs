@@ -33,6 +33,8 @@ pub(super) struct NodeHeader {
 }
 
 impl NodeHeader {
+    pub const LEAF_MASK: usize = 1;
+
     #[inline]
     pub unsafe fn get_field<T>(p: NonNull<Self>, offset: usize) -> *mut T {
         unsafe { (p.as_ptr() as *const u8).add(offset) as *mut T }
@@ -77,11 +79,6 @@ impl NodeBase {
     #[inline(always)]
     pub fn get_ptr(&self) -> *mut NodeHeader {
         self.header.as_ptr()
-    }
-
-    #[inline(always)]
-    pub fn get_nonnull(&self) -> NonNull<NodeHeader> {
-        unsafe { NonNull::new_unchecked(self.get_ptr()) }
     }
 
     #[cfg(test)]
@@ -221,27 +218,17 @@ impl<K: Ord, V> Clone for Node<K, V> {
     }
 }
 
-impl<K: Ord, V> From<&NonNull<NodeHeader>> for Node<K, V> {
-    #[inline(always)]
-    fn from(header: &NonNull<NodeHeader>) -> Self {
-        Self::from(*header)
-    }
-}
-
-impl<K: Ord, V> From<NonNull<NodeHeader>> for Node<K, V> {
-    #[inline(always)]
-    fn from(header: NonNull<NodeHeader>) -> Self {
-        unsafe {
-            if header.as_ref().is_leaf() {
-                Self::Leaf(LeafNode::<K, V>::from(header))
-            } else {
-                Self::Inter(InterNode::<K, V>::from(header))
-            }
+impl<K: Ord, V> Node<K, V> {
+    pub fn from_root_ptr(mut p: NonNull<NodeHeader>) -> Self {
+        let _p = p.as_ptr() as usize;
+        if _p & NodeHeader::LEAF_MASK > 0 {
+            p = unsafe { NonNull::new_unchecked((_p ^ NodeHeader::LEAF_MASK) as *mut NodeHeader) };
+            Self::Leaf(LeafNode::<K, V>::from(p))
+        } else {
+            Self::Inter(InterNode::<K, V>::from(p))
         }
     }
-}
 
-impl<K: Ord, V> Node<K, V> {
     #[inline(always)]
     pub fn is_leaf(&self) -> bool {
         match self {

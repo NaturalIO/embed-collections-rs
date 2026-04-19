@@ -549,7 +549,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
     fn new(tree: &mut BTreeMap<K, V>, is_forward: bool) -> Self {
         if let Some(root_p) = tree.root.take() {
             let mut cache = tree.get_cache().take();
-            let root = Node::from(root_p);
+            let root = Node::from_root_ptr(root_p);
             let leaf = if is_forward {
                 root.find_first_leaf(Some(&mut cache))
             } else {

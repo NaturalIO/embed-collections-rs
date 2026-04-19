@@ -67,7 +67,7 @@ fn test_borrow_from_left_insert_first_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -156,7 +156,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 2) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -255,7 +255,7 @@ fn test_borrow_from_right_height_2_not_last() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -347,7 +347,7 @@ fn test_borrow_from_right_height_2_last() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 1) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -460,7 +460,7 @@ fn test_borrow_from_left_insert_first_height_3() {
 
         // Create BTreeMap with height=2 structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -562,7 +562,7 @@ fn test_borrow_from_left_insert_mid_height_3() {
 
         // Create BTreeMap with height=2 structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -663,7 +663,7 @@ fn test_borrow_from_right_insert_not_last_height_3() {
 
         // Create BTreeMap with height=2 structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -765,7 +765,7 @@ fn test_borrow_from_right_insert_last_height_3() {
 
         // Create BTreeMap with height=2 structure
         let mut map = BTreeMap::<i32, i32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,

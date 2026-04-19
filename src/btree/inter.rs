@@ -117,6 +117,11 @@ impl<K, V> InterNode<K, V> {
         Self::LAYOUT.0
     }
 
+    #[inline(always)]
+    pub fn to_root_ptr(&self) -> NonNull<NodeHeader> {
+        self.header
+    }
+
     /// Create InterNode from header pointer
     #[inline(always)]
     pub unsafe fn from_header(header: *mut NodeHeader) -> Self {

@@ -65,7 +65,7 @@ fn test_leaf_del_merge_with_left_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (2 * min_count + leaf_cap) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -204,7 +204,7 @@ fn test_merge_left_with_right_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (leaf_cap + 2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -324,7 +324,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         let total_keys = leaf_cap * 2 - 2 + 3;
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -427,7 +427,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
@@ -547,7 +547,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
@@ -694,7 +694,7 @@ fn test_leaf_del_merge_with_left_height_3() {
 
         // Create BTreeMap with height=3 structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (4 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -859,7 +859,7 @@ fn test_leaf_del_merge_with_right_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -1017,7 +1017,7 @@ fn test_leaf_del_merge_2_3_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -1161,7 +1161,7 @@ fn test_leaf_del_remove_only_child_cascade() {
         // Create BTreeMap
         let total_keys = leaf_cap + 2 * min_count;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,

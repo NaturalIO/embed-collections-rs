@@ -143,6 +143,17 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
+    pub fn wrap_root_ptr(p: *mut NodeHeader) -> NonNull<NodeHeader> {
+        let p = p as usize | NodeHeader::LEAF_MASK;
+        unsafe { NonNull::new_unchecked(p as *mut NodeHeader) }
+    }
+
+    #[inline(always)]
+    pub fn to_root_ptr(&self) -> NonNull<NodeHeader> {
+        Self::wrap_root_ptr(self.header.as_ptr())
+    }
+
+    #[inline(always)]
     pub fn is_full(&self) -> bool {
         let avail = Self::cap() - self.key_count();
         avail == 0

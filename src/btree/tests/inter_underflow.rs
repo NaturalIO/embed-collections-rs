@@ -83,7 +83,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -212,7 +212,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 12,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -355,7 +355,7 @@ fn test_inter_underflow_merge_right_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 6,
@@ -503,7 +503,7 @@ fn test_inter_underflow_merge_left_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 18,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 6,
@@ -622,7 +622,7 @@ fn test_inter_underflow_root_becomes_leaf() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 3,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 1,
@@ -731,7 +731,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.get_nonnull()),
+            root: Some(root.to_root_ptr()),
             len: 9,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
