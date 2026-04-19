@@ -105,7 +105,7 @@ mod tests;
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
 pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
     /// Root node (may be null for empty tree)
-    root: Option<Node<K, V>>,
+    root: Node<K, V>,
     /// Number of elements in the tree
     len: usize,
     // use unsafe to avoid borrow problems
@@ -148,10 +148,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Create a new empty BTreeMap
     pub fn new() -> Self {
         Self {
-            root: None,
+            root: Node::Leaf(unsafe { LeafNode::<K, V>::alloc() }),
             len: 0,
             cache: UnsafeCell::new(PathCache::<K, V>::new()),
-            leaf_count: 0,
+            leaf_count: 1,
             #[cfg(all(test, feature = "trace_log"))]
             triggers: 0,
         }
@@ -246,7 +246,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// When root is leaf, returns 1, otherwise return the number of layers of inter node
     #[inline(always)]
     pub fn height(&self) -> u32 {
-        if let Some(Node::Inter(node)) = &self.root {
+        if let Node::Inter(node) = &self.root {
             return node.height() + 1;
         }
         1
@@ -260,17 +260,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns an entry to the key in the map
     #[inline]
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
-        let cache = self.get_cache();
-        cache.clear();
-        let leaf = match &self.root {
-            None => return Entry::Vacant(VacantEntry { tree: self, key, idx: 0, leaf: None }),
-            Some(root) => root.find_leaf_with_cache(cache, &key),
-        };
+        let leaf = self.root.find_leaf_with_cache(self.get_cache(), &key);
         let (idx, is_equal) = leaf.search(&key);
         if is_equal {
             Entry::Occupied(OccupiedEntry { tree: self, idx, leaf })
         } else {
-            Entry::Vacant(VacantEntry { tree: self, key, idx, leaf: Some(leaf) })
+            Entry::Vacant(VacantEntry { tree: self, key, idx, leaf })
         }
     }
 
@@ -280,10 +275,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => root.find_leaf(key),
-        };
+        let leaf = self.root.find_leaf(key);
         let (idx, is_equal) = leaf.search(key);
         trace_log!("find leaf {leaf:?} {idx} exist {is_equal}");
         if is_equal { Some((leaf, idx)) } else { None }
@@ -348,26 +340,20 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        if let Some(root) = &self.root {
-            let cache = self.get_cache();
-            cache.clear();
-            let mut leaf = root.find_leaf_with_cache::<Q>(cache, key);
-            let (idx, is_equal) = leaf.search(key);
-            if is_equal {
-                trace_log!("{leaf:?} remove {idx}");
-                let val = leaf.remove_value_no_borrow(idx);
-                self.len -= 1;
-                // Check for underflow and handle merge
-                let new_count = leaf.key_count();
-                let min_count = LeafNode::<K, V>::cap() >> 1;
-                if new_count < min_count && !root.is_leaf() {
-                    // The cache should already contain the path from the entry lookup
-                    self.handle_leaf_underflow(leaf, true);
-                }
-                Some(val)
-            } else {
-                None
+        let mut leaf = self.root.find_leaf_with_cache::<Q>(self.get_cache(), key);
+        let (idx, is_equal) = leaf.search(key);
+        if is_equal {
+            trace_log!("{leaf:?} remove {idx}");
+            let val = leaf.remove_value_no_borrow(idx);
+            self.len -= 1;
+            // Check for underflow and handle merge
+            let new_count = leaf.key_count();
+            let min_count = LeafNode::<K, V>::cap() >> 1;
+            if new_count < min_count && !self.root.is_leaf() {
+                // The cache should already contain the path from the entry lookup
+                self.handle_leaf_underflow(leaf, true);
             }
+            Some(val)
         } else {
             None
         }
@@ -454,11 +440,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             cb(&_k, &_v);
             return Some((_k, _v));
         }
-    }
-
-    #[inline(always)]
-    fn get_root_unwrap(&self) -> &Node<K, V> {
-        self.root.as_ref().unwrap()
     }
 
     /// update the separate_key in parent after borrowing space from left/right node
@@ -647,11 +628,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
         }
         // No more parents in cache, create new root
-        let new_root = InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr);
-        let _old_root = self.root.replace(Node::Inter(new_root)).expect("should have old root");
+        let mut root =
+            Node::Inter(InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr));
+        core::mem::swap(&mut self.root, &mut root);
         #[cfg(debug_assertions)]
         {
-            match _old_root {
+            match root {
                 Node::Inter(node) => {
                     debug_assert_eq!(height, node.height(), "old inter root at {height}");
                     debug_assert_eq!(node.get_ptr(), left_ptr);
@@ -671,7 +653,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
     fn handle_leaf_underflow(&mut self, mut leaf: LeafNode<K, V>, merge: bool) {
-        debug_assert!(!self.get_root_unwrap().is_leaf());
+        debug_assert!(!self.root.is_leaf());
         let cur_count = leaf.key_count();
         let cap = LeafNode::<K, V>::cap();
         debug_assert!(cur_count <= cap >> 1);
@@ -746,15 +728,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if !can_unlink {
             return;
         }
-        self.leaf_count -= 1;
         let right_sep = if merge_right {
             let right_node = leaf.get_right_node().unwrap();
             Some(right_node.clone_first_key())
         } else {
             None
         };
-        let no_right = leaf.unlink().is_null();
-        leaf.dealloc::<false>();
         let (mut parent, mut idx) = self.get_cache().pop().unwrap();
         trace_log!("handle_leaf_underflow pop parent {parent:?}:{idx}");
         if parent.key_count() == 0 {
@@ -764,10 +743,15 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 idx = grand_idx;
             } else {
                 trace_log!("handle_leaf_underflow remove_only_child all");
+                debug_assert_eq!(self.leaf_count, 1);
+                self.root = Node::Leaf(leaf);
                 return;
             }
         }
-        self.remove_child_from_inter(&mut parent, idx, right_sep, no_right);
+        self.leaf_count -= 1;
+        leaf.unlink();
+        leaf.dealloc::<false>();
+        self.remove_child_from_inter(&mut parent, idx, right_sep);
         if parent.key_count() <= 1 {
             self.handle_inter_underflow(parent);
         }
@@ -778,7 +762,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn remove_child_from_inter(
         &mut self, node: &mut InterNode<K, V>, delete_idx: u32, right_sep: Option<K>,
-        _no_right: bool,
     ) {
         self.get_cache().assert_center();
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
@@ -840,7 +823,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let cap = InterNode::<K, V>::cap();
         while node.key_count() <= InterNode::<K, V>::UNDERFLOW_CAP {
             if node.key_count() == 0 {
-                let root_height = self.get_root_unwrap().height();
+                let root_height = self.root.height();
                 if node.height() == root_height
                     || self
                         .get_cache()
@@ -851,8 +834,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 {
                     let root = unsafe { Node::from_header(*node.child_ptr(0)) };
                     trace_log!("handle_inter_underflow downgrade root {root:?}");
-                    let _old_root = self.root.replace(root);
-                    debug_assert!(_old_root.is_some());
+                    self.root = root;
 
                     while let Some((parent, _)) = self.get_cache().pop() {
                         parent.dealloc::<false>();
@@ -917,7 +899,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else {
             node.dealloc::<true>();
             // we are empty, my ancestor are all empty and delete by move_to_ancenstor
-            self.root = None;
             None
         }
     }
@@ -979,19 +960,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         K: Debug,
         V: Debug,
     {
-        if self.root.is_none() {
-            assert_eq!(self.len, 0, "Empty tree should have len 0");
-            return;
-        }
-
         let mut total_keys = 0usize;
         let mut prev_leaf_max: Option<K> = None;
 
         match &self.root {
-            Some(Node::Leaf(leaf)) => {
+            Node::Leaf(leaf) => {
                 total_keys += leaf.validate(None, None);
             }
-            Some(Node::Inter(inter)) => {
+            Node::Inter(inter) => {
                 // Do not use btree internal PathCache (might distrupt test scenario)
                 let mut cache = PathCache::new();
                 let mut cur = inter.clone();
@@ -1069,7 +1045,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     }
                 }
             }
-            None => unreachable!(),
         }
         assert_eq!(
             total_keys, self.len,
@@ -1082,10 +1057,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn first_key_value(&self) -> Option<(&K, &V)> {
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => root.find_first_leaf(None),
-        };
+        let leaf = self.root.find_first_leaf(None);
         if leaf.key_count() == 0 {
             return None;
         }
@@ -1100,10 +1072,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn last_key_value(&self) -> Option<(&K, &V)> {
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => root.find_last_leaf(None),
-        };
+        let leaf = self.root.find_last_leaf(None);
         let count = leaf.key_count();
         if count == 0 {
             return None;
@@ -1120,15 +1089,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn first_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
-        let cache = self.get_cache();
-        cache.clear();
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => {
-                // Populate cache with the path to first leaf
-                root.find_first_leaf(Some(cache))
-            }
-        };
+        let leaf = self.root.find_first_leaf(Some(self.get_cache()));
         if leaf.key_count() == 0 {
             return None;
         }
@@ -1139,15 +1100,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn last_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
-        let cache = self.get_cache();
-        cache.clear();
-        let leaf = match &self.root {
-            None => return None,
-            Some(root) => {
-                // Populate cache with the path to last leaf
-                root.find_last_leaf(Some(cache))
-            }
-        };
+        let leaf = self.root.find_last_leaf(Some(self.get_cache()));
         let count = leaf.key_count();
         if count == 0 {
             return None;
@@ -1213,8 +1166,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
 
     #[inline]
     fn find_first_and_last_leaf(&self) -> Option<(LeafNode<K, V>, LeafNode<K, V>)> {
-        let root = self.root.as_ref()?;
-        Some((root.find_first_leaf(None), root.find_last_leaf(None)))
+        Some((self.root.find_first_leaf(None), self.root.find_last_leaf(None)))
     }
 
     /// Internal helper to find range bounds
@@ -1224,9 +1176,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     where
         R: RangeBounds<K>,
     {
-        let root = self.root.as_ref()?;
-        let (front_leaf, front_idx) = root.find_leaf_with_bound(range.start_bound(), true);
-        let (back_leaf, back_idx) = root.find_leaf_with_bound(range.end_bound(), false);
+        let (front_leaf, front_idx) = self.root.find_leaf_with_bound(range.start_bound(), true);
+        let (back_leaf, back_idx) = self.root.find_leaf_with_bound(range.end_bound(), false);
         Some(RangeBase::new(front_leaf, front_idx, back_leaf, back_idx))
     }
 
@@ -1258,10 +1209,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Default for BTreeMap<K, V> {
 impl<K: Ord + Clone + Sized, V: Sized> Drop for BTreeMap<K, V> {
     fn drop(&mut self) {
         let mut cache = self.get_cache().take();
-        let mut cur = match self.root.take() {
-            None => return,
-            Some(root) => root.find_first_leaf(Some(&mut cache)),
-        };
+        let mut cur = self.root.find_first_leaf(Some(&mut cache));
         cur.dealloc::<true>();
         // To navigate to next leaf,
         // return None when reach the end

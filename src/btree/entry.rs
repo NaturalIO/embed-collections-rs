@@ -12,7 +12,7 @@ pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized> {
 /// Entry for a vacant key position in the tree
 pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized> {
     pub(super) tree: &'a mut BTreeMap<K, V>,
-    pub(super) leaf: Option<LeafNode<K, V>>,
+    pub(super) leaf: LeafNode<K, V>,
     pub(super) key: K,
     pub(super) idx: u32,
 }
@@ -193,7 +193,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         // Check for underflow and handle merge
         let new_count = self.leaf.key_count();
         let min_count = LeafNode::<K, V>::cap() >> 1;
-        if new_count < min_count && !self.tree.get_root_unwrap().is_leaf() {
+        if new_count < min_count && !self.tree.root.is_leaf() {
             // The cache should already contain the path from the entry lookup
             self.tree.handle_leaf_underflow(self.leaf, merge);
         }
@@ -332,20 +332,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// Insert a value into the tree
     #[inline]
     pub fn insert(self, value: V) -> &'a mut V {
-        let (key, tree, idx) = (self.key, self.tree, self.idx);
-        if tree.root.is_none() {
-            unsafe {
-                // empty tree
-                let mut leaf = LeafNode::<K, V>::alloc();
-                tree.root = Some(Node::Leaf(leaf.clone()));
-                tree.len = 1;
-                tree.leaf_count += 1;
-                return &mut *leaf.insert_no_split_with_idx(0, key, value);
-            }
-        }
+        let (key, tree, mut leaf, idx) = (self.key, self.tree, self.leaf, self.idx);
         tree.len += 1;
         // Get the leaf node where we should insert
-        let mut leaf = self.leaf.expect("VacantEntry should have a node when root is not None");
         let count = leaf.key_count();
         // Check if leaf has space
         let value_p = if count < LeafNode::<K, V>::cap() {
@@ -365,14 +354,12 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// Peak previous OccupiedEntry
     #[inline(always)]
     pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
-        if let Some(leaf) = self.leaf.as_ref() {
-            // The key of previous pos is always smaller than self.key ;
-            // the key at current idx (if exists) must larger than self.key.
-            let mut cursor = IterBackward { back_leaf: leaf.clone(), back_idx: self.idx };
-            unsafe {
-                if let Some((k, v)) = cursor.prev_pair() {
-                    return Some((&*k, &*v));
-                }
+        // The key of previous pos is always smaller than self.key ;
+        // the key at current idx (if exists) must larger than self.key.
+        let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
+        unsafe {
+            if let Some((k, v)) = cursor.prev_pair() {
+                return Some((&*k, &*v));
             }
         }
         None
@@ -381,15 +368,13 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// Peak the next OccupiedEntry
     #[inline(always)]
     pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
-        if let Some(leaf) = self.leaf.as_ref() {
-            unsafe {
-                if let Some((k, v)) = leaf.get_raw_pair(self.idx) {
+        unsafe {
+            if let Some((k, v)) = self.leaf.get_raw_pair(self.idx) {
+                return Some((&*k, &*v));
+            }
+            if let Some(right) = self.leaf.get_right_node() {
+                if let Some((k, v)) = right.get_raw_pair(0) {
                     return Some((&*k, &*v));
-                }
-                if let Some(right) = leaf.get_right_node() {
-                    if let Some((k, v)) = right.get_raw_pair(0) {
-                        return Some((&*k, &*v));
-                    }
                 }
             }
         }
@@ -401,20 +386,18 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// When reaching the front return the original entry in Err()
     #[inline]
     pub fn move_backward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
-        if let Some(leaf) = self.leaf.as_ref() {
-            let mut cursor = IterBackward { back_leaf: leaf.clone(), back_idx: self.idx };
-            // The key of previous pos is always smaller than self.key ;
-            // the key at current idx (if exists) must larger than self.key.
-            // Be aware the leaf.idx may be larger than leaf.key_count(), but IterBackward
-            // does not care.
-            if cursor.prev().is_some() {
-                self.tree.get_cache().move_left();
-                return Ok(OccupiedEntry {
-                    tree: self.tree,
-                    leaf: cursor.back_leaf.clone(),
-                    idx: cursor.back_idx,
-                });
-            }
+        let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
+        // The key of previous pos is always smaller than self.key ;
+        // the key at current idx (if exists) must larger than self.key.
+        // Be aware the leaf.idx may be larger than leaf.key_count(), but IterBackward
+        // does not care.
+        if cursor.prev().is_some() {
+            self.tree.get_cache().move_left();
+            return Ok(OccupiedEntry {
+                tree: self.tree,
+                leaf: cursor.back_leaf.clone(),
+                idx: cursor.back_idx,
+            });
         }
         Err(self)
     }
@@ -424,14 +407,12 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
     /// When reaching the end, return the original entry in Err()
     #[inline]
     pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
-        if let Some(leaf) = self.leaf.as_ref() {
-            if leaf.key_count() > self.idx {
-                return Ok(OccupiedEntry { tree: self.tree, leaf: leaf.clone(), idx: self.idx });
-            } else if let Some(right) = leaf.get_right_node() {
-                debug_assert!(right.key_count() > 0);
-                self.tree.get_cache().move_right();
-                return Ok(OccupiedEntry { tree: self.tree, leaf: right, idx: 0 });
-            }
+        if self.leaf.key_count() > self.idx {
+            return Ok(OccupiedEntry { tree: self.tree, leaf: self.leaf.clone(), idx: self.idx });
+        } else if let Some(right) = self.leaf.get_right_node() {
+            debug_assert!(right.key_count() > 0);
+            self.tree.get_cache().move_right();
+            return Ok(OccupiedEntry { tree: self.tree, leaf: right, idx: 0 });
         }
         Err(self)
     }

@@ -547,22 +547,19 @@ struct IntoIterBase<K: Ord + Clone + Sized, V: Sized> {
 impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
     #[inline]
     fn new(tree: &mut BTreeMap<K, V>, is_forward: bool) -> Self {
-        if let Some(root) = tree.root.take() {
-            let mut cache = tree.get_cache().take();
-            let leaf = if is_forward {
-                root.find_first_leaf(Some(&mut cache))
-            } else {
-                root.find_last_leaf(Some(&mut cache))
-            };
-            Self {
-                cache,
-                idx: if is_forward { 0 } else { leaf.key_count() },
-                leaf: Some(leaf),
-                remaining: tree.len,
-                is_forward,
-            }
+        let root = tree.root.clone();
+        let mut cache = tree.get_cache().take();
+        let leaf = if is_forward {
+            root.find_first_leaf(Some(&mut cache))
         } else {
-            Self { cache: PathCache::new(), leaf: None, idx: 0, remaining: 0, is_forward }
+            root.find_last_leaf(Some(&mut cache))
+        };
+        Self {
+            cache,
+            idx: if is_forward { 0 } else { leaf.key_count() },
+            leaf: Some(leaf),
+            remaining: tree.len,
+            is_forward,
         }
     }
 
@@ -738,7 +735,10 @@ impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
         match &mut self.base {
             Ok(base) => base.next(),
             Err((tree, is_forward)) => {
-                self.base = Ok(IntoIterBase::new(tree, *is_forward));
+                let mut base = Ok(IntoIterBase::new(tree, *is_forward));
+                core::mem::swap(&mut base, &mut self.base);
+                // don't let btree drop trigger
+                core::mem::forget(base);
                 if let Ok(base) = &mut self.base {
                     base.next()
                 } else {
