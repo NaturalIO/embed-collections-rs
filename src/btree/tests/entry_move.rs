@@ -286,7 +286,7 @@ fn test_alter_key_update_sep_height_2() {
         root.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
 
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root.clone())),
+            root: Node::Inter(root.clone()),
             len: 3,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
@@ -349,7 +349,7 @@ fn test_alter_key_update_sep_height_3() {
         root.insert_no_split(CounterI32::from(30), inter_r.get_ptr());
 
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root.clone())),
+            root: Node::Inter(root.clone()),
             len: 4,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,

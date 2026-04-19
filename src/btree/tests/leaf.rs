@@ -351,7 +351,7 @@ fn test_btree_split_leaf_verify_structure() {
     assert_eq!(map.len(), total);
 
     // Now manually traverse the tree to verify structure
-    if let Some(Node::Inter(root)) = &map.root {
+    if let Node::Inter(root) = &map.root {
         println!("Root has {} children", root.key_count() + 1);
 
         unsafe {
@@ -370,6 +370,8 @@ fn test_btree_split_leaf_verify_structure() {
                 println!("Leaf 1 has {} items", leaf1.key_count());
             }
         }
+    } else {
+        unreachable!();
     }
 }
 

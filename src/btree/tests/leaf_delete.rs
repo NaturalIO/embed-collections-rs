@@ -65,7 +65,7 @@ fn test_leaf_del_merge_with_left_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (2 * min_count + leaf_cap) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -87,7 +87,7 @@ fn test_leaf_del_merge_with_left_height_2() {
         map.validate();
 
         // Verify the merged structure
-        let root = map.get_root_unwrap().as_inter();
+        let root = map.root.as_inter();
         assert_eq!(root.key_count(), 1); // Two leaves left after merge
         assert_eq!(map.len(), (2 * min_count - 1 + leaf_cap) as usize);
 
@@ -204,7 +204,7 @@ fn test_merge_left_with_right_height_2() {
 
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (leaf_cap + 2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -220,7 +220,7 @@ fn test_merge_left_with_right_height_2() {
         map.validate();
 
         // Verify structure - should have merged middle into right
-        let root = map.get_root_unwrap().as_inter();
+        let root = map.root.as_inter();
         assert_eq!(root.key_count(), 1);
         assert_eq!(map.len(), (leaf_cap + 2 * min_count - 1) as usize);
 
@@ -324,7 +324,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         let total_keys = leaf_cap * 2 - 2 + 3;
         // Create BTreeMap with this structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root.clone())),
+            root: Node::Inter(root.clone()),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -354,6 +354,7 @@ fn test_leaf_del_merge_3_2_height_2() {
                 assert_eq!(map.get(&key), None);
             }
         }
+        let root = map.root.as_inter();
         //map.dump();
         assert_eq!(root.get_keys()[0], (leaf_cap as i32 + 1) * 2);
         assert!(root.get_keys()[0] != right_first_key);
@@ -427,7 +428,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
@@ -547,7 +548,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (2 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 2,
@@ -694,7 +695,7 @@ fn test_leaf_del_merge_with_left_height_3() {
 
         // Create BTreeMap with height=3 structure
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (4 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -726,7 +727,7 @@ fn test_leaf_del_merge_with_left_height_3() {
         assert_eq!(internal_left.key_count(), 0, "internal_left should have 1 child after merge");
 
         // Verify root keys unchanged (merge happened below root)
-        let root_node = map.get_root_unwrap().as_inter();
+        let root_node = map.root.as_inter();
         assert_eq!(root_node.key_count(), 1, "Root should still have 2 children");
 
         // Verify all remaining data
@@ -859,7 +860,7 @@ fn test_leaf_del_merge_with_right_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: (leaf_cap + 3 * min_count) as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -1017,7 +1018,7 @@ fn test_leaf_del_merge_2_3_height_3() {
 
         // Create BTreeMap
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 4,
@@ -1161,7 +1162,7 @@ fn test_leaf_del_remove_only_child_cascade() {
         // Create BTreeMap
         let total_keys = leaf_cap + 2 * min_count;
         let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(Node::Inter(root)),
+            root: Node::Inter(root),
             len: total_keys as usize,
             cache: UnsafeCell::new(PathCache::new()),
             leaf_count: 3,
@@ -1184,7 +1185,7 @@ fn test_leaf_del_remove_only_child_cascade() {
 
         // Verify that inter_min and inter_min1 were removed (remove_only_child cascade)
         // The root should now have only 2 children (inter_left and inter_right)
-        let root_node = map.get_root_unwrap().as_inter();
+        let root_node = map.root.as_inter();
         assert_eq!(
             root_node.key_count(),
             1,

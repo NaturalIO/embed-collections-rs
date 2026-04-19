@@ -4,7 +4,7 @@ use core::mem::size_of;
 
 #[test]
 fn test_size() {
-    let root = size_of::<Option<Node<u32, u32>>>();
+    let root = size_of::<Node<u32, u32>>();
     println!("size: root {}", root);
     let path_cache = size_of::<PathCache<u32, u32>>();
     println!("size: path_cache {}", path_cache);

@@ -912,11 +912,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     {
         print_log!("=== BTreeMap Dump ===");
         print_log!("Length: {}", self.len());
-        if let Some(root) = &self.root {
-            self.dump_node(root, 0);
-        } else {
-            print_log!("(empty)");
-        }
+        self.dump_node(&self.root, 0);
         print_log!("=====================");
     }
 
