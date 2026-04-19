@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.2] - 2026-04-19
+
+### Added
+
+- btree: Add IntoIter::rev() and BTreeMap::into_iter_rev()
+
+### Fixed
+
+- btree: Fix for zero-sized value
+
 ## [0.8.1] - 2026-04-19
 
 ### Changed
