@@ -3,7 +3,7 @@
 //! ## Feature outlines
 //! - Designed for CPU cache efficiency and memory efficiency
 //! - Optimised for numeric key type
-//!   - Typical scenario: [range_tree_rs](https:://docs.rs/range-tree-rs)
+//!   - Typical scenario: [range-tree-rs](https://docs.rs/range-tree-rs)
 //! - A B+tree. Data stores only at leaf level, with links at leaf level.
 //!   - Provides efficient iteration of data
 //!   - Linear search within nodes, respecting cacheline boundaries
@@ -393,14 +393,24 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         R: RangeBounds<K>,
         F: FnMut(&K, &V),
     {
+        macro_rules! end_contains {
+            ($key: expr) => {{
+                match range.end_bound() {
+                    Bound::Excluded(k) => $key < k,
+                    Bound::Included(k) => $key <= k,
+                    Bound::Unbounded => true,
+                }
+            }};
+        }
         // Note: do not use find_leaf_with_bound, it's a different behavior
         let mut ent = match range.start_bound() {
             Bound::Excluded(k) => match self.entry(k.clone()).move_forward() {
                 Ok(ent) => {
-                    if !range.contains(ent.key()) {
+                    if end_contains!(ent.key()) {
+                        ent
+                    } else {
                         return None;
                     }
-                    ent
                 }
                 Err(_) => return None,
             },
@@ -408,10 +418,11 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 Entry::Occupied(ent) => ent,
                 Entry::Vacant(ent) => match ent.move_forward() {
                     Ok(ent) => {
-                        if !range.contains(ent.key()) {
+                        if end_contains!(ent.key()) {
+                            ent
+                        } else {
                             return None;
                         }
-                        ent
                     }
                     Err(_) => return None,
                 },
@@ -426,7 +437,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         };
         loop {
             if let Some((_next_k, _next_v)) = ent.peak_forward() {
-                if range.contains(_next_k) {
+                if end_contains!(_next_k) {
                     let next_key = _next_k.clone();
                     let (_k, _v) = ent._remove_entry(false);
                     cb(&_k, &_v);
