@@ -58,7 +58,7 @@ Comparing to std::collections::btree (as of rust 1.94):
 
 **benchmark**:
 
-(platform: intel i7-8550U)
+(platform: intel i7-8550U, key: u32, value: u32)
 
 insert_seq (me/s)|btree|std
 -|-|-

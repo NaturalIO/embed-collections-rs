@@ -34,6 +34,7 @@
 //! - [OccupiedEntry::peak_backward()]
 //! - [OccupiedEntry::move_forward()]
 //! - [OccupiedEntry::move_backward()]
+//! - [OccupiedEntry::alter_key()]
 
 /*
 

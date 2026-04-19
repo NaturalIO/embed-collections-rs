@@ -291,8 +291,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Try to alter the key of this entry
     ///
-    /// On successful returns Ok(());
-    /// If key is not in strict order among the neighbors, return Err(()).
+    /// On successful returns  Ok() ;
+    /// If key is not in strict order among the neighbors, return  Err() .
     #[inline]
     pub fn alter_key(&mut self, k: K) -> Result<(), ()> {
         if let Some((_k, _v)) = self.peak_backward() {
