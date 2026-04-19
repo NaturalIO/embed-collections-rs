@@ -11,7 +11,7 @@ This crate provides two categories:
     - [`ConstVec`]: Fixed capacity inline vec
     - [`SegList`]:  A cache aware list to store elements with adaptive size segments
     - [`Various`]: For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
-    - [`BTreeMap`]: A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
+    - [`BTreeMap`](btree): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
 
 - Intrusive collection
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
@@ -40,7 +40,7 @@ Benchmark: append + drain (x86_64, cache line 128 bytes):
 
 ## B+tree
 
-We provide a BTreeMap for single-threaded long-term in-memory storage.
+We provide a [BTreeMap](btree) for single-threaded long-term in-memory storage.
 It's a cache aware b+tree:
 
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).

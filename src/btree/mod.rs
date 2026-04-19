@@ -1,8 +1,9 @@
 //! B+Tree Map - A in memory cache-optimized B+Tree for single-threaded use.
 //!
 //! ## Feature outlines
-//! - Designed for CPU cache efficiency and memory efficiency:
+//! - Designed for CPU cache efficiency and memory efficiency
 //! - Optimised for numeric key type
+//!   - Typical scenario: [range_tree_rs](https:://docs.rs/range-tree-rs)
 //! - A B+tree. Data stores only at leaf level, with links at leaf level.
 //!   - Provides efficient iteration of data
 //!   - Linear search within nodes, respecting cacheline boundaries
@@ -13,6 +14,26 @@
 //!     - K & V should <= CACHE_LINE_SIZE - 16  (If K & V is larger should put into `Box`)
 //! - Specially Entry API which allow to modify after moving the cursor to adjacent data.
 //! - The detail design notes are with the source in mod.rs and node.rs
+//!
+//! ## Special APIs
+//!
+//! batch removal:
+//! - [BTreeMap::remove_range()]
+//! - [BTreeMap::remove_range_with()]
+//!
+//! adjacent entry:
+//! - [Entry::peak_forward()]
+//! - [Entry::peak_backward()]
+//! - [Entry::move_forward()]
+//! - [Entry::move_backward()]
+//! - [VacantEntry::peak_forward()]
+//! - [VacantEntry::peak_backward()]
+//! - [VacantEntry::move_forward()]
+//! - [VacantEntry::move_backward()]
+//! - [OccupiedEntry::peak_forward()]
+//! - [OccupiedEntry::peak_backward()]
+//! - [OccupiedEntry::move_forward()]
+//! - [OccupiedEntry::move_backward()]
 
 /*
 
@@ -362,6 +383,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Perform removal in batch mode and return the last item removed
+    ///
+    /// On each removal, callback function `cb` is invoke with (ref of key, ref of value)
     ///
     /// NOTE: this function speed up by skipping the underflow of LeafNode until the last operation.
     #[inline]

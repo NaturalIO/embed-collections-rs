@@ -81,20 +81,11 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
         }
     }
 
-    #[inline]
-    pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
-        match self {
-            Entry::Occupied(ent) => match ent.move_forward() {
-                Ok(_ent) => Ok(_ent),
-                Err(_ent) => Err(Entry::Occupied(_ent)),
-            },
-            Entry::Vacant(ent) => match ent.move_forward() {
-                Ok(_ent) => Ok(_ent),
-                Err(_ent) => Err(Entry::Vacant(_ent)),
-            },
-        }
-    }
+    // NOTE: Since rust does not alloc multiple mutable borrow, the moving api should assume ownership
 
+    /// Move to previous OccupiedEntry
+    ///
+    /// When reaching the front, return the original entry in Err()
     #[inline]
     pub fn move_backward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
         match self {
@@ -109,6 +100,24 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
         }
     }
 
+    /// Move to next OccupiedEntry
+    ///
+    /// When reaching the end, return the original entry in Err()
+    #[inline]
+    pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
+        match self {
+            Entry::Occupied(ent) => match ent.move_forward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Occupied(_ent)),
+            },
+            Entry::Vacant(ent) => match ent.move_forward() {
+                Ok(_ent) => Ok(_ent),
+                Err(_ent) => Err(Entry::Vacant(_ent)),
+            },
+        }
+    }
+
+    /// Peak previous OccupiedEntry
     #[inline(always)]
     pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
         match self {
@@ -117,6 +126,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
         }
     }
 
+    /// Peak the next OccupiedEntry
     #[inline(always)]
     pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
         match self {
@@ -229,6 +239,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         }
     }
 
+    /// Peak previous OccupiedEntry
     #[inline(always)]
     pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
         let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
@@ -240,6 +251,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         None
     }
 
+    /// Peak the next OccupiedEntry
     #[inline(always)]
     pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
         let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
@@ -251,7 +263,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         None
     }
 
-    /// NOTE: Since rust does not alloc multiple mutable borrow, the moving api should assume ownership
+    /// Move to previous OccupiedEntry
+    ///
+    /// When reaching the front, return the original entry in Err()
     #[inline]
     pub fn move_backward(self) -> Result<Self, Self> {
         let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
@@ -262,6 +276,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         Err(self)
     }
 
+    /// Move to next OccupiedEntry
+    ///
+    /// When reaching the end, return the original entry in Err()
     #[inline]
     pub fn move_forward(self) -> Result<Self, Self> {
         let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
@@ -345,6 +362,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
         unsafe { &mut *value_p }
     }
 
+    /// Peak previous OccupiedEntry
     #[inline(always)]
     pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
         if let Some(leaf) = self.leaf.as_ref() {
@@ -360,6 +378,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
         None
     }
 
+    /// Peak the next OccupiedEntry
     #[inline(always)]
     pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
         if let Some(leaf) = self.leaf.as_ref() {
@@ -377,7 +396,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
         None
     }
 
-    /// NOTE: Since rust does not alloc multiple mutable borrow, the moving api should assume ownership
+    /// Move to previous OccupiedEntry
+    ///
+    /// When reaching the front return the original entry in Err()
     #[inline]
     pub fn move_backward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
         if let Some(leaf) = self.leaf.as_ref() {
@@ -398,6 +419,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
         Err(self)
     }
 
+    /// Move to next OccupiedEntry
+    ///
+    /// When reaching the end, return the original entry in Err()
     #[inline]
     pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V>, Self> {
         if let Some(leaf) = self.leaf.as_ref() {
