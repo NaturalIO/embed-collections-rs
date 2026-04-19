@@ -1209,7 +1209,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     #[inline]
     fn find_first_and_last_leaf(&self) -> Option<(LeafNode<K, V>, LeafNode<K, V>)> {
         let root = self.get_root()?;
-        Some((root.find_first_leaf(None), root.find_last_leaf(None)))
+        Some((root.clone().find_first_leaf(None), root.find_last_leaf(None)))
     }
 
     /// Internal helper to find range bounds

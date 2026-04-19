@@ -573,7 +573,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>).unwrap();
         self.cache.push(parent.clone(), idx);
-        let new_leaf = parent.get_child(idx).into_leaf();
+        let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = 0;
         new_leaf
     }
@@ -584,7 +584,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>).unwrap();
         self.cache.push(parent.clone(), idx);
-        let new_leaf = parent.get_child(idx).into_leaf();
+        let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = new_leaf.key_count();
         new_leaf
     }
@@ -675,11 +675,8 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
                 {
                     trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push(parent.clone(), idx);
-                    if let Node::Leaf(leaf) = parent.get_child(idx) {
-                        leaf.dealloc::<true>();
-                    } else {
-                        unreachable!();
-                    }
+                    let leaf = parent.get_child_as_leaf(idx);
+                    leaf.dealloc::<true>();
                 }
             } else {
                 while let Some((parent, idx)) =
@@ -687,11 +684,8 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
                 {
                     trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push(parent.clone(), idx);
-                    if let Node::Leaf(leaf) = parent.get_child(idx) {
-                        leaf.dealloc::<true>();
-                    } else {
-                        unreachable!();
-                    }
+                    let leaf = parent.get_child_as_leaf(idx);
+                    leaf.dealloc::<true>();
                 }
             }
         }

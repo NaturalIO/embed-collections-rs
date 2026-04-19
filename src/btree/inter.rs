@@ -164,7 +164,7 @@ impl<K, V> InterNode<K, V> {
             let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
                 panic!("{:?} child {idx} is null", self);
-            } else if (*child_ptr).is_leaf() {
+            } else if self.height() == 1 {
                 Node::Leaf(LeafNode::<K, V>::from_header(child_ptr))
             } else {
                 Node::Inter(InterNode::<K, V>::from_header(child_ptr))

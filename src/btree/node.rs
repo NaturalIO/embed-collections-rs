@@ -272,15 +272,16 @@ impl<K: Ord, V> Node<K, V> {
         match self {
             Self::Leaf(node) => node.clone(),
             Self::Inter(node) => {
+                let mut height = node.height();
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
                     trace_log!("find_leaf {cur:?} {idx}");
-                    match cur.get_child(idx) {
-                        Node::Leaf(leaf) => return leaf,
-                        Node::Inter(inter) => {
-                            cur = inter;
-                        }
+                    if height > 1 {
+                        height -= 1;
+                        cur = cur.get_child_as_inter(idx);
+                    } else {
+                        return cur.get_child_as_leaf(idx);
                     }
                 }
             }
@@ -296,19 +297,19 @@ impl<K: Ord, V> Node<K, V> {
         match &self {
             Self::Leaf(node) => node.clone(),
             Self::Inter(node) => {
+                let mut height = node.height();
                 let mut cur = node.clone();
                 loop {
                     let idx = cur.search_child(key);
                     trace_log!("find_leaf_with_cache {cur:?} {idx}");
                     cache.push(cur.clone(), idx);
-                    match cur.get_child(idx) {
-                        Node::Leaf(leaf) => {
-                            trace_log!("find_leaf_with_cache got {leaf:?}");
-                            return leaf;
-                        }
-                        Node::Inter(inter) => {
-                            cur = inter;
-                        }
+                    if height > 1 {
+                        height -= 1;
+                        cur = cur.get_child_as_inter(idx);
+                    } else {
+                        let leaf = cur.get_child_as_leaf(idx);
+                        trace_log!("find_leaf_with_cache got {leaf:?}");
+                        return leaf;
                     }
                 }
             }
@@ -366,16 +367,21 @@ impl<K: Ord, V> Node<K, V> {
 
     /// Find the first leaf node
     #[inline]
-    pub fn find_first_leaf(&self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
-        let mut cur: Self = self.clone();
-        loop {
-            match cur {
-                Self::Leaf(leaf) => return leaf,
-                Self::Inter(inter) => {
+    pub fn find_first_leaf(self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
+        match self {
+            Self::Leaf(leaf) => leaf,
+            Self::Inter(mut cur) => {
+                let mut height = cur.height();
+                loop {
                     if let Some(_cache) = cache.as_mut() {
-                        _cache.push(inter.clone(), 0);
+                        _cache.push(cur.clone(), 0);
                     }
-                    cur = inter.get_child(0);
+                    if height > 1 {
+                        height -= 1;
+                        cur = cur.get_child_as_inter(0);
+                    } else {
+                        return cur.get_child_as_leaf(0);
+                    }
                 }
             }
         }
@@ -383,38 +389,26 @@ impl<K: Ord, V> Node<K, V> {
 
     /// Find the last leaf node
     #[inline]
-    pub fn find_last_leaf(&self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
-        let mut cur: Self = self.clone();
-        loop {
-            match cur {
-                Self::Leaf(leaf) => return leaf,
-                Self::Inter(inter) => {
-                    let idx = inter.key_count();
+    pub fn find_last_leaf(self, mut cache: Option<&mut PathCache<K, V>>) -> LeafNode<K, V> {
+        match self {
+            Self::Leaf(leaf) => leaf,
+            Self::Inter(mut cur) => {
+                let mut height = cur.height();
+                loop {
+                    let idx = cur.key_count();
                     if let Some(_cache) = cache.as_mut() {
-                        _cache.push(inter.clone(), idx);
+                        _cache.push(cur.clone(), idx);
                     }
-                    cur = inter.get_child(idx);
+                    if height > 1 {
+                        height -= 1;
+                        cur = cur.get_child_as_inter(idx);
+                    } else {
+                        return cur.get_child_as_leaf(idx);
+                    }
                 }
             }
         }
     }
-
-    /*
-    /// If depth == 0, return the root itself
-    #[inline]
-    pub fn find_child_with_cache(
-        &self, cache: &mut PathCache<K, V>, key: &K, mut depth: u32,
-    ) -> InterNode<K, V> {
-        let mut cur = self.as_inter().clone();
-        while depth > 0 {
-            depth -= 1;
-            let idx = cur.search_child(key);
-            cache.push(cur.clone(), idx);
-            cur = cur.get_child_as_inter(idx);
-        }
-        cur
-    }
-    */
 }
 
 macro_rules! _move_to_ancenstor {
