@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.8.1] - 2026-04-19
+
+### Changed
+
+- btree: Minor optimize in `remove_range()`
+
+### Fixed
+
+- btree: Fix doc link
+
 ## [0.8.0] - 2026-04-19
 
 ### Added

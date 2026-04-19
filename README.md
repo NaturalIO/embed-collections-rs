@@ -9,16 +9,16 @@ This crate provides two categories:
 
 - Cache efficient collections:
     - [`ConstVec`]: Fixed capacity inline vec
-    - [`SegList`]:  A cache aware list to store elements with adaptive size segments
-    - [`Various`]: For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
-    - [`BTreeMap`](btree): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
+    - [`SegList`](https://docs.rs/embed-collections/latest/embed_collections/seg_list/index.html):  A cache aware list to store elements with adaptive size segments
+    - [`Various`](https://docs.rs/embed-collections/latest/embed_collections/various/index.html): For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
+    - [`BTreeMap`](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
 
 - Intrusive collection
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
-    - [`dlist`]: Intrusive Doubly Linked List (Queue / Stack).
-    - [`slist`]: Intrusive Singly Linked List ( Queue / stack).
-    - [`slist_owned`]: An intrusive slist but with safe and more compact interface
-    - [`avl`]: Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+    - [`dlist`](https://docs.rs/embed-collections/latest/embed_collections/dlist/index.html): Intrusive Doubly Linked List (Queue / Stack).
+    - [`slist`](https://docs.rs/embed-collections/latest/embed_collections/slist/index.html): Intrusive Singly Linked List ( Queue / stack).
+    - [`slist_owned`](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/index.html): An intrusive slist but with safe and more compact interface
+    - [`avl`](https://docs.rs/embed-collections/latest/embed_collections/avl/index.html): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
 
 ## SegList & Various
 
@@ -40,7 +40,7 @@ Benchmark: append + drain (x86_64, cache line 128 bytes):
 
 ## B+tree
 
-We provide a [BTreeMap](btree) for single-threaded long-term in-memory storage.
+We provide a [BTreeMap](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html) for single-threaded long-term in-memory storage.
 It's a cache aware b+tree:
 
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
