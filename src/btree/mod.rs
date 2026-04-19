@@ -1187,6 +1187,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         IterMut::new(self.find_first_and_last_leaf(), self.len)
     }
 
+    /// Return a consuming iterator in reversed order
+    #[inline]
+    pub fn into_iter_rev(self) -> IntoIter<K, V> {
+        IntoIter::new(self, false)
+    }
+
     /// Returns an iterator over the map's keys
     #[inline]
     pub fn keys(&self) -> Keys<'_, K, V> {
@@ -1276,6 +1282,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterator for BTreeMap<K, V> {
         IntoIter::new(self, true)
     }
 }
+
 impl<'a, K: Ord + Clone + Sized, V: Sized> IntoIterator for &'a BTreeMap<K, V> {
     type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;

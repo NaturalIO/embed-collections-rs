@@ -2,6 +2,7 @@ use super::BTreeMap;
 use super::inter::*;
 use super::leaf::*;
 use super::node::*;
+use crate::trace_log;
 use core::marker::PhantomData;
 use core::mem::needs_drop;
 
@@ -531,11 +532,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
     }
 }
 
-/// An owning iterator over the entries of a BTreeMap
-/// Uses PathCache to manage tree traversal and safe deallocation
-///
-/// NOTE: In order to keep the logic simple, we does not implement `DoubleEndedIterator` here
-pub struct IntoIter<K: Ord + Clone + Sized, V: Sized> {
+struct IntoIterBase<K: Ord + Clone + Sized, V: Sized> {
     /// Path cache for deallocating internal nodes after iteration
     cache: PathCache<K, V>,
     /// Current leaf being iterated
@@ -544,13 +541,12 @@ pub struct IntoIter<K: Ord + Clone + Sized, V: Sized> {
     idx: u32,
     /// Remaining elements to iterate
     remaining: usize,
-    /// If true, iterate in reverse order
     is_forward: bool,
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
     #[inline]
-    pub(super) fn new(mut tree: BTreeMap<K, V>, is_forward: bool) -> Self {
+    fn new(tree: &mut BTreeMap<K, V>, is_forward: bool) -> Self {
         if let Some(root) = tree.root.take() {
             let mut cache = tree.get_cache().take();
             let leaf = if is_forward {
@@ -591,13 +587,9 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
         self.idx = new_leaf.key_count();
         new_leaf
     }
-}
-
-impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
-    type Item = (K, V);
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<(K, V)> {
         if self.remaining == 0 {
             return None;
         }
@@ -616,6 +608,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
             let idx = self.idx;
             self.idx += 1;
             if let Some(ref leaf) = self.leaf {
+                trace_log!("into_iter forward: {leaf:?}:{idx}");
                 unsafe {
                     let key = (*leaf.key_ptr(idx)).assume_init_read();
                     let value = (*leaf.value_ptr(idx)).assume_init_read();
@@ -633,6 +626,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
             if let Some(ref leaf) = self.leaf {
                 self.idx -= 1;
                 let idx = self.idx;
+                trace_log!("into_iter backward: {leaf:?}:{idx}");
                 unsafe {
                     let key = (*leaf.key_ptr(idx)).assume_init_read();
                     let value = (*leaf.value_ptr(idx)).assume_init_read();
@@ -642,30 +636,20 @@ impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
         }
         None
     }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.remaining, Some(self.remaining))
-    }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> ExactSizeIterator for IntoIter<K, V> {
-    #[inline]
-    fn len(&self) -> usize {
-        self.remaining
-    }
-}
-
-impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
+impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
     fn drop(&mut self) {
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
         if let Some(leaf) = self.leaf.take() {
             if needs_drop::<K>() {
                 if self.is_forward {
+                    trace_log!("into_iter drop forward {leaf:?} [{}..]", self.idx);
                     for idx in self.idx..leaf.key_count() {
                         unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
                     }
                 } else {
+                    trace_log!("into_iter drop backward {leaf:?} [..{}]", self.idx);
                     for idx in 0..self.idx {
                         unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
                     }
@@ -688,6 +672,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
                 while let Some((parent, idx)) =
                     self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>)
                 {
+                    trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
                         leaf.dealloc::<true>();
@@ -699,6 +684,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
                 while let Some((parent, idx)) =
                     self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>)
                 {
+                    trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child(idx) {
                         leaf.dealloc::<true>();
@@ -707,6 +693,77 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIter<K, V> {
                     }
                 }
             }
+        }
+    }
+}
+
+/// An owning iterator over the entries of a BTreeMap
+/// Uses PathCache to manage tree traversal and safe deallocation
+///
+/// NOTE: In order to keep the logic simple, we does not implement `DoubleEndedIterator` here
+pub struct IntoIter<K: Ord + Clone + Sized, V: Sized> {
+    /// If true, iterate in reverse order
+    base: Result<IntoIterBase<K, V>, (BTreeMap<K, V>, bool)>,
+}
+
+impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
+    #[inline]
+    pub(super) fn new(tree: BTreeMap<K, V>, is_forward: bool) -> Self {
+        Self { base: Err((tree, is_forward)) }
+    }
+
+    /// Return a iterator in reversed direction
+    ///
+    /// IntoIter only implement one way iteration (either forward or backward).
+    /// this will mock Iterator::rev for DoubleEndIterator trait
+    ///
+    /// # Panic
+    ///
+    /// If iteration already started, cannot change the direction
+    #[inline]
+    pub fn rev(self) -> Self {
+        if let Err((tree, _is_forward)) = self.base {
+            Self { base: Err((tree, false)) }
+        } else {
+            panic!("cannot change direction after iteration start");
+        }
+    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized> Iterator for IntoIter<K, V> {
+    type Item = (K, V);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.base {
+            Ok(base) => base.next(),
+            Err((tree, is_forward)) => {
+                self.base = Ok(IntoIterBase::new(tree, *is_forward));
+                if let Ok(base) = &mut self.base {
+                    base.next()
+                } else {
+                    unreachable!();
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = match &self.base {
+            Ok(base) => base.remaining,
+            Err((tree, _)) => tree.len(),
+        };
+        (remaining, Some(remaining))
+    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized> ExactSizeIterator for IntoIter<K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match &self.base {
+            Ok(base) => base.remaining,
+            Err((tree, _)) => tree.len(),
         }
     }
 }

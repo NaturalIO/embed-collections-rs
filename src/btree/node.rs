@@ -470,8 +470,7 @@ impl<K: Ord, V> PathCache<K, V> {
                 if move_step > idx {
                     self.pos += idx as isize;
                 } else {
-                    debug_assert_eq!(self.pos, 0);
-                    self.pos += move_step as isize;
+                    self.pos = 0;
                     return Some((parent, idx - move_step)); // have common parent
                 }
             }
@@ -481,15 +480,19 @@ impl<K: Ord, V> PathCache<K, V> {
             self.pos += 1;
             let cond = |_node: &InterNode<K, V>, idx: u32| -> bool { idx > 0 };
             // this is for entry API, we already know there is a previous node
-            let (grand_parent, grand_idx) =
-                _move_to_ancenstor!(self.inner, cond, post_callback).unwrap();
-            let (parent, idx) =
-                grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
-            if self.pos == 0 {
-                return Some((parent, idx));
+            if let Some((grand_parent, grand_idx)) =
+                _move_to_ancenstor!(self.inner, cond, post_callback)
+            {
+                let (parent, idx) =
+                    grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
+                if self.pos == 0 {
+                    return Some((parent, idx));
+                } else {
+                    // continue to move left
+                    self.inner.push((parent, idx));
+                }
             } else {
-                // continue to move left
-                self.inner.push((parent, idx));
+                return None;
             }
         }
         None
