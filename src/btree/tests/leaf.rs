@@ -1,5 +1,6 @@
 use super::super::{leaf::*, *};
 use super::{CounterI32, alive_count, reset_alive_count};
+use rstest::rstest;
 
 #[test]
 fn test_leaf_align() {
@@ -31,37 +32,56 @@ fn test_leaf_align() {
     }
 }
 
-#[test]
-fn test_leaf_node_search() {
+#[rstest]
+#[case::empty_node(0)]
+#[case::node_1_key(1)]
+#[case::node_3_keys(3)]
+#[case::node_5_keys(5)]
+fn test_leaf_search_smart(#[case] key_count: u32) {
+    let is_seqs = [false, true];
     unsafe {
-        let mut leaf = LeafNode::<usize, usize>::alloc();
-        let cap = LeafNode::<usize, usize>::cap() as usize;
-        // Insert sorted keys: 10, 20, 30, 40
-        for k in 10..(cap + 10) {
-            leaf.insert_no_split(k * 2, k * 2);
-        }
-        assert_eq!(leaf.key_count(), cap as u32);
-        // Test search - existing key
-        for k in 10..(cap + 10) {
-            let (idx, found) = leaf.search(&(k * 2));
-            assert!(found);
-            assert_eq!(idx, (k - 10) as u32);
-        }
-        // Test search - key smaller than all
-        let (idx, found) = leaf.search(&0);
-        assert!(!found);
-        assert_eq!(idx, 0);
-        // non-existing key (should return insertion point)
-        let (idx, found) = leaf.search(&21);
-        assert!(!found);
-        assert_eq!(idx, 1);
+        let mut node = LeafNode::<i32, i32>::alloc();
 
-        // larger than max key
-        let (idx, found) = leaf.search(&((cap + 11) * 2));
-        assert!(!found);
-        assert_eq!(idx as usize, cap);
+        for i in 1..=key_count {
+            let key = (i * 2 - 1) as i32;
+            node.insert_no_split(key, key * 10);
+        }
 
-        leaf.dealloc::<true>();
+        let upper_bound = if key_count == 0 { 2 } else { (key_count * 2) as i32 + 1 };
+        for is_seq in is_seqs {
+            for search_key in 0..=upper_bound {
+                let (expected_idx, expected_eq) = node.search(&search_key);
+                let programmatic_idx = (search_key / 2).min(key_count as i32) as u32;
+                let programmatic_eq = (search_key % 2 != 0) && programmatic_idx < key_count;
+
+                assert_eq!(
+                    (expected_idx, expected_eq),
+                    (programmatic_idx, programmatic_eq),
+                    "search result ({}, {}) does not match mathematical expectation ({}, {}) for key_count={} search_key={}",
+                    expected_idx,
+                    expected_eq,
+                    programmatic_idx,
+                    programmatic_eq,
+                    key_count,
+                    search_key
+                );
+
+                let (smart_idx, smart_eq) = node.search_smart(&search_key, is_seq);
+
+                assert_eq!(
+                    (smart_idx, smart_eq),
+                    (programmatic_idx, programmatic_eq),
+                    "search_smart result ({}, {}) != programmatic expectation ({}, {}) for key={}, is_seq={}",
+                    smart_idx,
+                    smart_eq,
+                    programmatic_idx,
+                    programmatic_eq,
+                    search_key,
+                    is_seq
+                );
+            }
+        }
+        node.dealloc::<true>();
     }
 }
 

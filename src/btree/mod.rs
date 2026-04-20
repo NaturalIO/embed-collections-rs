@@ -262,12 +262,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns an entry to the key in the map
     #[inline]
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
+        let mut is_seq = true;
         if let Some(leaf) = self.search_leaf_with(|inter| {
             let cache = self.get_cache();
             cache.clear();
-            inter.find_leaf_with_cache(cache, &key)
+            inter.find_leaf_with_cache_smart(cache, &key, &mut is_seq)
         }) {
-            let (idx, is_equal) = leaf.search(&key);
+            let (idx, is_equal) = leaf.search_smart(&key, is_seq);
             if is_equal {
                 Entry::Occupied(OccupiedEntry { tree: self, idx, leaf })
             } else {
@@ -347,12 +348,13 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns the old value if the key already existed
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        let mut is_seq = true;
         if let Some(mut leaf) = self.search_leaf_with(|inter| {
             let cache = self.get_cache();
             cache.clear();
-            inter.find_leaf_with_cache(cache, &key)
+            inter.find_leaf_with_cache_smart(cache, &key, &mut is_seq)
         }) {
-            let (idx, is_equal) = leaf.search(&key);
+            let (idx, is_equal) = leaf.search_smart(&key, is_seq);
             if is_equal {
                 Some(leaf.replace(idx, value))
             } else {

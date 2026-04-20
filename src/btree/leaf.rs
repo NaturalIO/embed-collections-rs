@@ -236,7 +236,29 @@ impl<K, V> LeafNode<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.base._search::<K, Q>(LEAF_HEAD_SIZE, key)
+        self.base._search::<K, Q>(LEAF_HEAD_SIZE, self.key_count(), key)
+    }
+
+    /// search the position to insert
+    /// returns the idx, is_equal
+    #[inline(always)]
+    pub fn search_smart<Q>(&self, key: &Q, is_seq: bool) -> (u32, bool)
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let count = self.key_count();
+        if is_seq {
+            if count > 0 {
+                let key_ref: &Q = unsafe { (*self.key_ptr(count - 1)).assume_init_ref().borrow() };
+                if key_ref < key {
+                    return (count, false);
+                }
+            } else {
+                return (0, false);
+            }
+        }
+        self.base._search::<K, Q>(LEAF_HEAD_SIZE, count, key)
     }
 
     /// Insert key-value at index (assuming there is space)

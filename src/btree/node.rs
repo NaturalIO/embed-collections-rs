@@ -118,7 +118,7 @@ impl NodeBase {
     /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
-    pub fn _search<K, Q>(&self, header_offset: usize, key: &Q) -> (u32, bool)
+    pub fn _search<K, Q>(&self, header_offset: usize, count: u32, key: &Q) -> (u32, bool)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -151,7 +151,6 @@ impl NodeBase {
             };
         }
         unsafe {
-            let count = self.key_count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
             let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
             if count > first_line_limit {

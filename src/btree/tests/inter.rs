@@ -1,6 +1,7 @@
 use super::super::{inter::*, node::*};
 use super::{CounterI32, alive_count, reset_alive_count};
 use core::mem::align_of;
+use rstest::rstest;
 
 #[test]
 fn test_inter_align() {
@@ -16,6 +17,48 @@ fn test_inter_align() {
         assert_eq!(idx, i as u32);
     }
     inter.dealloc::<true>();
+}
+
+#[rstest]
+#[case::empty_node(0)]
+#[case::node_1_key(1)]
+#[case::node_3_keys(3)]
+#[case::node_5_keys(5)]
+fn test_inter_search_child_smart(#[case] key_count: u32) {
+    let is_seqs = [false, true];
+    unsafe {
+        let mut node = InterNode::<i32, i32>::alloc(1);
+        node.set_left_ptr(0x1000 as *mut NodeHeader);
+
+        // Insert odd keys: 1, 3, 5... (if key_count=3 -> keys are 1, 3, 5)
+        for i in 1..=key_count {
+            let key = (i * 2 - 1) as i32;
+            node.insert_no_split(key, (0x1000 + i * 0x100) as *mut NodeHeader);
+        }
+
+        let upper_bound = if key_count == 0 { 2 } else { (key_count * 2) as i32 + 1 };
+
+        for initial_is_seq in is_seqs {
+            for search_key in 0..=upper_bound {
+                let expected_idx = node.search_child(&search_key);
+                let programmatic_idx = ((search_key + 1) / 2).min(key_count as i32) as u32;
+                assert_eq!(
+                    expected_idx, programmatic_idx,
+                    "search_child idx ({}) does not match mathematical expectation ({}) for key_count={} search_key={}",
+                    expected_idx, programmatic_idx, key_count, search_key
+                );
+
+                let mut is_seq = initial_is_seq;
+                let smart_idx = node.search_child_smart(&search_key, &mut is_seq);
+                assert_eq!(
+                    smart_idx, programmatic_idx,
+                    "search_child_smart index ({}) != programmatic expectation ({}) for key={}, initial_is_seq={}",
+                    smart_idx, programmatic_idx, search_key, initial_is_seq
+                );
+            }
+        }
+        node.dealloc::<true>();
+    }
 }
 
 #[test]

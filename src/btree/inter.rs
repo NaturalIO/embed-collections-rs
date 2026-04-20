@@ -219,7 +219,37 @@ impl<K: Ord, V> InterNode<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let (idx, is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key);
+        let key_count = self.key_count();
+        let (idx, is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key);
+        if is_equal { idx + 1 } else { idx }
+    }
+
+    /// search the position to insert
+    /// returns the idx, is_equal
+    #[inline(always)]
+    pub fn search_child_smart<Q>(&self, key: &Q, is_seq: &mut bool) -> u32
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let key_count = self.key_count();
+        let (idx, is_equal) = if !*is_seq {
+            // random is more likely
+            self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key)
+        } else {
+            if key_count > 0 {
+                let key_ref: &Q =
+                    unsafe { (*self.key_ptr(key_count - 1)).assume_init_ref().borrow() };
+                if key_ref <= key {
+                    return key_count;
+                } else {
+                    *is_seq = false;
+                    self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key)
+                }
+            } else {
+                return 0;
+            }
+        };
         if is_equal { idx + 1 } else { idx }
     }
 
@@ -231,7 +261,8 @@ impl<K: Ord, V> InterNode<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let (idx, _is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key);
+        let (idx, _is_equal) =
+            self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, self.key_count(), key);
         idx
     }
 
@@ -265,6 +296,31 @@ impl<K: Ord, V> InterNode<K, V> {
         let mut cur = self;
         loop {
             let idx = cur.search_child(key);
+            trace_log!("find_leaf_with_cache {cur:?} {idx}");
+            cache.push(cur.clone(), idx);
+            if height > 1 {
+                height -= 1;
+                cur = cur.get_child_as_inter(idx);
+            } else {
+                let leaf = cur.get_child_as_leaf(idx);
+                trace_log!("find_leaf_with_cache got {leaf:?}");
+                return leaf;
+            }
+        }
+    }
+
+    #[inline]
+    pub fn find_leaf_with_cache_smart<Q>(
+        self, cache: &mut PathCache<K, V>, key: &Q, is_seq: &mut bool,
+    ) -> LeafNode<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let mut height = self.height();
+        let mut cur = self;
+        loop {
+            let idx = cur.search_child_smart(key, is_seq);
             trace_log!("find_leaf_with_cache {cur:?} {idx}");
             cache.push(cur.clone(), idx);
             if height > 1 {
