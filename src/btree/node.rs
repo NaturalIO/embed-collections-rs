@@ -121,32 +121,33 @@ impl NodeBase {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        // TODO review this
         macro_rules! _search {
             ($start: expr, $end: expr) => {
                 let mut idx = $start as u32;
                 if $start < $end {
                     let mut k = self.item_ptr::<K>(header_offset, $start as u32);
                     loop {
-                        let k_ref: &K = &*k;
-                        match k_ref.borrow().cmp(key) {
-                            Ordering::Equal => return (idx, true),
-                            // insert to this pos, idx should move right
-                            Ordering::Greater => return (idx, false),
-                            _ => {}
-                        }
-                        idx += 1;
-                        k = k.add(1);
-                        if idx == $end as u32 {
+                        let k_ref: &Q = (&*k).borrow();
+                        let r = k_ref.cmp(key);
+                        // For linear search, always put the most frequent case first,
+                        // there might be huge penalty on cpu branch prediction failure.
+                        if r == Ordering::Less {
+                            idx += 1;
+                            if idx < $end {
+                                k = k.add(1);
+                                continue;
+                            }
                             break;
+                        } else {
+                            return (idx, r == Ordering::Equal);
                         }
                     }
                     // NOTE: be aware to check idx == cap
                 }
+                // insert on an empty node just return (0, false)
                 return (idx, false);
             };
         }
-
         unsafe {
             let count = self.key_count();
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
@@ -155,10 +156,13 @@ impl NodeBase {
                 let first_line_last = &*self.item_ptr::<K>(header_offset, first_line_limit - 1);
                 if key > first_line_last.borrow() {
                     _search!(first_line_limit, count);
-                    // will return here
+                } else {
+                    // using constant here might hint compiler generate SIMD code
+                    _search!(0, first_line_limit);
                 }
+            } else {
+                _search!(0, count);
             }
-            _search!(0, count);
         }
     }
 
