@@ -349,10 +349,12 @@ fn test_pop_last_multiple() {
 #[test]
 fn test_pop_first_all() {
     let mut map = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
     map.insert(1, "a");
     map.insert(2, "b");
     map.insert(3, "c");
     map.validate();
+    assert_eq!(map.leaf_count(), 1);
     assert_eq!(map.pop_first(), Some((1, "a")));
     map.validate();
     assert_eq!(map.pop_first(), Some((2, "b")));
@@ -361,15 +363,18 @@ fn test_pop_first_all() {
     map.validate();
     assert!(map.is_empty());
     assert_eq!(map.pop_first(), None);
+    assert_eq!(map.leaf_count(), 1);
 }
 
 #[test]
 fn test_pop_last_all() {
     let mut map = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
     map.insert(1, "a");
     map.insert(2, "b");
     map.insert(3, "c");
     map.validate();
+    assert_eq!(map.leaf_count(), 1);
     assert_eq!(map.pop_last(), Some((3, "c")));
     map.validate();
     assert_eq!(map.pop_last(), Some((2, "b")));
@@ -378,6 +383,7 @@ fn test_pop_last_all() {
     map.validate();
     assert!(map.is_empty());
     assert_eq!(map.pop_last(), None);
+    assert_eq!(map.leaf_count(), 1);
 }
 
 #[test]

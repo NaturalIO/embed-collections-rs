@@ -6,9 +6,81 @@ use rstest::rstest;
 
 #[logfn]
 #[rstest]
-fn test_iter_empty(setup_log: ()) {
+fn test_iter_empty_tree(setup_log: ()) {
     let map: BTreeMap<i32, i32> = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
     let mut iter = map.iter();
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+
+    let mut iter = map.iter();
+    assert_eq!(iter.next_back(), None);
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.len(), 0);
+
+    let collected: Vec<_> = map.range(0..10).collect();
+    assert!(collected.is_empty());
+}
+
+#[logfn]
+#[rstest]
+fn test_into_iter_empty_tree(setup_log: ()) {
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
+    let mut iter = map.into_iter();
+    assert_eq!(iter.next(), None);
+
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let mut iter = map.into_iter().rev();
+    assert_eq!(iter.next(), None);
+
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let mut iter = map.into_iter_rev();
+    assert_eq!(iter.next(), None);
+}
+
+#[logfn]
+#[rstest]
+fn test_iter_empty_leaf(setup_log: ()) {
+    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
+    map.insert(0, 0);
+    assert_eq!(map.remove(&0), Some(0));
+    assert_eq!(map.leaf_count(), 1);
+    assert_eq!(map.get(&0), None);
+    assert_eq!(map.get_mut(&0), None);
+
+    let mut iter = map.iter();
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.next_back(), None);
+
+    let mut iter = map.iter();
+    assert_eq!(iter.next_back(), None);
+    assert_eq!(iter.next(), None);
+    assert_eq!(iter.len(), 0);
+
+    let collected: Vec<_> = map.range(0..10).collect();
+    assert!(collected.is_empty());
+}
+
+#[logfn]
+#[rstest]
+fn test_into_iter_empty_leaf(setup_log: ()) {
+    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+    assert_eq!(map.leaf_count(), 0);
+    map.insert(0, 0);
+    assert_eq!(map.remove(&0), Some(0));
+    assert_eq!(map.leaf_count(), 1);
+
+    let mut iter = map.into_iter();
+    assert_eq!(iter.next(), None);
+
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let mut iter = map.into_iter().rev();
+    assert_eq!(iter.next(), None);
+
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let mut iter = map.into_iter_rev();
     assert_eq!(iter.next(), None);
 }
 
@@ -360,15 +432,6 @@ fn test_values_mut_double_ended(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_iter_empty_double_ended(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
-    let mut iter = map.iter();
-    assert_eq!(iter.next_back(), None);
-    assert_eq!(iter.len(), 0);
-}
-
-#[logfn]
-#[rstest]
 fn test_iter_single_double_ended(setup_log: ()) {
     let mut map = BTreeMap::new();
     map.insert(1, "a");
@@ -419,14 +482,6 @@ fn test_range_mut(setup_log: ()) {
     assert_eq!(map.get(&3), Some(&60)); // Changed
     assert_eq!(map.get(&6), Some(&120)); // Changed
     assert_eq!(map.get(&7), Some(&70)); // Unchanged
-}
-
-#[logfn]
-#[rstest]
-fn test_range_empty(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
-    let collected: Vec<_> = map.range(0..10).collect();
-    assert!(collected.is_empty());
 }
 
 #[logfn]
@@ -605,14 +660,6 @@ fn test_into_iter(setup_log: ()) {
 
     let collected: Vec<_> = map.into_iter().collect();
     assert_eq!(collected, vec![(1, "a"), (2, "b"), (3, "c")]);
-}
-
-#[logfn]
-#[rstest]
-fn test_into_iter_empty(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
-    let mut iter = map.into_iter();
-    assert_eq!(iter.next(), None);
 }
 
 #[logfn]
