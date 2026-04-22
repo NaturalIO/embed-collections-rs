@@ -87,7 +87,7 @@ fn test_inter_borrow_case1_rotate_left_first_child() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_elements,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4 + inter_cap as usize - 1,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -224,7 +224,7 @@ fn test_inter_borrow_case2_rotate_left() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_elements,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4 + inter_cap as usize - 1,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -363,7 +363,7 @@ fn test_inter_borrow_case3_rotate_right_last_child() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_elements,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4 + inter_cap as usize - 1,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -498,7 +498,7 @@ fn test_inter_borrow_case4_rotate_right() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_elements,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4 + inter_cap as usize - 1,
             #[cfg(feature = "trace_log")]
             triggers: 0,

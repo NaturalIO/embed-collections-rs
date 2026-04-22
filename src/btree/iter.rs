@@ -1,7 +1,4 @@
-use super::BTreeMap;
-use super::inter::*;
-use super::leaf::*;
-use super::node::*;
+use super::{BTreeMap, helper::*, leaf::*, node::*};
 use crate::trace_log;
 use core::marker::PhantomData;
 use core::mem::needs_drop;
@@ -534,7 +531,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
 
 struct IntoIterBase<K: Ord + Clone + Sized, V: Sized> {
     /// Path cache for deallocating internal nodes after iteration
-    cache: PathCache<K, V>,
+    _cache: Option<TreeInfo<K, V>>,
     /// Current leaf being iterated
     leaf: Option<LeafNode<K, V>>,
     /// Current index within the leaf
@@ -548,31 +545,46 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
     #[inline]
     fn new(tree: &mut BTreeMap<K, V>, is_forward: bool) -> Self {
         if let Some(root_p) = tree.root.take() {
-            let mut cache = tree.get_cache().take();
-            let root = Node::from_root_ptr(root_p);
-            let leaf = if is_forward {
-                root.find_first_leaf(Some(&mut cache))
-            } else {
-                root.find_last_leaf(Some(&mut cache))
+            let mut cache = tree.take_cache();
+            // Move TreeInfo out of BTreeMap, leave a fresh empty one as placeholder.
+            let leaf = match Node::from_root_ptr(root_p) {
+                Node::Leaf(leaf) => leaf,
+                Node::Inter(inter) => {
+                    if is_forward {
+                        inter.find_first_leaf(cache.as_mut())
+                    } else {
+                        inter.find_last_leaf(cache.as_mut())
+                    }
+                }
             };
             Self {
-                cache,
+                _cache: cache,
                 idx: if is_forward { 0 } else { leaf.key_count() },
                 leaf: Some(leaf),
                 remaining: tree.len,
                 is_forward,
             }
         } else {
-            Self { cache: PathCache::new(), leaf: None, idx: 0, remaining: 0, is_forward }
+            Self { _cache: None, leaf: None, idx: 0, remaining: 0, is_forward }
         }
+    }
+
+    #[inline(always)]
+    fn get_cache(&mut self) -> Option<&mut TreeInfo<K, V>> {
+        self._cache.as_mut()
     }
 
     #[inline(always)]
     fn advance_forward(&mut self) -> LeafNode<K, V> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
-        let (parent, idx) = self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>).unwrap();
-        self.cache.push(parent.clone(), idx);
+        let cache = self.get_cache().unwrap();
+        let (parent, idx) = cache
+            .move_right_and_pop_l1(|_info, _node| {
+                _node.dealloc::<true>();
+            })
+            .unwrap();
+        cache.push(parent.clone(), idx);
         let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = 0;
         new_leaf
@@ -582,8 +594,10 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
     fn advance_backward(&mut self) -> LeafNode<K, V> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
-        let (parent, idx) = self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>).unwrap();
-        self.cache.push(parent.clone(), idx);
+        let cache = self.get_cache().unwrap();
+        let (parent, idx) =
+            cache.move_left_and_pop_l1(|_info, _node| _node.dealloc::<true>()).unwrap();
+        cache.push(parent.clone(), idx);
         let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = new_leaf.key_count();
         new_leaf
@@ -641,10 +655,11 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIterBase<K, V> {
 
 impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
     fn drop(&mut self) {
+        let is_forward = self.is_forward;
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
         if let Some(leaf) = self.leaf.take() {
             if needs_drop::<K>() {
-                if self.is_forward {
+                if is_forward {
                     trace_log!("into_iter drop forward {leaf:?} [{}..]", self.idx);
                     for idx in self.idx..leaf.key_count() {
                         unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
@@ -657,7 +672,7 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
                 }
             }
             if needs_drop::<V>() {
-                if self.is_forward {
+                if is_forward {
                     for idx in self.idx..leaf.key_count() {
                         unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
                     }
@@ -668,24 +683,26 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
                 }
             }
             leaf.dealloc::<false>();
-            // We should free the rest internal nodes even after leaf iteration done
-            if self.is_forward {
-                while let Some((parent, idx)) =
-                    self.cache.move_right_and_pop_l1(InterNode::dealloc::<true>)
-                {
-                    trace_log!("into_iter drop forward parent {parent:?}:{idx}");
-                    self.cache.push(parent.clone(), idx);
-                    let leaf = parent.get_child_as_leaf(idx);
-                    leaf.dealloc::<true>();
-                }
-            } else {
-                while let Some((parent, idx)) =
-                    self.cache.move_left_and_pop_l1(InterNode::dealloc::<true>)
-                {
-                    trace_log!("into_iter drop forward parent {parent:?}:{idx}");
-                    self.cache.push(parent.clone(), idx);
-                    let leaf = parent.get_child_as_leaf(idx);
-                    leaf.dealloc::<true>();
+            if let Some(cache) = self.get_cache() {
+                // We should free the rest internal nodes even after leaf iteration done
+                if is_forward {
+                    while let Some((parent, idx)) = cache.move_right_and_pop_l1(|_info, _node| {
+                        _node.dealloc::<true>();
+                    }) {
+                        trace_log!("into_iter drop forward parent {parent:?}:{idx}");
+                        cache.push(parent.clone(), idx);
+                        let leaf = parent.get_child_as_leaf(idx);
+                        leaf.dealloc::<true>();
+                    }
+                } else {
+                    while let Some((parent, idx)) = cache.move_left_and_pop_l1(|_info, _node| {
+                        _node.dealloc::<true>();
+                    }) {
+                        trace_log!("into_iter drop forward parent {parent:?}:{idx}");
+                        cache.push(parent.clone(), idx);
+                        let leaf = parent.get_child_as_leaf(idx);
+                        leaf.dealloc::<true>();
+                    }
                 }
             }
         }

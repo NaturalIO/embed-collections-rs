@@ -265,7 +265,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     pub fn move_backward(self) -> Result<Self, Self> {
         let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
         if let Some((prev_leaf, idx)) = cursor.prev() {
-            self.tree.get_cache().move_left();
+            if let Some(info) = self.tree._get_info().as_mut() {
+                info.move_left();
+            }
             return Ok(Self { tree: self.tree, leaf: prev_leaf.clone(), idx });
         }
         Err(self)
@@ -278,7 +280,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     pub fn move_forward(self) -> Result<Self, Self> {
         let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
         if let Some((next_leaf, idx)) = cursor.next() {
-            self.tree.get_cache().move_right();
+            if let Some(info) = self.tree._get_info().as_mut() {
+                info.move_right();
+            }
             return Ok(Self { tree: self.tree, leaf: next_leaf.clone(), idx });
         }
         Err(self)
@@ -396,7 +400,10 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
             // Be aware the leaf.idx may be larger than leaf.key_count(), but IterBackward
             // does not care.
             if cursor.prev().is_some() {
-                self.tree.get_cache().move_left();
+                // TODO test the PathCache is correct
+                if let Some(info) = self.tree._get_info().as_mut() {
+                    info.move_left();
+                }
                 return Ok(OccupiedEntry {
                     tree: self.tree,
                     leaf: cursor.back_leaf.clone(),
@@ -417,7 +424,10 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
                 return Ok(OccupiedEntry { tree: self.tree, leaf: leaf.clone(), idx: self.idx });
             } else if let Some(right) = leaf.get_right_node() {
                 debug_assert!(right.key_count() > 0);
-                self.tree.get_cache().move_right();
+                // TODO test the PathCache is correct
+                if let Some(info) = self.tree._get_info().as_mut() {
+                    info.move_right();
+                }
                 return Ok(OccupiedEntry { tree: self.tree, leaf: right, idx: 0 });
             }
         }

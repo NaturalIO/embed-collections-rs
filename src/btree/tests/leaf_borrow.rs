@@ -69,7 +69,7 @@ fn test_borrow_from_left_insert_first_height_2() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 2) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -158,7 +158,7 @@ fn test_borrow_from_left_insert_mid_height_2() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 2) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -257,7 +257,7 @@ fn test_borrow_from_right_height_2_not_last() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 1) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -349,7 +349,7 @@ fn test_borrow_from_right_height_2_last() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (3 * leaf_cap - 1) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -462,7 +462,7 @@ fn test_borrow_from_left_insert_first_height_3() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -564,7 +564,7 @@ fn test_borrow_from_left_insert_mid_height_3() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -665,7 +665,7 @@ fn test_borrow_from_right_insert_not_last_height_3() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -767,7 +767,7 @@ fn test_borrow_from_right_insert_last_height_3() {
         let mut map = BTreeMap::<i32, i32> {
             root: Some(root.to_root_ptr()),
             len: (4 * leaf_cap) as usize - 1,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,

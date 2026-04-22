@@ -288,7 +288,7 @@ fn test_alter_key_update_sep_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: 3,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 2,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -351,7 +351,7 @@ fn test_alter_key_update_sep_height_3() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: 4,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,

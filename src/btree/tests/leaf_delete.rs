@@ -67,7 +67,7 @@ fn test_leaf_del_merge_with_left_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (2 * min_count + leaf_cap) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -130,7 +130,7 @@ fn test_leaf_del_merge_with_left_height_2() {
         );
 
         assert_eq!(map.height(), 2);
-        assert_eq!(map.leaf_count, 2);
+        assert_eq!(map.leaf_count(), 2);
         #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::LeafMergeLeft as u32 | TestFlag::RemoveChildMid as u32);
         // Cleanup
@@ -206,7 +206,7 @@ fn test_merge_left_with_right_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (leaf_cap + 2 * min_count) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -326,7 +326,7 @@ fn test_leaf_del_merge_3_2_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_keys as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -429,7 +429,7 @@ fn test_leaf_del_leftmost_merge_right_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (2 * min_count) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 2,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -549,7 +549,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (2 * min_count) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 2,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -696,7 +696,7 @@ fn test_leaf_del_merge_with_left_height_3() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (4 * min_count) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -861,7 +861,7 @@ fn test_leaf_del_merge_with_right_height_3() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: (leaf_cap + 3 * min_count) as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -1019,7 +1019,7 @@ fn test_leaf_del_merge_2_3_height_3() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_keys as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 4,
             #[cfg(feature = "trace_log")]
             triggers: 0,
@@ -1163,7 +1163,7 @@ fn test_leaf_del_remove_only_child_cascade() {
         let mut map = BTreeMap::<CounterI32, CounterI32> {
             root: Some(root.to_root_ptr()),
             len: total_keys as usize,
-            cache: UnsafeCell::new(PathCache::new()),
+            cache: UnsafeCell::new(TreeInfo::new()),
             leaf_count: 3,
             #[cfg(feature = "trace_log")]
             triggers: 0,

@@ -1,4 +1,4 @@
-use super::super::node::PathCache;
+use super::super::helper::*;
 use super::super::*;
 use core::mem::size_of;
 
@@ -6,7 +6,7 @@ use core::mem::size_of;
 fn test_size() {
     let root = size_of::<Option<Node<u32, u32>>>();
     println!("size: root {}", root);
-    let path_cache = size_of::<PathCache<u32, u32>>();
+    let path_cache = size_of::<TreeInfo<u32, u32>>();
     println!("size: path_cache {}", path_cache);
     let tree = size_of::<BTreeMap<u32, u32>>();
     println!("size: BTreeMap {}", tree);

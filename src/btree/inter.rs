@@ -1,5 +1,4 @@
-use super::leaf::*;
-use super::node::*;
+use super::{helper::*, leaf::*, node::*};
 use crate::{CACHE_LINE_SIZE, trace_log};
 use alloc::alloc::{Layout, dealloc};
 use core::borrow::Borrow;
@@ -287,7 +286,7 @@ impl<K: Ord, V> InterNode<K, V> {
     }
 
     #[inline]
-    pub fn find_leaf_with_cache<Q>(self, cache: &mut PathCache<K, V>, key: &Q) -> LeafNode<K, V>
+    pub fn find_leaf_with_cache<Q>(self, cache: &mut TreeInfo<K, V>, key: &Q) -> LeafNode<K, V>
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -311,7 +310,7 @@ impl<K: Ord, V> InterNode<K, V> {
 
     #[inline]
     pub fn find_leaf_with_cache_smart<Q>(
-        self, cache: &mut PathCache<K, V>, key: &Q, is_seq: &mut bool,
+        self, cache: &mut TreeInfo<K, V>, key: &Q, is_seq: &mut bool,
     ) -> LeafNode<K, V>
     where
         K: Borrow<Q>,
@@ -330,6 +329,43 @@ impl<K: Ord, V> InterNode<K, V> {
                 let leaf = cur.get_child_as_leaf(idx);
                 trace_log!("find_leaf_with_cache got {leaf:?}");
                 return leaf;
+            }
+        }
+    }
+
+    /// Find the first leaf node
+    #[inline]
+    pub fn find_first_leaf(self, mut cache: Option<&mut TreeInfo<K, V>>) -> LeafNode<K, V> {
+        let mut cur = self;
+        let mut height = cur.height();
+        loop {
+            if let Some(_cache) = cache.as_mut() {
+                _cache.push(cur.clone(), 0);
+            }
+            if height > 1 {
+                height -= 1;
+                cur = cur.get_child_as_inter(0);
+            } else {
+                return cur.get_child_as_leaf(0);
+            }
+        }
+    }
+
+    /// Find the last leaf node
+    #[inline]
+    pub fn find_last_leaf(self, mut cache: Option<&mut TreeInfo<K, V>>) -> LeafNode<K, V> {
+        let mut cur = self;
+        let mut height = cur.height();
+        loop {
+            let idx = cur.key_count();
+            if let Some(_cache) = cache.as_mut() {
+                _cache.push(cur.clone(), idx);
+            }
+            if height > 1 {
+                height -= 1;
+                cur = cur.get_child_as_inter(idx);
+            } else {
+                return cur.get_child_as_leaf(idx);
             }
         }
     }
@@ -505,7 +541,7 @@ impl<K: Ord, V> InterNode<K, V> {
 
     #[inline]
     pub fn find_child_branch(
-        &self, height: u32, mut idx: u32, left: bool, mut cache: Option<&mut PathCache<K, V>>,
+        &self, height: u32, mut idx: u32, left: bool, mut cache: Option<&mut TreeInfo<K, V>>,
     ) -> (Self, u32) {
         debug_assert!(height > 0);
         let mut child = self.get_child_as_inter(idx);
