@@ -199,6 +199,20 @@ pub(crate) enum Node<K, V> {
     Leaf(LeafNode<K, V>),
 }
 
+#[cfg(test)]
+impl<K, V> From<LeafNode<K, V>> for Node<K, V> {
+    fn from(node: LeafNode<K, V>) -> Self {
+        Node::<K, V>::Leaf(node)
+    }
+}
+
+#[cfg(test)]
+impl<K, V> From<InterNode<K, V>> for Node<K, V> {
+    fn from(node: InterNode<K, V>) -> Self {
+        Node::<K, V>::Inter(node)
+    }
+}
+
 impl<K, V> fmt::Debug for Node<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -231,6 +245,14 @@ impl<K: Ord, V> Node<K, V> {
     #[inline(always)]
     pub fn root_is_leaf(p: NonNull<NodeHeader>) -> bool {
         p.as_ptr() as usize & NodeHeader::LEAF_MASK > 0
+    }
+
+    #[cfg(test)]
+    pub fn to_root_ptr(&self) -> NonNull<NodeHeader> {
+        match self {
+            Self::Inter(inter) => inter.to_root_ptr(),
+            Self::Leaf(leaf) => leaf.to_root_ptr(),
+        }
     }
 
     #[inline(always)]

@@ -1,7 +1,4 @@
-use super::super::{inter::*, leaf::*, node::*, *};
-use super::{CounterI32, alive_count, reset_alive_count};
-use core::cell::UnsafeCell;
-
+use super::*;
 // --- Forward Peaking & Moving Group ---
 
 #[test]
@@ -268,31 +265,24 @@ fn test_alter_key_boundary_check() {
 
 #[test]
 fn test_alter_key_update_sep_height_2() {
-    unsafe {
-        reset_alive_count();
+    reset_alive_count();
+    {
+        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
         // Construct Root -> [leaf0 | sep1 | leaf1]
-        let mut leaf0 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf1 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf0 = builder.new_leaf();
+        let mut leaf1 = builder.new_leaf();
 
-        leaf0.insert_no_split(CounterI32::from(10), CounterI32::from(100));
-        leaf1.insert_no_split(CounterI32::from(20), CounterI32::from(200));
-        leaf1.insert_no_split(CounterI32::from(30), CounterI32::from(300));
+        builder.insert_leaf(&mut leaf0, CounterI32::from(10), CounterI32::from(100));
+        builder.insert_leaf(&mut leaf1, CounterI32::from(20), CounterI32::from(200));
+        builder.insert_leaf(&mut leaf1, CounterI32::from(30), CounterI32::from(300));
 
-        (*leaf0.brothers()).next = leaf1.get_ptr();
-        (*leaf1.brothers()).prev = leaf0.get_ptr();
-
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut root = builder.new_inter(1);
         root.set_left_ptr(leaf0.get_ptr());
         root.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
 
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 3,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 2,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.clone().into());
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.leaf_count(), 2);
         map.validate();
 
         // Alter key 20 to 25
@@ -304,58 +294,46 @@ fn test_alter_key_update_sep_height_2() {
         map.validate();
 
         drop(map);
-        assert_eq!(alive_count(), 0);
     }
+    assert_eq!(alive_count(), 0);
 }
 
 #[test]
 fn test_alter_key_update_sep_height_3() {
-    unsafe {
-        reset_alive_count();
+    reset_alive_count();
+    {
+        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
         /*
           root (h=2) -> [InterL | sep_mid | InterR]
           InterL (h=1) -> [leaf0 | sep1 | leaf1]
           InterR (h=1) -> [leaf2 | sep3 | leaf3]
         */
-        let mut leaf0 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf2 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf3 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf0 = builder.new_leaf();
+        let mut leaf1 = builder.new_leaf();
+        let mut leaf2 = builder.new_leaf();
+        let mut leaf3 = builder.new_leaf();
 
-        leaf0.insert_no_split(CounterI32::from(10), CounterI32::from(100));
-        leaf1.insert_no_split(CounterI32::from(20), CounterI32::from(200));
-        leaf2.insert_no_split(CounterI32::from(30), CounterI32::from(300));
-        leaf3.insert_no_split(CounterI32::from(40), CounterI32::from(400));
+        builder.insert_leaf(&mut leaf0, CounterI32::from(10), CounterI32::from(100));
+        builder.insert_leaf(&mut leaf1, CounterI32::from(20), CounterI32::from(200));
+        builder.insert_leaf(&mut leaf2, CounterI32::from(30), CounterI32::from(300));
+        builder.insert_leaf(&mut leaf3, CounterI32::from(40), CounterI32::from(400));
 
-        // link leaves
-        (*leaf0.brothers()).next = leaf1.get_ptr();
-        (*leaf1.brothers()).prev = leaf0.get_ptr();
-        (*leaf1.brothers()).next = leaf2.get_ptr();
-        (*leaf2.brothers()).prev = leaf1.get_ptr();
-        (*leaf2.brothers()).next = leaf3.get_ptr();
-        (*leaf3.brothers()).prev = leaf2.get_ptr();
-
-        let mut inter_l = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut inter_l = builder.new_inter(1);
         inter_l.set_left_ptr(leaf0.get_ptr());
         inter_l.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
 
-        let mut inter_r = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut inter_r = builder.new_inter(1);
         inter_r.set_left_ptr(leaf2.get_ptr());
         inter_r.insert_no_split(CounterI32::from(40), leaf3.get_ptr());
 
         // root sep_mid is first key of inter_r (leaf2 first key = 30)
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(inter_l.get_ptr());
         root.insert_no_split(CounterI32::from(30), inter_r.get_ptr());
 
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 4,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 4,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.clone().into());
+        assert_eq!(map.len(), 4);
+        assert_eq!(map.leaf_count(), 4);
         map.validate();
 
         // Alter key 30 (leaf2 first key) to 35
@@ -367,8 +345,8 @@ fn test_alter_key_update_sep_height_3() {
         map.validate();
 
         drop(map);
-        assert_eq!(alive_count(), 0);
     }
+    assert_eq!(alive_count(), 0);
 }
 
 // --- RangeTree Simulator Group ---

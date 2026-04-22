@@ -1,6 +1,6 @@
-use super::super::{inter::*, leaf::*, node::*, *};
-use super::{CounterI32, alive_count, reset_alive_count};
-use core::cell::UnsafeCell;
+use super::*;
+use captains_log::logfn;
+use rstest::rstest;
 
 // =============================================================================
 // Direct handle_inter_underflow Tests
@@ -24,55 +24,58 @@ use core::cell::UnsafeCell;
 /// Key test: Verifies handle_inter_underflow when merging internal_a with right sibling internal_b
 /// causes parent to collapse (loop once).
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_merge_right_height_3_2() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_merge_right_height_3_2(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create leaves for internal_a (target node)
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
+        let mut leaf_2 = builder.new_leaf();
 
         // Create leaves for internal_b (left sibling)
-        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_4 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_3 = builder.new_leaf();
+        let mut leaf_4 = builder.new_leaf();
 
         // Fill leaves with minimal data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
-            leaf_2.insert_no_split(CounterI32::new((10 + i) * 2), CounterI32::new((10 + i) * 10));
-            leaf_3.insert_no_split(CounterI32::new((20 + i) * 2), CounterI32::new((20 + i) * 10));
-            leaf_4.insert_no_split(CounterI32::new((30 + i) * 2), CounterI32::new((30 + i) * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(
+                &mut leaf_2,
+                CounterI32::new((10 + i) * 2),
+                CounterI32::new((10 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_3,
+                CounterI32::new((20 + i) * 2),
+                CounterI32::new((20 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_4,
+                CounterI32::new((30 + i) * 2),
+                CounterI32::new((30 + i) * 10),
+            );
         }
 
         let leaf_1_first = leaf_1.get_keys()[0].clone();
         let leaf_2_first = leaf_2.get_keys()[0].clone();
         let leaf_3_first = leaf_3.get_keys()[0].clone();
 
-        // Link leaves
-        (*leaf_1.brothers()).next = leaf_2.get_ptr();
-        (*leaf_2.brothers()).prev = leaf_1.get_ptr();
-        (*leaf_2.brothers()).next = leaf_3.get_ptr();
-        (*leaf_3.brothers()).prev = leaf_2.get_ptr();
-        (*leaf_3.brothers()).next = leaf_4.get_ptr();
-        (*leaf_4.brothers()).prev = leaf_3.get_ptr();
-
         // Create internal_a (height=1) with key_count=1 (target node)
-        let mut internal_a = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_a = builder.new_inter(1);
         internal_a.set_left_ptr(leaf_1.get_ptr());
         internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (left sibling with space)
-        let mut internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_b = builder.new_inter(1);
         internal_b.set_left_ptr(leaf_3.get_ptr());
         internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create root (height=2) with key_count=1
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(internal_a.get_ptr());
         root.insert_no_split(leaf_3_first, internal_b.get_ptr());
         debug_assert_eq!(root.key_count(), 1);
@@ -81,21 +84,14 @@ fn test_inter_underflow_merge_right_height_3_2() {
         let alive_before = alive_count();
         println!("Alive count before handle_inter_underflow: {}", alive_before);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 12,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 4,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 12);
+        map.validate();
         //map.dump();
         assert_eq!(map.height(), 3);
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_a) from cache
@@ -135,7 +131,7 @@ fn test_inter_underflow_merge_right_height_3_2() {
         //map.dump();
         // height collapse from 3 to 2
         assert_eq!(map.height(), 2);
-        assert_eq!(map.leaf_count, 4);
+        assert_eq!(map.leaf_count(), 4);
         #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
     }
@@ -157,74 +153,70 @@ fn test_inter_underflow_merge_right_height_3_2() {
 /// Key test: Verifies handle_inter_underflow when internal_b merging left sibling (internal_a)
 /// causes parent to callaps
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_merge_left_height_3_2() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_merge_left_height_3_2(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create leaves for internal_a (right sibling)
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
+        let mut leaf_2 = builder.new_leaf();
 
         // Create leaves for internal_b (target node)
-        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_4 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_3 = builder.new_leaf();
+        let mut leaf_4 = builder.new_leaf();
 
         // Fill leaves with minimal data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
-            leaf_2.insert_no_split(CounterI32::new((10 + i) * 2), CounterI32::new((10 + i) * 10));
-            leaf_3.insert_no_split(CounterI32::new((20 + i) * 2), CounterI32::new((20 + i) * 10));
-            leaf_4.insert_no_split(CounterI32::new((30 + i) * 2), CounterI32::new((30 + i) * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(
+                &mut leaf_2,
+                CounterI32::new((10 + i) * 2),
+                CounterI32::new((10 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_3,
+                CounterI32::new((20 + i) * 2),
+                CounterI32::new((20 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_4,
+                CounterI32::new((30 + i) * 2),
+                CounterI32::new((30 + i) * 10),
+            );
         }
 
         let _leaf_1_first = leaf_1.get_keys()[0].clone();
         let leaf_2_first = leaf_2.get_keys()[0].clone();
         let leaf_3_first = leaf_3.get_keys()[0].clone();
 
-        // Link leaves
-        (*leaf_1.brothers()).next = leaf_2.get_ptr();
-        (*leaf_2.brothers()).prev = leaf_1.get_ptr();
-        (*leaf_2.brothers()).next = leaf_3.get_ptr();
-        (*leaf_3.brothers()).prev = leaf_2.get_ptr();
-        (*leaf_3.brothers()).next = leaf_4.get_ptr();
-        (*leaf_4.brothers()).prev = leaf_3.get_ptr();
-
         // Create internal_a (height=1) with key_count=1 (right sibling with space)
-        let mut internal_a = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_a = builder.new_inter(1);
         internal_a.set_left_ptr(leaf_1.get_ptr());
         internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (target node)
-        let mut internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_b = builder.new_inter(1);
         internal_b.set_left_ptr(leaf_3.get_ptr());
         internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create root (height=2) with key_count=1
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(internal_a.get_ptr());
         root.insert_no_split(leaf_3_first, internal_b.get_ptr());
         debug_assert_eq!(root.key_count(), 1);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 12,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 4,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 12);
+        map.validate();
         assert_eq!(map.height(), 3);
         //map.dump();
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         // Use a reference to leaf_3's first key for lookup
         let leaf_3_lookup = &leaf_3.get_keys()[0];
         let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, leaf_3_lookup);
@@ -266,7 +258,7 @@ fn test_inter_underflow_merge_left_height_3_2() {
         // height collapse from 3 to 2
         assert_eq!(map.height(), 2);
 
-        assert_eq!(map.leaf_count, 4);
+        assert_eq!(map.leaf_count(), 4);
         #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
     }
@@ -284,29 +276,48 @@ fn test_inter_underflow_merge_left_height_3_2() {
 /// Key test: Verifies handle_inter_underflow when merging internal_a with left sibling (internal_b)
 /// but parent has enough keys to not need merging (no internal loop).
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_merge_right_height_3() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_merge_right_height_3(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create leaves for all internal nodes
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_4 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_5 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_6 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
+        let mut leaf_2 = builder.new_leaf();
+        let mut leaf_3 = builder.new_leaf();
+        let mut leaf_4 = builder.new_leaf();
+        let mut leaf_5 = builder.new_leaf();
+        let mut leaf_6 = builder.new_leaf();
 
         // Fill leaves with minimal data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
-            leaf_2.insert_no_split(CounterI32::new((10 + i) * 2), CounterI32::new((10 + i) * 10));
-            leaf_3.insert_no_split(CounterI32::new((20 + i) * 2), CounterI32::new((20 + i) * 10));
-            leaf_4.insert_no_split(CounterI32::new((30 + i) * 2), CounterI32::new((30 + i) * 10));
-            leaf_5.insert_no_split(CounterI32::new((40 + i) * 2), CounterI32::new((40 + i) * 10));
-            leaf_6.insert_no_split(CounterI32::new((50 + i) * 2), CounterI32::new((50 + i) * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(
+                &mut leaf_2,
+                CounterI32::new((10 + i) * 2),
+                CounterI32::new((10 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_3,
+                CounterI32::new((20 + i) * 2),
+                CounterI32::new((20 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_4,
+                CounterI32::new((30 + i) * 2),
+                CounterI32::new((30 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_5,
+                CounterI32::new((40 + i) * 2),
+                CounterI32::new((40 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_6,
+                CounterI32::new((50 + i) * 2),
+                CounterI32::new((50 + i) * 10),
+            );
         }
 
         let _leaf_1_first = leaf_1.get_keys()[0].clone();
@@ -316,58 +327,39 @@ fn test_inter_underflow_merge_right_height_3() {
         let leaf_5_first = leaf_5.get_keys()[0].clone();
         let leaf_6_first = leaf_6.get_keys()[0].clone();
 
-        // Link leaves
-        (*leaf_1.brothers()).next = leaf_2.get_ptr();
-        (*leaf_2.brothers()).prev = leaf_1.get_ptr();
-        (*leaf_2.brothers()).next = leaf_3.get_ptr();
-        (*leaf_3.brothers()).prev = leaf_2.get_ptr();
-        (*leaf_3.brothers()).next = leaf_4.get_ptr();
-        (*leaf_4.brothers()).prev = leaf_3.get_ptr();
-        (*leaf_4.brothers()).next = leaf_5.get_ptr();
-        (*leaf_5.brothers()).prev = leaf_4.get_ptr();
-        (*leaf_5.brothers()).next = leaf_6.get_ptr();
-        (*leaf_6.brothers()).prev = leaf_5.get_ptr();
-
         // Create internal_a (height=1) with key_count=1 (target node)
-        let mut internal_a = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_a = builder.new_inter(1);
         internal_a.set_left_ptr(leaf_1.get_ptr());
         internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (left sibling with space)
-        let mut internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_b = builder.new_inter(1);
         internal_b.set_left_ptr(leaf_3.get_ptr());
         internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create internal_c (height=1) with key_count=1
-        let mut internal_c = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_c = builder.new_inter(1);
         internal_c.set_left_ptr(leaf_5.get_ptr());
         internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr());
         debug_assert_eq!(internal_c.key_count(), 1);
 
         // Create root (height=2) with key_count=2
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(internal_a.get_ptr());
         root.insert_no_split(leaf_3_first, internal_b.get_ptr());
         root.insert_no_split(leaf_5_first, internal_c.get_ptr());
         debug_assert_eq!(root.key_count(), 2);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 18,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 6,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 18);
+        map.validate();
         assert_eq!(map.height(), 3, "Tree height should remain 3");
         // map.dump();
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         let _ =
             map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1.get_keys()[0]);
 
@@ -414,7 +406,7 @@ fn test_inter_underflow_merge_right_height_3() {
                 "Key {} should exist",
                 (50 + i) * 2
             );
-            assert_eq!(map.leaf_count, 6);
+            assert_eq!(map.leaf_count(), 6);
             #[cfg(feature = "trace_log")]
             assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
         }
@@ -433,29 +425,48 @@ fn test_inter_underflow_merge_right_height_3() {
 /// Key test: Verifies handle_inter_underflow when merging internal_b with left sibling
 /// but parent has enough keys to not need merging (no internal loop).
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_merge_left_height_3() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_merge_left_height_3(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create leaves for all internal nodes
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_4 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_5 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_6 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
+        let mut leaf_2 = builder.new_leaf();
+        let mut leaf_3 = builder.new_leaf();
+        let mut leaf_4 = builder.new_leaf();
+        let mut leaf_5 = builder.new_leaf();
+        let mut leaf_6 = builder.new_leaf();
 
         // Fill leaves with minimal data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
-            leaf_2.insert_no_split(CounterI32::new((10 + i) * 2), CounterI32::new((10 + i) * 10));
-            leaf_3.insert_no_split(CounterI32::new((20 + i) * 2), CounterI32::new((20 + i) * 10));
-            leaf_4.insert_no_split(CounterI32::new((30 + i) * 2), CounterI32::new((30 + i) * 10));
-            leaf_5.insert_no_split(CounterI32::new((40 + i) * 2), CounterI32::new((40 + i) * 10));
-            leaf_6.insert_no_split(CounterI32::new((50 + i) * 2), CounterI32::new((50 + i) * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(
+                &mut leaf_2,
+                CounterI32::new((10 + i) * 2),
+                CounterI32::new((10 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_3,
+                CounterI32::new((20 + i) * 2),
+                CounterI32::new((20 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_4,
+                CounterI32::new((30 + i) * 2),
+                CounterI32::new((30 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_5,
+                CounterI32::new((40 + i) * 2),
+                CounterI32::new((40 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_6,
+                CounterI32::new((50 + i) * 2),
+                CounterI32::new((50 + i) * 10),
+            );
         }
 
         let _leaf_1_first = leaf_1.get_keys()[0].clone();
@@ -465,58 +476,39 @@ fn test_inter_underflow_merge_left_height_3() {
         let leaf_5_first = leaf_5.get_keys()[0].clone();
         let leaf_6_first = leaf_6.get_keys()[0].clone();
 
-        // Link leaves
-        (*leaf_1.brothers()).next = leaf_2.get_ptr();
-        (*leaf_2.brothers()).prev = leaf_1.get_ptr();
-        (*leaf_2.brothers()).next = leaf_3.get_ptr();
-        (*leaf_3.brothers()).prev = leaf_2.get_ptr();
-        (*leaf_3.brothers()).next = leaf_4.get_ptr();
-        (*leaf_4.brothers()).prev = leaf_3.get_ptr();
-        (*leaf_4.brothers()).next = leaf_5.get_ptr();
-        (*leaf_5.brothers()).prev = leaf_4.get_ptr();
-        (*leaf_5.brothers()).next = leaf_6.get_ptr();
-        (*leaf_6.brothers()).prev = leaf_5.get_ptr();
-
         // Create internal_a (height=1) with key_count=1
-        let mut internal_a = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_a = builder.new_inter(1);
         internal_a.set_left_ptr(leaf_1.get_ptr());
         internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (target node)
-        let mut internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_b = builder.new_inter(1);
         internal_b.set_left_ptr(leaf_3.get_ptr());
         internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create internal_c (height=1) with key_count=1 (right sibling with space)
-        let mut internal_c = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut internal_c = builder.new_inter(1);
         internal_c.set_left_ptr(leaf_5.get_ptr());
         internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr());
         debug_assert_eq!(internal_c.key_count(), 1);
 
         // Create root (height=2) with key_count=2
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(internal_a.get_ptr());
         root.insert_no_split(leaf_3_first, internal_b.get_ptr());
         root.insert_no_split(leaf_5_first, internal_c.get_ptr());
         debug_assert_eq!(root.key_count(), 2);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 18,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 6,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 18);
+        map.validate();
         //map.dump();
         assert_eq!(map.height(), 3, "Tree height should remain 3");
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         // Use a reference to leaf_3's first key for lookup
         let leaf_3_lookup = &leaf_3.get_keys()[0];
         let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, leaf_3_lookup);
@@ -565,7 +557,7 @@ fn test_inter_underflow_merge_left_height_3() {
                 (50 + i) * 2
             );
 
-            assert_eq!(map.leaf_count, 6);
+            assert_eq!(map.leaf_count(), 6);
             #[cfg(feature = "trace_log")]
             assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
         }
@@ -589,52 +581,45 @@ fn test_inter_underflow_merge_left_height_3() {
 /// Key test: Verifies handle_inter_underflow when a node has only 1 child
 /// and all ancestors also have only 1 child, causing root to be replaced.
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_root_becomes_leaf() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_root_becomes_leaf(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create single leaf
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
 
         // Fill leaf with data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
         }
 
         let leaf_1_first = leaf_1.get_keys()[0].clone();
 
         // Create internal_b (height=1) with key_count=0 (only left child)
-        let internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*internal_b.child_ptr(0)) = leaf_1.get_ptr();
+        let mut internal_b = builder.new_inter(1);
+        internal_b.set_left_ptr(leaf_1.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 0);
 
         // Create internal_a (height=2) with key_count=0 (only left child)
-        let internal_a = InterNode::<CounterI32, CounterI32>::alloc(2);
-        (*internal_a.child_ptr(0)) = internal_b.get_ptr();
+        let mut internal_a = builder.new_inter(2);
+        internal_a.set_left_ptr(internal_b.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 0);
 
         // Create root (height=3) with key_count=0 (only left child)
-        let root = InterNode::<CounterI32, CounterI32>::alloc(3);
-        (*root.child_ptr(0)) = internal_a.get_ptr();
+        let mut root = builder.new_inter(3);
+        root.set_left_ptr(internal_a.get_ptr());
         debug_assert_eq!(root.key_count(), 0);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 3,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 1,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 3);
+        map.validate();
+        assert_eq!(map.height(), 4);
         // map.dump();
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_b) from cache
@@ -657,7 +642,7 @@ fn test_inter_underflow_root_becomes_leaf() {
         for i in 0..3 {
             assert!(map.contains_key(&CounterI32::new(i * 2)), "Key {} should exist", i * 2);
         }
-        assert_eq!(map.leaf_count, 1);
+        assert_eq!(map.leaf_count(), 1);
         #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, 0);
     }
@@ -679,72 +664,66 @@ fn test_inter_underflow_root_becomes_leaf() {
 /// one leaf child. This tests the edge case where InterNodes have 0 keys.
 /// NOTE: Nothing change afterwards.
 /// Uses CounterI32 to verify key memory management.
-#[test]
-fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
+#[logfn]
+#[rstest]
+fn test_inter_underflow_single_leaf_inter_nodes_height_3(setup_log: ()) {
     reset_alive_count();
-    unsafe {
-        let _inter_cap = InterNode::<CounterI32, CounterI32>::cap();
-        let _leaf_cap = LeafNode::<CounterI32, CounterI32>::cap();
-
+    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    {
         // Create 3 leaves (each InterNode will have exactly one leaf)
-        let mut leaf_1 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_2 = LeafNode::<CounterI32, CounterI32>::alloc();
-        let mut leaf_3 = LeafNode::<CounterI32, CounterI32>::alloc();
+        let mut leaf_1 = builder.new_leaf();
+        let mut leaf_2 = builder.new_leaf();
+        let mut leaf_3 = builder.new_leaf();
 
         // Fill leaves with minimal data
         for i in 0..3 {
-            leaf_1.insert_no_split(CounterI32::new(i * 2), CounterI32::new(i * 10));
-            leaf_2.insert_no_split(CounterI32::new((10 + i) * 2), CounterI32::new((10 + i) * 10));
-            leaf_3.insert_no_split(CounterI32::new((20 + i) * 2), CounterI32::new((20 + i) * 10));
+            builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
+            builder.insert_leaf(
+                &mut leaf_2,
+                CounterI32::new((10 + i) * 2),
+                CounterI32::new((10 + i) * 10),
+            );
+            builder.insert_leaf(
+                &mut leaf_3,
+                CounterI32::new((20 + i) * 2),
+                CounterI32::new((20 + i) * 10),
+            );
         }
 
         let leaf_1_first = leaf_1.get_keys()[0].clone();
         let leaf_2_first = leaf_2.get_keys()[0].clone();
         let leaf_3_first = leaf_3.get_keys()[0].clone();
 
-        // Link leaves
-        (*leaf_1.brothers()).next = leaf_2.get_ptr();
-        (*leaf_2.brothers()).prev = leaf_1.get_ptr();
-        (*leaf_2.brothers()).next = leaf_3.get_ptr();
-        (*leaf_3.brothers()).prev = leaf_2.get_ptr();
-
         // Create internal_a (height=1) with 0 keys, only left child (target node)
-        let internal_a = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*internal_a.child_ptr(0)) = leaf_1.get_ptr();
+        let mut internal_a = builder.new_inter(1);
+        internal_a.set_left_ptr(leaf_1.get_ptr());
         debug_assert_eq!(internal_a.key_count(), 0);
 
         // Create internal_b (height=1) with 0 keys, only left child (left sibling)
-        let internal_b = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*internal_b.child_ptr(0)) = leaf_2.get_ptr();
+        let mut internal_b = builder.new_inter(1);
+        internal_b.set_left_ptr(leaf_2.get_ptr());
         debug_assert_eq!(internal_b.key_count(), 0);
 
         // Create internal_c (height=1) with 0 keys, only left child
-        let internal_c = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*internal_c.child_ptr(0)) = leaf_3.get_ptr();
+        let mut internal_c = builder.new_inter(1);
+        internal_c.set_left_ptr(leaf_3.get_ptr());
         debug_assert_eq!(internal_c.key_count(), 0);
 
         // Create root (height=2) with 2 keys
-        let mut root = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut root = builder.new_inter(2);
         root.set_left_ptr(internal_a.get_ptr());
         root.insert_no_split(leaf_2_first, internal_b.get_ptr());
         root.insert_no_split(leaf_3_first, internal_c.get_ptr());
         debug_assert_eq!(root.key_count(), 2);
 
-        // Create BTreeMap
-        let mut map = BTreeMap::<CounterI32, CounterI32> {
-            root: Some(root.to_root_ptr()),
-            len: 9,
-            cache: UnsafeCell::new(TreeInfo::new()),
-            leaf_count: 3,
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
-        };
+        let mut map = builder.build(root.into());
+        assert_eq!(map.len(), 9);
+        map.validate();
         assert_eq!(map.height(), 3, "Tree height should be 3");
         // map.dump();
 
         // Use find_leaf_with_cache to populate cache
-        let cache = map.get_cache();
-        cache.clear();
+        let cache = map.clear_cache();
         let _ = map.get_root_unwrap().into_inter().find_leaf_with_cache(cache, &leaf_1_first);
 
         // Pop height=1 InterNode (internal_a) from cache
@@ -782,7 +761,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3() {
                 (20 + i) * 2
             );
         }
-        assert_eq!(map.leaf_count, 3);
+        assert_eq!(map.leaf_count(), 3);
         #[cfg(feature = "trace_log")]
         assert_eq!(map.triggers, 0);
     }

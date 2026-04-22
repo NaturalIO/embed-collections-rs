@@ -80,6 +80,7 @@ which lead to the first InterNode allocation.
 ## Future ideas
 
 - dynamically incress InterNode size, or variable size
+
 */
 
 use core::borrow::Borrow;
