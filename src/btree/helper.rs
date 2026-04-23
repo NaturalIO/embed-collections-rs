@@ -340,8 +340,8 @@ impl<K: Ord, V> TreeInfo<K, V> {
     }
 
     #[inline(always)]
-    pub fn peak_next(&self) -> Option<(InterNode<K, V>, u32)> {
-        debug_assert_eq!(self.header().cache_pos, 0);
+    pub fn peak_parent(&self) -> Option<(InterNode<K, V>, u32)> {
+        self.assert_center();
         let (parent, idx) = self._last()?;
         Some((parent.clone(), idx))
     }
@@ -349,11 +349,11 @@ impl<K: Ord, V> TreeInfo<K, V> {
     /// iter backward through cache internal stack, without changing the cache,
     /// return None if reaches root
     #[inline(always)]
-    pub fn peak_ancenstor<FC>(&self, cond: FC) -> Option<(InterNode<K, V>, u32)>
+    pub fn peak_ancenstor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
     where
         FC: Fn(&InterNode<K, V>, u32) -> bool,
     {
-        self.assert_center();
+        self.fix_center();
         let iter = self._iter();
         // For dropping scenario, cannot move further, reach the end at root
         for (grand_parent, idx) in iter {
@@ -423,13 +423,17 @@ impl<K: Ord, V> TreeInfo<K, V> {
         }
     }
 
-    #[cfg(test)]
+    #[inline(always)]
     pub fn fix_center(&mut self) {
         let pos = self.header().cache_pos;
-        if pos < 0 {
-            self._fix_center_from_left();
+        if pos == 0 { // most frequent path
         } else if pos > 0 {
             self._fix_center_from_right();
+            debug_assert_eq!(self.header().cache_pos, 0);
+        } else {
+            debug_assert!(pos < 0);
+            self._fix_center_from_left();
+            debug_assert_eq!(self.header().cache_pos, 0);
         }
     }
 

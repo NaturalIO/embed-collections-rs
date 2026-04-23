@@ -280,11 +280,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     #[inline(always)]
-    fn get_info(&self) -> &TreeInfo<K, V> {
-        self._get_info().as_ref().unwrap()
-    }
-
-    #[inline(always)]
     fn clear_cache(&self) -> &mut TreeInfo<K, V> {
         let cache = self.get_info_mut();
         cache.clear();
@@ -553,11 +548,11 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     fn update_ancestor_sep_key<const MOVE: bool>(&mut self, sep_key: K) {
         // if idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
         // split key
+        let cache = self.get_info_mut();
         let ret = if MOVE {
-            self.get_info_mut()
-                .move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
+            cache.move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
         } else {
-            self.get_info().peak_ancenstor(|_node, idx| -> bool { idx > 0 })
+            cache.peak_ancenstor(|_node, idx| -> bool { idx > 0 })
         };
         if let Some((parent, parent_idx)) = ret {
             trace_log!("update_ancestor_sep_key move={MOVE} at {parent:?}:{}", parent_idx - 1);
@@ -673,7 +668,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 return Ok(flags);
             } else {
                 // Parent is full, try to borrow space from sibling through grand_parent
-                if let Some((mut grand, grand_idx)) = info.peak_next() {
+                if let Some((mut grand, grand_idx)) = info.peak_parent() {
                     // Try to borrow from left sibling of parent
                     if grand_idx > 0 {
                         let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
@@ -889,7 +884,6 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         &mut self, node: &mut InterNode<K, V>, delete_idx: u32, right_sep: Option<K>,
         _no_right: bool,
     ) {
-        self.get_info().assert_center();
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
         if delete_idx == node.key_count() {
             trace_log!("remove_child_from_inter {node:?}:{delete_idx} last");
@@ -900,10 +894,9 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // delete the last child of this node
             node.remove_last_child();
             if let Some(key) = right_sep
-                && let Some((grand_parent, grand_idx)) =
-                    self.get_info().peak_ancenstor(|_node: &InterNode<K, V>, idx: u32| -> bool {
-                        _node.key_count() > idx
-                    })
+                && let Some((grand_parent, grand_idx)) = self.get_info_mut().peak_ancenstor(
+                    |_node: &InterNode<K, V>, idx: u32| -> bool { _node.key_count() > idx },
+                )
             {
                 #[cfg(all(test, feature = "trace_log"))]
                 {

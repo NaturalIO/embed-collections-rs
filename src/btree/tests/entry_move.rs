@@ -435,8 +435,7 @@ fn test_vacant_backward_at_leaf_start_height1() {
 // --- Alter Key Group ---
 
 #[test]
-fn test_alter_key_boundary_check() {
-    reset_alive_count();
+fn test_alter_key_height_1() {
     let mut map = BTreeMap::new();
     map.insert(10, 100);
     map.insert(20, 200);
@@ -454,6 +453,18 @@ fn test_alter_key_boundary_check() {
         // Safe update
         assert!(oe.alter_key(25).is_ok());
         assert_eq!(*oe.key(), 25);
+    } else {
+        unreachable!();
+    }
+    if let Entry::Occupied(mut oe) = map.entry(10) {
+        // Safe update
+        assert!(oe.alter_key(11).is_ok());
+        assert_eq!(*oe.key(), 11);
+        assert_eq!(oe.get(), &100);
+        assert!(map.get(&10).is_none());
+        assert_eq!(map.get(&11), Some(&100));
+    } else {
+        unreachable!();
     }
 }
 
@@ -486,6 +497,51 @@ fn test_alter_key_update_sep_height_2() {
             assert_eq!(root.get_keys()[0], CounterI32::from(25));
         }
         map.validate();
+
+        drop(map);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[test]
+fn test_alter_key_after_move_update_sep_height_2() {
+    reset_alive_count();
+    {
+        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+        // Construct Root -> [leaf0 | sep1 | leaf1 | sep2 | leaf2]
+        let mut leaf0 = builder.new_leaf();
+        let mut leaf1 = builder.new_leaf();
+        let mut leaf2 = builder.new_leaf();
+
+        builder.insert_leaf(&mut leaf0, CounterI32::from(10), CounterI32::from(100));
+        builder.insert_leaf(&mut leaf1, CounterI32::from(20), CounterI32::from(200));
+        builder.insert_leaf(&mut leaf2, CounterI32::from(30), CounterI32::from(300));
+
+        let mut root = builder.new_inter(1);
+        root.set_left_ptr(leaf0.get_ptr());
+        root.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
+        root.insert_no_split(CounterI32::from(30), leaf2.get_ptr());
+
+        let mut map = builder.build(root.clone().into());
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.leaf_count(), 3);
+        assert_eq!(map.inter_count(), 1);
+        map.validate();
+
+        // Alter key 20 to 25
+        if let Entry::Occupied(mut oe) = map.entry(CounterI32::from(30)) {
+            oe = oe.move_backward().expect("can move");
+            assert_eq!(oe.key(), &20);
+            assert_eq!(oe.get(), &200);
+            assert!(oe.alter_key(CounterI32::from(25)).is_ok());
+            oe.validate_cache_path();
+            // separator in root MUST be updated!
+            assert_eq!(root.get_keys()[0], CounterI32::from(25));
+        } else {
+            unreachable!();
+        }
+        map.validate();
+        assert_eq!(map.get(&25), Some(&CounterI32::from(200)));
 
         drop(map);
     }
