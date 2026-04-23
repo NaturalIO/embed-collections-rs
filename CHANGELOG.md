@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [0.8.3] - 2026-04-24
+## [0.8.4] - 2026-04-24
+
+### Fixed
+
+- btree: Fix alter_key() when:
+  - TreeInfo may not exist (height=1)
+  - alter_key should fix cache position to the center (for peak_ancestor)
+
+## [0.8.3] - 2026-04-24 (yanked)
 
 ### Fixed
 
