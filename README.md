@@ -49,12 +49,12 @@ It's a cache aware b+tree:
 - Smart optimization for sequential insert
 - Faster iteration and teardown
 - Key type needs `Clone`
-- Specially API:
+- Special API:
   - Peak and move to previous/next entry.
   - Alter key of an OccupiedEntry.
   - Batch remove with range.
 
-Comparing to std::collections::btree (as of rust 1.94):
+Compared to std::collections::btree (as of rust 1.94):
 - The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
 - The std impl is optimised for point lookup,
 - The std impl has fixed Cap=11, size is 288B for InterNode and 192B for LeafNode.
