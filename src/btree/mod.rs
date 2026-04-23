@@ -189,6 +189,17 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         if let Some(info) = self._get_info().as_ref() { info.leaf_count() } else { 1 }
     }
 
+    /// Return the number of inter nodes
+    #[inline(always)]
+    pub fn inter_count(&self) -> usize {
+        if let Some(info) = self._get_info().as_ref() { info.inter_count() as usize } else { 0 }
+    }
+
+    #[inline]
+    pub fn memory_used(&self) -> usize {
+        (self.leaf_count() + self.inter_count()) * NODE_SIZE
+    }
+
     #[cfg(all(test, feature = "std", feature = "trace_log"))]
     pub fn print_trigger_flags(&self) {
         let mut s = String::from("");

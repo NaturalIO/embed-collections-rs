@@ -61,6 +61,7 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
 
         let mut map = builder.build(root.into());
         assert_eq!(map.len(), (2 * min_count + leaf_cap) as usize);
+        assert_eq!(map.inter_count(), 1);
         map.validate();
 
         // Record the key that will remain in middle after removals
@@ -641,6 +642,7 @@ fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
         let mut map = builder.build(root.into());
         assert_eq!(map.len(), (4 * min_count) as usize);
         map.validate();
+        assert_eq!(map.inter_count(), 3);
         assert_eq!(map.height(), 3);
         //map.dump();
 

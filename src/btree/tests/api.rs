@@ -269,12 +269,16 @@ fn test_last_entry_remove() {
 
 #[test]
 fn test_large_tree_operations() {
-    let mut map = BTreeMap::new();
+    let mut map = BTreeMap::<u32, u32>::new();
     // Insert enough elements to trigger splits (leaf capacity is typically small)
     for i in 0..1000 {
         map.insert(i, i * 2);
     }
     map.validate();
+    println!("height: {} inter: {}, leaf: {}", map.height(), map.inter_count(), map.leaf_count());
+    assert!(map.inter_count() > 0);
+    println!("fill ratio: {}", map.get_fill_ratio());
+    println!("memory: {}", map.memory_used());
 
     // Test first_key_value and last_key_value
     assert_eq!(map.first_key_value(), Some((&0, &0)));
