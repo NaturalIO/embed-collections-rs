@@ -13,7 +13,7 @@ This crate provides two categories:
     - [`Various`](https://docs.rs/embed-collections/latest/embed_collections/various/index.html): For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
     - [`BTreeMap`](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
 
-- Intrusive collection
+- Intrusive collections:
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
     - [`dlist`](https://docs.rs/embed-collections/latest/embed_collections/dlist/index.html): Intrusive Doubly Linked List (Queue / Stack).
     - [`slist`](https://docs.rs/embed-collections/latest/embed_collections/slist/index.html): Intrusive Singly Linked List ( Queue / stack).
@@ -50,8 +50,8 @@ It's a cache aware b+tree:
 - Faster iteration and teardown
 - Key type needs `Clone`
 - Specially API:
-  - peak and move to previous/next entry.
-  - alter key of an OccupiedEntry.
+  - Peak and move to previous/next entry.
+  - Alter key of an OccupiedEntry.
   - Batch remove with range.
 
 Comparing to std::collections::btree (as of rust 1.94):
