@@ -224,6 +224,11 @@ impl<K: Ord, V> TreeInfo<K, V> {
     }
 
     #[inline(always)]
+    pub fn inter_count(&self) -> u32 {
+        self.header().inter_count
+    }
+
+    #[inline(always)]
     pub fn inc_inter_count(&mut self) {
         self.header_mut().inter_count += 1;
     }
@@ -418,6 +423,16 @@ impl<K: Ord, V> TreeInfo<K, V> {
         }
     }
 
+    #[cfg(test)]
+    pub fn fix_center(&mut self) {
+        let pos = self.header().cache_pos;
+        if pos < 0 {
+            self._fix_center_from_left();
+        } else if pos > 0 {
+            self._fix_center_from_right();
+        }
+    }
+
     #[inline(always)]
     pub fn push(&mut self, inter: InterNode<K, V>, idx: u32) {
         self.assert_center();
@@ -471,6 +486,15 @@ impl<K: Ord, V> TreeInfo<K, V> {
         let header = self.header_mut();
         header.cache_pos -= 1;
         self._move_left_and_pop(post_callback)
+    }
+
+    #[cfg(test)]
+    pub fn to_vec(&self) -> Vec<(InterNode<K, V>, u32)> {
+        let mut v = Vec::new();
+        for (parent, idx) in self._iter() {
+            v.push((parent.clone(), idx));
+        }
+        v
     }
 }
 
