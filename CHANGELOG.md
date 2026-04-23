@@ -15,7 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [0.8.2] - 2026-04-19
+## [0.8.3] - 2026-04-24
+
+### Fixed
+
+- btree: Fix entry remove following move_forward/backward (will broken tree structure)
+
+### Changed
+
+- btree: Reduce struct size to 24B (the same with std)
+
+- btree: Smart optimization for sequential & random insertion
+
+### Added
+
+- btree: expose leaf_count() & inter_count() and memory_used()
+
+## [0.8.2] - 2026-04-19 (yanked)
 
 ### Added
 
@@ -27,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - btree: Enhance search speed (insert/get)
 
-## [0.8.1] - 2026-04-19
+## [0.8.1] - 2026-04-19 (yanked)
 
 ### Changed
 
@@ -37,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - btree: Fix doc link
 
-## [0.8.0] - 2026-04-19
+## [0.8.0] - 2026-04-19 (yanked)
 
 ### Added
 
