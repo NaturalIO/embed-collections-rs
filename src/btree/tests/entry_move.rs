@@ -2,7 +2,119 @@ use super::*;
 // --- Forward Peaking & Moving Group ---
 
 #[test]
-fn test_occupied_forward_same_leaf() {
+fn test_occupied_move_forward_height_2() {
+    let mut builder = TreeBuilder::<u32, u32>::default();
+    let leaf_cap = builder.leaf_cap();
+    // Construct Root -> [leaf0 | sep1 | leaf1]
+    let mut leaf0 = builder.new_leaf();
+    let mut leaf1 = builder.new_leaf();
+    for i in 0..leaf_cap {
+        builder.insert_leaf(&mut leaf0, i * 2, i * 10);
+    }
+    builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let mut map = builder.build(root.into());
+    assert_eq!(map.len(), leaf_cap as usize + 1);
+    assert_eq!(map.leaf_count(), 2);
+    assert_eq!(map.inter_count(), 1);
+    map.validate();
+
+    if let Entry::Occupied(mut ent) = map.entry(0) {
+        ent.validate_cache_path();
+        assert_eq!(ent.get(), &0);
+
+        assert_eq!(ent.peak_forward(), Some((&2, &10)));
+        ent = ent.move_forward().expect("can move");
+        assert_eq!(ent.key(), &2);
+        assert_eq!(ent.get(), &10);
+        ent.validate_cache_path();
+        // multi move delay PathCache adjustment
+        for _ in 1..(leaf_cap - 1) {
+            ent = ent.move_forward().expect("can move");
+        }
+        let leaf0_last = leaf_cap - 1;
+        assert_eq!(ent.key(), &(leaf0_last * 2));
+        assert_eq!(ent.get(), &(leaf0_last * 10));
+        ent.validate_cache_path();
+
+        // next leaf
+        assert_eq!(ent.peak_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
+        ent = ent.move_forward().expect("can move");
+        assert_eq!(ent.key(), &(leaf_cap * 2));
+        assert_eq!(ent.get(), &(leaf_cap * 10));
+        ent.validate_cache_path();
+
+        // last
+        assert_eq!(ent.peak_forward(), None);
+        ent = ent.move_forward().unwrap_err();
+        assert_eq!(ent.key(), &(leaf_cap * 2));
+        assert_eq!(ent.get(), &(leaf_cap * 10));
+        ent.validate_cache_path();
+    } else {
+        unreachable!("0 should exist");
+    }
+}
+
+#[test]
+fn test_occupied_move_backward_height_2() {
+    let mut builder = TreeBuilder::<u32, u32>::default();
+    let leaf_cap = builder.leaf_cap();
+    // Construct Root -> [leaf0 | sep1 | leaf1]
+    let mut leaf0 = builder.new_leaf();
+    let mut leaf1 = builder.new_leaf();
+    for i in 0..leaf_cap {
+        builder.insert_leaf(&mut leaf0, i * 2, i * 10);
+    }
+    builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let mut map = builder.build(root.into());
+    assert_eq!(map.len(), leaf_cap as usize + 1);
+    assert_eq!(map.leaf_count(), 2);
+    assert_eq!(map.inter_count(), 1);
+    map.validate();
+
+    if let Entry::Occupied(mut ent) = map.entry(leaf_cap * 2) {
+        ent.validate_cache_path();
+        assert_eq!(ent.key(), &(leaf_cap * 2));
+        assert_eq!(ent.get(), &(leaf_cap * 10));
+        // move cross leaf
+        let leaf0_last = leaf_cap - 1;
+        assert_eq!(ent.peak_backward(), Some((&(leaf0_last * 2), &(leaf0_last * 10))));
+        ent = ent.move_backward().expect("can move");
+        assert_eq!(ent.key(), &(leaf0_last * 2));
+        assert_eq!(ent.get(), &(leaf0_last * 10));
+        ent.validate_cache_path();
+
+        // move adjacent
+
+        let prev = leaf_cap - 2;
+        assert_eq!(ent.peak_backward(), Some((&(prev * 2), &(prev * 10))));
+        ent = ent.move_backward().expect("can move");
+        assert_eq!(ent.key(), &(prev * 2));
+        assert_eq!(ent.get(), &(prev * 10));
+        ent.validate_cache_path();
+
+        // multi move delay PathCache adjustment
+        for _ in 0..(leaf_cap - 2) {
+            ent = ent.move_backward().expect("can move");
+        }
+        assert_eq!(ent.key(), &0);
+        assert_eq!(ent.get(), &0);
+        ent.validate_cache_path();
+
+        // first
+        assert_eq!(ent.peak_backward(), None);
+        ent = ent.move_backward().unwrap_err();
+        assert_eq!(ent.key(), &0);
+        ent.validate_cache_path();
+        assert_eq!(ent.get(), &0);
+    } else {
+        unreachable!("{leaf_cap} should exist");
+    }
+}
+
+#[test]
+fn test_occupied_forward_same_leaf_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     map.insert(10i32, 100i32);
@@ -28,7 +140,7 @@ fn test_occupied_forward_same_leaf() {
 }
 
 #[test]
-fn test_occupied_forward_cross_leaf() {
+fn test_occupied_forward_cross_leaf_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -54,7 +166,127 @@ fn test_occupied_forward_cross_leaf() {
 }
 
 #[test]
-fn test_vacant_forward_point_to_element() {
+fn test_vacent_move_forward_height_2() {
+    let mut builder = TreeBuilder::<u32, u32>::default();
+    let leaf_cap = builder.leaf_cap();
+    // Construct Root -> [leaf0 | sep1 | leaf1]
+    let mut leaf0 = builder.new_leaf();
+    let mut leaf1 = builder.new_leaf();
+    for i in 0..leaf_cap {
+        builder.insert_leaf(&mut leaf0, i * 2, i * 10);
+    }
+    builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let mut map = builder.build(root.into());
+    assert_eq!(map.len(), leaf_cap as usize + 1);
+    assert_eq!(map.leaf_count(), 2);
+    assert_eq!(map.inter_count(), 1);
+    map.validate();
+
+    if let Entry::Vacant(ent) = map.entry(1) {
+        assert_eq!(ent.key(), &1);
+        assert_eq!(ent.idx, 1);
+
+        // adjacent
+        assert_eq!(ent.peak_forward(), Some((&2, &10)));
+        let o_ent = ent.move_forward().expect("can move");
+        assert_eq!(o_ent.key(), &2);
+        assert_eq!(o_ent.get(), &10);
+        o_ent.validate_cache_path();
+    } else {
+        unreachable!("should not exist");
+    }
+
+    let bound_key = (leaf_cap - 1) * 2 + 1;
+    if let Entry::Vacant(ent) = map.entry(bound_key) {
+        assert_eq!(ent.key(), &bound_key);
+        // the node is full, so it's on the cap
+        assert_eq!(ent.idx, leaf_cap);
+
+        // next leaf
+        assert_eq!(ent.peak_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
+        let o_ent = ent.move_forward().expect("can move");
+        assert_eq!(o_ent.key(), &(leaf_cap * 2));
+        assert_eq!(o_ent.get(), &(leaf_cap * 10));
+        o_ent.validate_cache_path();
+    } else {
+        unreachable!("should not exist");
+    }
+    if let Entry::Vacant(mut ent) = map.entry(leaf_cap * 2 + 1) {
+        assert_eq!(ent.idx, 1);
+        // last node
+        assert_eq!(ent.peak_forward(), None);
+        ent = ent.move_forward().unwrap_err();
+        assert_eq!(ent.key(), &(leaf_cap * 2 + 1));
+    } else {
+        unreachable!("should not exist");
+    }
+}
+
+#[test]
+fn test_vacent_move_backward_height_2() {
+    let mut builder = TreeBuilder::<u32, u32>::default();
+    let leaf_cap = builder.leaf_cap();
+    // Construct Root -> [leaf0 | sep1 | leaf1]
+    let mut leaf0 = builder.new_leaf();
+    let mut leaf1 = builder.new_leaf();
+    for i in 0..leaf_cap {
+        builder.insert_leaf(&mut leaf0, i * 2 + 1, i * 10);
+    }
+    builder.insert_leaf(&mut leaf1, leaf_cap * 2 + 1, leaf_cap * 10);
+
+    // make sure leaf_cap * 2 falls into leaf1, althought it does not exist
+    let root = builder.new_root(1, leaf_cap * 2, leaf0.get_ptr(), leaf1.get_ptr());
+    let mut map = builder.build(root.into());
+    assert_eq!(map.len(), leaf_cap as usize + 1);
+    assert_eq!(map.leaf_count(), 2);
+    assert_eq!(map.inter_count(), 1);
+    map.validate();
+
+    if let Entry::Vacant(ent) = map.entry(2) {
+        assert_eq!(ent.key(), &2);
+        assert_eq!(ent.idx, 1);
+
+        // adjacent
+        assert_eq!(ent.peak_backward(), Some((&1, &0)));
+        let o_ent = ent.move_backward().expect("can move");
+        assert_eq!(o_ent.key(), &1);
+        assert_eq!(o_ent.get(), &0);
+        o_ent.validate_cache_path();
+    } else {
+        unreachable!("should not exist");
+    }
+
+    let bound_key = leaf_cap * 2;
+    if let Entry::Vacant(ent) = map.entry(bound_key) {
+        assert_eq!(ent.key(), &bound_key);
+        assert_eq!(ent.idx, 0);
+
+        // previous leaf
+        let pre_key = (leaf_cap - 1) * 2 + 1;
+        let pre_value = (leaf_cap - 1) * 10;
+        assert_eq!(ent.peak_backward(), Some((&pre_key, &pre_value)));
+        let o_ent = ent.move_backward().expect("can move");
+        assert_eq!(o_ent.key(), &pre_key);
+        assert_eq!(o_ent.get(), &pre_value);
+        o_ent.validate_cache_path();
+    } else {
+        unreachable!("should not exist");
+    }
+    // before first node
+    if let Entry::Vacant(mut ent) = map.entry(0) {
+        assert_eq!(ent.idx, 0);
+        // last node
+        assert_eq!(ent.peak_backward(), None);
+        ent = ent.move_backward().unwrap_err();
+        assert_eq!(ent.key(), &(0));
+    } else {
+        unreachable!("should not exist");
+    }
+}
+
+#[test]
+fn test_vacant_forward_point_to_element_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     map.insert(10, 100);
@@ -72,7 +304,7 @@ fn test_vacant_forward_point_to_element() {
 }
 
 #[test]
-fn test_vacant_forward_at_leaf_end() {
+fn test_vacant_forward_at_leaf_end_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -107,29 +339,10 @@ fn test_vacant_forward_at_leaf_end() {
     }
 }
 
-#[test]
-fn test_forward_tree_end() {
-    reset_alive_count();
-    let mut map = BTreeMap::new();
-    map.insert(10, 100);
-
-    // Occupied at end
-    if let Entry::Occupied(oe) = map.entry(10) {
-        assert!(oe.peak_forward().is_none());
-        assert!(oe.move_forward().is_err());
-    }
-
-    // Vacant at end
-    if let Entry::Vacant(ve) = map.entry(20) {
-        assert!(ve.peak_forward().is_none());
-        assert!(ve.move_forward().is_err());
-    }
-}
-
 // --- Backward Peaking & Moving Group ---
 
 #[test]
-fn test_occupied_backward_same_leaf() {
+fn test_occupied_backward_same_leaf_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     map.insert(10, 100);
@@ -155,7 +368,7 @@ fn test_occupied_backward_same_leaf() {
 }
 
 #[test]
-fn test_occupied_backward_cross_leaf() {
+fn test_occupied_backward_cross_leaf_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -180,7 +393,7 @@ fn test_occupied_backward_cross_leaf() {
 }
 
 #[test]
-fn test_vacant_backward_same_leaf() {
+fn test_vacant_backward_same_leaf_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     map.insert(10, 100);
@@ -196,7 +409,7 @@ fn test_vacant_backward_same_leaf() {
 }
 
 #[test]
-fn test_vacant_backward_at_leaf_start() {
+fn test_vacant_backward_at_leaf_start_height1() {
     reset_alive_count();
     let mut map = BTreeMap::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -216,25 +429,6 @@ fn test_vacant_backward_at_leaf_start() {
             let oe = ve.move_backward().ok().unwrap();
             assert_eq!(*oe.key(), start_of_second - 2);
         }
-    }
-}
-
-#[test]
-fn test_backward_tree_start() {
-    reset_alive_count();
-    let mut map = BTreeMap::new();
-    map.insert(10, 100);
-
-    // Occupied at start
-    if let Entry::Occupied(oe) = map.entry(10) {
-        assert!(oe.peak_backward().is_none());
-        assert!(oe.move_backward().is_err());
-    }
-
-    // Vacant at start
-    if let Entry::Vacant(ve) = map.entry(5) {
-        assert!(ve.peak_backward().is_none());
-        assert!(ve.move_backward().is_err());
     }
 }
 
