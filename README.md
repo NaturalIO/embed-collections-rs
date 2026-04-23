@@ -46,9 +46,13 @@ It's a cache aware b+tree:
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
 - Optimized for numeric type, and tight arrangement sequential inserting.
 - Capacity in compile-time determined according to the size of Key, Value.
+- Smart optimization for sequential insert
 - Faster iteration and teardown
 - Key type needs `Clone`
-- Specially Entry API which allow to detect and modify previous/next key pairs
+- Specially API:
+  - peak and move to previous/next entry.
+  - alter key of an OccupiedEntry.
+  - Batch remove with range.
 
 Comparing to std::collections::btree (as of rust 1.94):
 - The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
@@ -58,37 +62,37 @@ Comparing to std::collections::btree (as of rust 1.94):
 
 **benchmark**:
 
-(platform: intel i7-8550U, key: u32, value: u32)
+(platform: intel i7-8550U, key: u32, value: u32, rust 1.92)
 
 insert_seq (me/s)|btree|std
 -|-|-
-1k|29.564|20.001
-10k|23.103|16.04
-100k|15.984|11.207
+1k|88.956|20.001
+10k|75.291|16.04
+100k|45.959|11.207
 
 insert_rand (me/s)|btree|std|avl(box)|avl(arc)
 -|-|-|-|-
-1k|17.523|17.792|11.172|9.5397
-10k|12.005|11.587|6.3669|5.651
-100k|4.983|3.0691|0.78|0.732
+1k|21.311|17.792|11.172|9.5397
+10k|14.268|11.587|6.3669|5.651
+100k|5.4814|3.0691|0.78|0.732
 
 get_seq (me/s)|btree|std
 -|-|-
-1k|46.356|34.248
-10k|31.76|27.571
-100k|26.808|19.907
+1k|59.448|34.248
+10k|37.225|27.571
+100k|30.77|19.907
 
 get_rand (me/s)|btree|std|avl(box)|avl(arc)
 -|-|-|-|-
-1k|31.922|27.651|24.254|23.466
-10k|16.694|16.868|11.771|10.806
-100k|4.5472|3.2569|1.4423|1.2712
+1k|47.33|27.651|24.254|23.466
+10k|19.358|16.868|11.771|10.806
+100k|5.2584|3.2569|1.4423|1.2712
 
 remove_rand (me/s)|btree|std
 -|-|-
-1k|16.681|15.968
-10k|12.444|11.701
-100k|4.2183|3.0724
+1k|20.965|15.968
+10k|16.073|11.701
+100k|5.0214|3.0724
 
 iter (me/s)|btree|std
 -|-|-
