@@ -727,7 +727,7 @@ impl<K: Ord + Clone + Sized, V: Sized> IntoIter<K, V> {
     /// Return a iterator in reversed direction
     ///
     /// IntoIter only implement one way iteration (either forward or backward).
-    /// this will mock Iterator::rev for DoubleEndIterator trait
+    /// this will mock Iterator::rev for DoubleEndedIterator trait
     ///
     /// # Panic
     ///

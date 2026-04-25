@@ -575,7 +575,7 @@ fn test_inter_underflow_merge_left_height_3(setup_log: ()) {
 /// This creates a degenerate tree where each internal node has only 1 child.
 /// When handle_inter_underflow is called on internal_b:
 /// - internal_b has key_count=0, height=1 != root_height
-/// - root has key_count=0, so peak_ancenstor returns None
+/// - root has key_count=0, so peek_ancenstor returns None
 /// - This should trigger root replacement
 ///
 /// Key test: Verifies handle_inter_underflow when a node has only 1 child

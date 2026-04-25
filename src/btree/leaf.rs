@@ -188,6 +188,11 @@ impl<K, V> LeafNode<K, V> {
         }
     }
 
+    #[inline]
+    pub unsafe fn get_raw_pair_unchecked(&self, idx: u32) -> (*mut K, *mut V) {
+        unsafe { (self.key_ptr(idx) as *mut K, self.value_ptr(idx) as *mut V) }
+    }
+
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {

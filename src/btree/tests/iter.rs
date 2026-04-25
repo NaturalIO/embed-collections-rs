@@ -734,3 +734,221 @@ fn test_into_iter_drop_halfway_reverse(setup_log: ()) {
     }
     assert_eq!(alive_count(), 0);
 }
+
+#[logfn]
+#[rstest]
+fn test_cursor_empty_tree(setup_log: ()) {
+    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    assert!(map.first_cursor().next().is_none());
+    assert!(map.first_cursor().peek_forward().is_none());
+    assert!(map.first_cursor().peek_backward().is_none());
+    assert!(map.last_cursor().next().is_none());
+    assert!(map.last_cursor().peek_forward().is_none());
+    assert!(map.last_cursor().peek_backward().is_none());
+    assert!(map.cursor(&1).next().is_none());
+    assert!(map.cursor(&1).previous().is_none());
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_empty_leaf(setup_log: ()) {
+    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+    map.insert(1, 1);
+    assert!(map.remove(&1).is_some());
+
+    assert!(map.first_cursor().next().is_none());
+    assert!(map.first_cursor().peek_forward().is_none());
+    assert!(map.first_cursor().peek_backward().is_none());
+    assert!(map.last_cursor().next().is_none());
+    assert!(map.last_cursor().peek_forward().is_none());
+    assert!(map.last_cursor().peek_backward().is_none());
+    let mut cursor = map.cursor(&1);
+    assert!(cursor.peek_forward().is_none());
+    assert!(cursor.peek_backward().is_none());
+    assert!(cursor.next().is_none());
+    assert!(cursor.next().is_none());
+    let mut cursor = map.cursor(&1);
+    assert!(cursor.previous().is_none());
+    assert!(cursor.previous().is_none());
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_first(setup_log: ()) {
+    let mut map = BTreeMap::new();
+    map.insert(1, "a");
+    map.insert(2, "b");
+    map.insert(3, "c");
+
+    let mut cursor = map.first_cursor();
+    assert_eq!(cursor.peek_forward(), Some((&2, &"b")));
+    assert_eq!(cursor.next(), Some((&1, &"a")));
+    assert_eq!(cursor.next(), Some((&2, &"b")));
+    // at 3
+    assert_eq!(cursor.idx, 2);
+    assert!(cursor.is_exist());
+    assert_eq!(cursor.peek_backward(), Some((&2, &"b")));
+    assert_eq!(cursor.peek_forward(), None);
+    assert_eq!(cursor.next(), Some((&3, &"c")));
+    assert_eq!(cursor.next(), None);
+    let mut cursor = map.first_cursor();
+    assert_eq!(cursor.peek_backward(), None);
+    assert_eq!(cursor.previous(), Some((&1, &"a")));
+    assert_eq!(cursor.peek_backward(), None);
+    assert_eq!(cursor.previous(), None);
+    assert_eq!(cursor.peek_backward(), None);
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_last(setup_log: ()) {
+    let mut map = BTreeMap::new();
+    map.insert(1, "a");
+    map.insert(2, "b");
+    map.insert(3, "c");
+
+    let mut cursor = map.last_cursor();
+    assert_eq!(cursor.next(), Some((&3, &"c")));
+    assert_eq!(cursor.next(), None);
+    assert_eq!(cursor.previous(), Some((&3, &"c")));
+
+    let mut cursor = map.last_cursor();
+    assert_eq!(cursor.previous(), Some((&3, &"c")));
+    assert_eq!(cursor.previous(), Some((&2, &"b")));
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_non_existing_key(setup_log: ()) {
+    let mut map = BTreeMap::new();
+    map.insert(1, "a");
+    map.insert(3, "b");
+    map.insert(5, "c");
+
+    let mut cursor = map.cursor(&2);
+    assert_eq!(cursor.idx, 1);
+    assert_eq!(cursor.is_exist(), false);
+    // move backward from 2
+    assert_eq!(cursor.previous(), Some((&1, &"a")));
+    assert_eq!(cursor.is_exist(), false);
+    assert_eq!(cursor.idx, 0);
+    // before the first
+    assert_eq!(cursor.peek_forward(), Some((&1, &"a")));
+    assert_eq!(cursor.previous(), None);
+    assert_eq!(cursor.peek_forward(), Some((&1, &"a")));
+
+    let mut cursor = map.cursor(&2);
+    assert_eq!(cursor.is_exist(), false);
+    assert_eq!(cursor.peek_backward(), Some((&1, &"a")));
+    assert_eq!(cursor.peek_forward(), Some((&3, &"b")));
+    // move forward from 2
+    assert_eq!(cursor.next(), Some((&3, &"b")));
+    // on 5
+    assert_eq!(cursor.is_exist(), true);
+    assert_eq!(cursor.peek_forward(), None);
+    assert_eq!(cursor.peek_backward(), Some((&3, &"b")));
+    assert_eq!(cursor.next(), Some((&5, &"c")));
+    // on last outside bound
+    assert_eq!(cursor.idx, 3);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.next(), None);
+    // next should not move outside bound
+    assert_eq!(cursor.idx, 3);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.peek_backward(), Some((&5, &"c")));
+    assert_eq!(cursor.peek_forward(), None);
+
+    // locate cursor on last outside bound
+    let mut cursor = map.cursor(&6);
+    assert_eq!(cursor.idx, 3);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.peek_backward(), Some((&5, &"c")));
+    assert_eq!(cursor.peek_forward(), None);
+    // should not move
+    assert!(cursor.next().is_none());
+    assert_eq!(cursor.idx, 3);
+    assert_eq!(cursor.is_exist, false);
+    let mut cursor = map.cursor(&6);
+    assert_eq!(cursor.previous(), Some((&5, &"c")));
+
+    // locate cursor before the first
+    let mut cursor = map.cursor(&0);
+    assert_eq!(cursor.idx, 0);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.peek_forward(), Some((&1, &"a")));
+    assert_eq!(cursor.peek_backward(), None);
+    assert_eq!(cursor.previous(), None);
+    // should not move
+    assert_eq!(cursor.idx, 0);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.peek_backward(), None);
+    assert_eq!(cursor.idx, 0);
+    assert_eq!(cursor.is_exist, false);
+    assert_eq!(cursor.previous(), None);
+    assert_eq!(cursor.next(), Some((&1, &"a")));
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_mixed_navigation(setup_log: ()) {
+    let mut map = BTreeMap::new();
+    for i in 0..10 {
+        map.insert(i, i * 10);
+    }
+
+    let mut cursor = map.cursor(&5);
+    // next, previous, next pattern
+    assert_eq!(cursor.next(), Some((&5, &50)));
+    assert_eq!(cursor.previous(), Some((&6, &60)));
+    assert_eq!(cursor.next(), Some((&5, &50)));
+    assert_eq!(cursor.next(), Some((&6, &60)));
+}
+
+#[logfn]
+#[rstest]
+fn test_cursor_multi_leaf(setup_log: ()) {
+    // Test with at least 3 leaf nodes
+    let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
+    let n = leaf_cap * 3 + 10;
+
+    let mut map = BTreeMap::new();
+    for i in 0..n {
+        map.insert(i as i32 * 2, i as i32 * 10);
+    }
+    let mut cursor = map.first_cursor();
+    for i in 0..n {
+        let key = i as i32 * 2;
+        let value = i as i32 * 10;
+        assert_eq!(cursor.next(), Some((&key, &value)));
+    }
+    assert_eq!(cursor.next(), None);
+
+    let key = (n - 1) as i32 * 2;
+    let value = (n - 1) as i32 * 10;
+    // rewind
+    assert_eq!(cursor.previous(), Some((&key, &value)));
+
+    let mut cursor = map.last_cursor();
+    let mut i = (n - 1) as i32;
+    while i >= 0 {
+        let key = i * 2;
+        let value = i * 10;
+        assert_eq!(cursor.previous(), Some((&key, &value)));
+        i -= 1;
+    }
+    assert_eq!(cursor.previous(), None);
+    // rewind
+    assert_eq!(cursor.next(), Some((&0, &0)));
+
+    let leaf0_last_key = (leaf_cap as i32 - 1) * 2;
+    let leaf0_last_value = (leaf_cap as i32 - 1) * 10;
+    let mut cursor = map.cursor(&(leaf0_last_key + 1));
+    assert_eq!(cursor.idx, leaf_cap as u32);
+    assert_eq!(cursor.is_exist(), false);
+    let key = leaf_cap as i32 * 2;
+    let value = leaf_cap as i32 * 10;
+    assert_eq!(cursor.peek_forward(), Some((&key, &value)));
+    assert_eq!(cursor.next(), Some((&key, &value)));
+    cursor.previous();
+    assert_eq!(cursor.peek_backward(), Some((&leaf0_last_key, &leaf0_last_value)));
+}

@@ -119,19 +119,19 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
         match self {
-            Entry::Occupied(ent) => ent.peak_backward(),
-            Entry::Vacant(ent) => ent.peak_backward(),
+            Entry::Occupied(ent) => ent.peek_backward(),
+            Entry::Vacant(ent) => ent.peek_backward(),
         }
     }
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
         match self {
-            Entry::Occupied(ent) => ent.peak_forward(),
-            Entry::Vacant(ent) => ent.peak_forward(),
+            Entry::Occupied(ent) => ent.peek_forward(),
+            Entry::Vacant(ent) => ent.peek_forward(),
         }
     }
 }
@@ -236,7 +236,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
         let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
         unsafe {
             if let Some((k, v)) = cursor.prev_pair() {
@@ -248,7 +248,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
         let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
         unsafe {
             if let Some((k, v)) = cursor.next_pair() {
@@ -302,12 +302,12 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// If key is not in strict order among the neighbors, return  Err() .
     #[inline]
     pub fn alter_key(&mut self, k: K) -> Result<(), ()> {
-        if let Some((_k, _v)) = self.peak_backward() {
+        if let Some((_k, _v)) = self.peek_backward() {
             if _k >= &k {
                 return Err(());
             }
         }
-        if let Some((_k, _v)) = self.peak_forward() {
+        if let Some((_k, _v)) = self.peek_forward() {
             if _k <= &k {
                 return Err(());
             }
@@ -316,7 +316,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
             let k_ref = (*self.leaf.key_ptr(self.idx)).assume_init_mut();
             if self.idx == 0 {
                 if self.tree._get_info().is_some() {
-                    // We need to keep the PathCache intact, use peak rather than move_to_ancenstor
+                    // We need to keep the PathCache intact, use peek rather than move_to_ancenstor
                     // it's allowed to move the entry or remove afterwards
                     self.tree.update_ancestor_sep_key::<false>(k.clone());
                 }
@@ -386,7 +386,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peak_backward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
         if let Some(leaf) = self.leaf.as_ref() {
             // The key of previous pos is always smaller than self.key ;
             // the key at current idx (if exists) must larger than self.key.
@@ -402,7 +402,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peak_forward(&self) -> Option<(&'a K, &'a V)> {
+    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
         if let Some(leaf) = self.leaf.as_ref() {
             unsafe {
                 if let Some((k, v)) = leaf.get_raw_pair(self.idx) {

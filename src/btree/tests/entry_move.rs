@@ -23,7 +23,7 @@ fn test_occupied_move_forward_height_2() {
         ent.validate_cache_path();
         assert_eq!(ent.get(), &0);
 
-        assert_eq!(ent.peak_forward(), Some((&2, &10)));
+        assert_eq!(ent.peek_forward(), Some((&2, &10)));
         ent = ent.move_forward().expect("can move");
         assert_eq!(ent.key(), &2);
         assert_eq!(ent.get(), &10);
@@ -38,14 +38,14 @@ fn test_occupied_move_forward_height_2() {
         ent.validate_cache_path();
 
         // next leaf
-        assert_eq!(ent.peak_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
+        assert_eq!(ent.peek_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
         ent = ent.move_forward().expect("can move");
         assert_eq!(ent.key(), &(leaf_cap * 2));
         assert_eq!(ent.get(), &(leaf_cap * 10));
         ent.validate_cache_path();
 
         // last
-        assert_eq!(ent.peak_forward(), None);
+        assert_eq!(ent.peek_forward(), None);
         ent = ent.move_forward().unwrap_err();
         assert_eq!(ent.key(), &(leaf_cap * 2));
         assert_eq!(ent.get(), &(leaf_cap * 10));
@@ -79,7 +79,7 @@ fn test_occupied_move_backward_height_2() {
         assert_eq!(ent.get(), &(leaf_cap * 10));
         // move cross leaf
         let leaf0_last = leaf_cap - 1;
-        assert_eq!(ent.peak_backward(), Some((&(leaf0_last * 2), &(leaf0_last * 10))));
+        assert_eq!(ent.peek_backward(), Some((&(leaf0_last * 2), &(leaf0_last * 10))));
         ent = ent.move_backward().expect("can move");
         assert_eq!(ent.key(), &(leaf0_last * 2));
         assert_eq!(ent.get(), &(leaf0_last * 10));
@@ -88,7 +88,7 @@ fn test_occupied_move_backward_height_2() {
         // move adjacent
 
         let prev = leaf_cap - 2;
-        assert_eq!(ent.peak_backward(), Some((&(prev * 2), &(prev * 10))));
+        assert_eq!(ent.peek_backward(), Some((&(prev * 2), &(prev * 10))));
         ent = ent.move_backward().expect("can move");
         assert_eq!(ent.key(), &(prev * 2));
         assert_eq!(ent.get(), &(prev * 10));
@@ -103,7 +103,7 @@ fn test_occupied_move_backward_height_2() {
         ent.validate_cache_path();
 
         // first
-        assert_eq!(ent.peak_backward(), None);
+        assert_eq!(ent.peek_backward(), None);
         ent = ent.move_backward().unwrap_err();
         assert_eq!(ent.key(), &0);
         ent.validate_cache_path();
@@ -124,15 +124,15 @@ fn test_occupied_forward_same_leaf_height1() {
     if let Entry::Occupied(oe) = map.entry(10) {
         assert_eq!(*oe.key(), 10);
         // Peak forward
-        assert_eq!(*oe.peak_forward().unwrap().0, 20);
+        assert_eq!(*oe.peek_forward().unwrap().0, 20);
         // Move forward
         let oe = oe.move_forward().ok().unwrap();
         assert_eq!(*oe.key(), 20);
-        assert_eq!(*oe.peak_forward().unwrap().0, 30);
+        assert_eq!(*oe.peek_forward().unwrap().0, 30);
         // Move forward again
         let oe = oe.move_forward().ok().unwrap();
         assert_eq!(*oe.key(), 30);
-        assert!(oe.peak_forward().is_none());
+        assert!(oe.peek_forward().is_none());
         assert!(oe.move_forward().is_err());
     } else {
         panic!("should be occupied");
@@ -155,7 +155,7 @@ fn test_occupied_forward_cross_leaf_height1() {
     if let Entry::Occupied(oe) = map.entry(end_of_first) {
         assert_eq!(oe.idx as usize, (cap - 1) as usize);
         // Peak should cross leaf
-        assert_eq!(*oe.peak_forward().unwrap().0, cap as i32);
+        assert_eq!(*oe.peek_forward().unwrap().0, cap as i32);
         // Move should cross leaf
         let oe = oe.move_forward().ok().unwrap();
         assert_eq!(*oe.key(), cap as i32);
@@ -188,7 +188,7 @@ fn test_vacent_move_forward_height_2() {
         assert_eq!(ent.idx, 1);
 
         // adjacent
-        assert_eq!(ent.peak_forward(), Some((&2, &10)));
+        assert_eq!(ent.peek_forward(), Some((&2, &10)));
         let o_ent = ent.move_forward().expect("can move");
         assert_eq!(o_ent.key(), &2);
         assert_eq!(o_ent.get(), &10);
@@ -204,7 +204,7 @@ fn test_vacent_move_forward_height_2() {
         assert_eq!(ent.idx, leaf_cap);
 
         // next leaf
-        assert_eq!(ent.peak_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
+        assert_eq!(ent.peek_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
         let o_ent = ent.move_forward().expect("can move");
         assert_eq!(o_ent.key(), &(leaf_cap * 2));
         assert_eq!(o_ent.get(), &(leaf_cap * 10));
@@ -215,7 +215,7 @@ fn test_vacent_move_forward_height_2() {
     if let Entry::Vacant(mut ent) = map.entry(leaf_cap * 2 + 1) {
         assert_eq!(ent.idx, 1);
         // last node
-        assert_eq!(ent.peak_forward(), None);
+        assert_eq!(ent.peek_forward(), None);
         ent = ent.move_forward().unwrap_err();
         assert_eq!(ent.key(), &(leaf_cap * 2 + 1));
     } else {
@@ -248,7 +248,7 @@ fn test_vacent_move_backward_height_2() {
         assert_eq!(ent.idx, 1);
 
         // adjacent
-        assert_eq!(ent.peak_backward(), Some((&1, &0)));
+        assert_eq!(ent.peek_backward(), Some((&1, &0)));
         let o_ent = ent.move_backward().expect("can move");
         assert_eq!(o_ent.key(), &1);
         assert_eq!(o_ent.get(), &0);
@@ -265,7 +265,7 @@ fn test_vacent_move_backward_height_2() {
         // previous leaf
         let pre_key = (leaf_cap - 1) * 2 + 1;
         let pre_value = (leaf_cap - 1) * 10;
-        assert_eq!(ent.peak_backward(), Some((&pre_key, &pre_value)));
+        assert_eq!(ent.peek_backward(), Some((&pre_key, &pre_value)));
         let o_ent = ent.move_backward().expect("can move");
         assert_eq!(o_ent.key(), &pre_key);
         assert_eq!(o_ent.get(), &pre_value);
@@ -277,7 +277,7 @@ fn test_vacent_move_backward_height_2() {
     if let Entry::Vacant(mut ent) = map.entry(0) {
         assert_eq!(ent.idx, 0);
         // last node
-        assert_eq!(ent.peak_backward(), None);
+        assert_eq!(ent.peek_backward(), None);
         ent = ent.move_backward().unwrap_err();
         assert_eq!(ent.key(), &(0));
     } else {
@@ -295,7 +295,7 @@ fn test_vacant_forward_point_to_element_height1() {
     // Vacant entry at 20, idx should point to 30
     if let Entry::Vacant(ve) = map.entry(20) {
         // Point to 30 (same leaf)
-        assert_eq!(*ve.peak_forward().unwrap().0, 30);
+        assert_eq!(*ve.peek_forward().unwrap().0, 30);
         let oe = ve.move_forward().ok().unwrap();
         assert_eq!(*oe.key(), 30);
     } else {
@@ -327,8 +327,8 @@ fn test_vacant_forward_at_leaf_end_height1() {
             let search_key = last_key + 1;
             if let Entry::Vacant(ve) = map.entry(search_key) {
                 assert_eq!(ve.idx as usize, leaf.key_count() as usize);
-                // Should peak forward to next leaf
-                let next_pair = ve.peak_forward();
+                // Should peek forward to next leaf
+                let next_pair = ve.peek_forward();
                 assert!(next_pair.is_some());
                 assert!(*next_pair.unwrap().0 > search_key);
 
@@ -352,15 +352,15 @@ fn test_occupied_backward_same_leaf_height1() {
     if let Entry::Occupied(oe) = map.entry(30) {
         assert_eq!(*oe.key(), 30);
         // Peak backward
-        assert_eq!(*oe.peak_backward().unwrap().0, 20);
+        assert_eq!(*oe.peek_backward().unwrap().0, 20);
         // Move backward
         let oe = oe.move_backward().ok().unwrap();
         assert_eq!(*oe.key(), 20);
-        assert_eq!(*oe.peak_backward().unwrap().0, 10);
+        assert_eq!(*oe.peek_backward().unwrap().0, 10);
         // Move backward again
         let oe = oe.move_backward().ok().unwrap();
         assert_eq!(*oe.key(), 10);
-        assert!(oe.peak_backward().is_none());
+        assert!(oe.peek_backward().is_none());
         assert!(oe.move_backward().is_err());
     } else {
         panic!("should be occupied");
@@ -382,7 +382,7 @@ fn test_occupied_backward_cross_leaf_height1() {
     if let Entry::Occupied(oe) = map.entry(start_of_second) {
         assert_eq!(oe.idx, 0);
         // Peak should cross leaf to left
-        assert_eq!(*oe.peak_backward().unwrap().0, cap as i32 - 1);
+        assert_eq!(*oe.peek_backward().unwrap().0, cap as i32 - 1);
         // Move should cross leaf
         let oe = oe.move_backward().ok().unwrap();
         assert_eq!(*oe.key(), cap as i32 - 1);
@@ -400,7 +400,7 @@ fn test_vacant_backward_same_leaf_height1() {
     map.insert(30, 300);
 
     if let Entry::Vacant(ve) = map.entry(20) {
-        assert_eq!(*ve.peak_backward().unwrap().0, 10);
+        assert_eq!(*ve.peek_backward().unwrap().0, 10);
         let oe = ve.move_backward().ok().unwrap();
         assert_eq!(*oe.key(), 10);
     } else {
@@ -425,7 +425,7 @@ fn test_vacant_backward_at_leaf_start_height1() {
     if let Entry::Vacant(ve) = map.entry(search_key) {
         if ve.idx == 0 {
             // It is at the start of its leaf and root is InterNode
-            assert_eq!(*ve.peak_backward().unwrap().0, start_of_second - 2);
+            assert_eq!(*ve.peek_backward().unwrap().0, start_of_second - 2);
             let oe = ve.move_backward().ok().unwrap();
             assert_eq!(*oe.key(), start_of_second - 2);
         }
@@ -619,7 +619,7 @@ fn test_rangetree_swallow_forward() {
         _ => panic!("missing"),
     };
 
-    while let Some((&ns, _)) = oe.peak_forward() {
+    while let Some((&ns, _)) = oe.peek_forward() {
         if ns > target_end {
             break;
         }

@@ -340,7 +340,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
     }
 
     #[inline(always)]
-    pub fn peak_parent(&self) -> Option<(InterNode<K, V>, u32)> {
+    pub fn peek_parent(&self) -> Option<(InterNode<K, V>, u32)> {
         self.assert_center();
         let (parent, idx) = self._last()?;
         Some((parent.clone(), idx))
@@ -349,7 +349,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
     /// iter backward through cache internal stack, without changing the cache,
     /// return None if reaches root
     #[inline(always)]
-    pub fn peak_ancenstor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
+    pub fn peek_ancenstor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
     where
         FC: Fn(&InterNode<K, V>, u32) -> bool,
     {

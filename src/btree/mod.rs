@@ -12,29 +12,34 @@
 //!   - Values/pointers stored in last 128B
 //!   - the capacity is calculated according to the size of K, V, with limitations:
 //!     - K & V should <= CACHE_LINE_SIZE - 16  (If K & V is larger should put into `Box`)
-//! - Specially Entry API which allow to modify after moving the cursor to adjacent data.
+//! - Specially Cursor & Entry API which allow to modify after moving the cursor to adjacent data.
 //! - The detail design notes are with the source in mod.rs and node.rs
 //!
 //! ## Special APIs
 //!
-//! batch removal:
+//! Batch removal:
 //! - [BTreeMap::remove_range()]
 //! - [BTreeMap::remove_range_with()]
 //!
-//! adjacent entry:
-//! - [Entry::peak_forward()]
-//! - [Entry::peak_backward()]
+//! Adjacent entry:
+//! - [Entry::peek_forward()]
+//! - [Entry::peek_backward()]
 //! - [Entry::move_forward()]
 //! - [Entry::move_backward()]
-//! - [VacantEntry::peak_forward()]
-//! - [VacantEntry::peak_backward()]
+//! - [VacantEntry::peek_forward()]
+//! - [VacantEntry::peek_backward()]
 //! - [VacantEntry::move_forward()]
 //! - [VacantEntry::move_backward()]
-//! - [OccupiedEntry::peak_forward()]
-//! - [OccupiedEntry::peak_backward()]
+//! - [OccupiedEntry::peek_forward()]
+//! - [OccupiedEntry::peek_backward()]
 //! - [OccupiedEntry::move_forward()]
 //! - [OccupiedEntry::move_backward()]
 //! - [OccupiedEntry::alter_key()]
+//!
+//! Readonly [Cursor]:
+//! - [BTreeMap::cursor()]
+//! - [BTreeMap::first_cursor()]
+//! - [BTreeMap::last_cursor()]
 
 /*
 
@@ -88,6 +93,8 @@ use core::cell::UnsafeCell;
 use core::fmt::Debug;
 use core::ops::{Bound, RangeBounds};
 use core::ptr::NonNull;
+mod cursor;
+pub use cursor::*;
 mod entry;
 pub use entry::*;
 mod helper;
@@ -500,7 +507,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             }
         };
         loop {
-            if let Some((_next_k, _next_v)) = ent.peak_forward() {
+            if let Some((_next_k, _next_v)) = ent.peek_forward() {
                 if end_contains!(_next_k) {
                     let next_key = _next_k.clone();
                     let (_k, _v) = ent._remove_entry(false);
@@ -552,7 +559,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         let ret = if MOVE {
             cache.move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
         } else {
-            cache.peak_ancenstor(|_node, idx| -> bool { idx > 0 })
+            cache.peek_ancenstor(|_node, idx| -> bool { idx > 0 })
         };
         if let Some((parent, parent_idx)) = ret {
             trace_log!("update_ancestor_sep_key move={MOVE} at {parent:?}:{}", parent_idx - 1);
@@ -668,7 +675,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 return Ok(flags);
             } else {
                 // Parent is full, try to borrow space from sibling through grand_parent
-                if let Some((mut grand, grand_idx)) = info.peak_parent() {
+                if let Some((mut grand, grand_idx)) = info.peek_parent() {
                     // Try to borrow from left sibling of parent
                     if grand_idx > 0 {
                         let mut left_parent = grand.get_child_as_inter(grand_idx - 1);
@@ -894,7 +901,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // delete the last child of this node
             node.remove_last_child();
             if let Some(key) = right_sep
-                && let Some((grand_parent, grand_idx)) = self.get_info_mut().peak_ancenstor(
+                && let Some((grand_parent, grand_idx)) = self.get_info_mut().peek_ancenstor(
                     |_node: &InterNode<K, V>, idx: u32| -> bool { _node.key_count() > idx },
                 )
             {
@@ -952,7 +959,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 let node_height = node.height();
                 if node_height == root_height
                     || cache
-                        .peak_ancenstor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
+                        .peek_ancenstor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
                             _node.key_count() > 0
                         })
                         .is_none()
@@ -1363,6 +1370,58 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         R: RangeBounds<K>,
     {
         RangeMut::new(self.find_range_bounds(range))
+    }
+
+    /// Returns a cursor positioned at the first entry of the map.
+    /// Returns `None` if the map is empty.
+    #[inline]
+    pub fn first_cursor(&self) -> Cursor<'_, K, V> {
+        if let Some(leaf) = self.search_leaf_with(|inter| inter.find_first_leaf(None)) {
+            if leaf.key_count() > 0 {
+                return Cursor {
+                    leaf: Some(leaf),
+                    is_exist: true,
+                    idx: 0,
+                    _marker: Default::default(),
+                };
+            }
+        }
+        Cursor { leaf: None, is_exist: true, idx: 0, _marker: Default::default() }
+    }
+
+    /// Returns a cursor positioned at the last entry of the map.
+    /// Returns `None` if the map is empty.
+    #[inline]
+    pub fn last_cursor(&self) -> Cursor<'_, K, V> {
+        if let Some(leaf) = self.search_leaf_with(|inter| inter.find_last_leaf(None)) {
+            let count = leaf.key_count();
+            if count > 0 {
+                return Cursor {
+                    leaf: Some(leaf),
+                    idx: count - 1,
+                    is_exist: true,
+                    _marker: Default::default(),
+                };
+            }
+        }
+        Cursor { leaf: None, idx: 0, is_exist: false, _marker: Default::default() }
+    }
+
+    /// Returns a cursor positioned at the given key.
+    ///
+    /// NOTE: There's slight different for existing/non-existing key, refer to the doc of [Cursor]
+    #[inline]
+    pub fn cursor<Q>(&self, key: &Q) -> Cursor<'_, K, V>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        if let Some(leaf) = self.search_leaf_with(|inter| inter.find_leaf(key)) {
+            let (idx, is_exist) = leaf.search(key);
+            Cursor { leaf: Some(leaf), idx, is_exist, _marker: Default::default() }
+        } else {
+            Cursor { leaf: None, idx: 0, is_exist: false, _marker: Default::default() }
+        }
     }
 }
 

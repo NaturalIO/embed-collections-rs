@@ -11,7 +11,7 @@ This crate provides two categories:
     - [`ConstVec`]: Fixed capacity inline vec
     - [`SegList`](https://docs.rs/embed-collections/latest/embed_collections/seg_list/index.html):  A cache aware list to store elements with adaptive size segments
     - [`Various`](https://docs.rs/embed-collections/latest/embed_collections/various/index.html): For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
-    - [`BTreeMap`](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peaking adjacent values.
+    - [`BTreeMap`](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peeking adjacent values.
 
 - Intrusive collections:
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
@@ -50,9 +50,10 @@ It's a cache aware b+tree:
 - Faster iteration and teardown
 - Key type needs `Clone`
 - Special API:
-  - Peak and move to previous/next entry.
+  - Peak and move to previous/next `Entry` (for modification).
   - Alter key of an OccupiedEntry.
   - Batch remove with range.
+  - Movable `Cursor` (for readonly)
 
 Compared to std::collections::btree (as of rust 1.94):
 - The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
