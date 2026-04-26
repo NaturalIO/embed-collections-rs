@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.0] - 2026-04-26
+
+### Added
+
+- btree: Add readonly Cursor
+
+### Changed
+
+- btree: Fix typo in API, "peak" rename to "peek"
+
 ## [0.8.4] - 2026-04-24
 
 ### Fixed
