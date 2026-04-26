@@ -57,9 +57,9 @@ It's a cache aware b+tree:
 
 Compared to std::collections::btree (as of rust 1.94):
 - The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
-- The std impl is optimised for point lookup,
-- The std impl has fixed Cap=11, size is 288B for InterNode and 192B for LeafNode.
-- The std cursor API is still unstable (as of 1.94) and provides more complex features
+- The std impl is optimised for point lookup.
+- The std impl has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
+- The std cursor API is still unstable (as of 1.94) and relatively complex to use.
 
 **benchmark**:
 
