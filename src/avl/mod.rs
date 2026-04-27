@@ -206,7 +206,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    pub root: *const P::Target,
+    root: *const P::Target,
     count: i64,
     _phan: PhantomData<fn(P, &Tag)>,
 }
@@ -1064,17 +1064,30 @@ where
         }
     }
 
-    pub fn walk<F: Fn(&P::Target)>(&self, cb: F) {
-        let mut node = self.first();
-        while let Some(n) = node {
-            cb(n);
-            node = self.next(n);
-        }
+    /// return a iterator to get the reference
+    ///
+    /// NOTE: If you use the [Iterator] interafce (for iteration), you only get &P::Target.
+    ///
+    /// you can use [AvlIter::next_ref()] to get &P.
+    #[inline]
+    pub fn iter(&self) -> AvlIter<'_, P, Tag> {
+        AvlIter::new(self, self.first().map(NonNull::from_ref), AvlDirection::Right)
+    }
+
+    /// return a reversed iterator to get the reference.
+    ///
+    ///
+    /// NOTE: If you use the [Iterator] interafce (for iteration), you only get &P::Target.
+    ///
+    /// you can use [AvlIter::next_ref()] to get &P.
+    #[inline]
+    pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
+        AvlIter::new(self, self.last().map(NonNull::from_ref), AvlDirection::Left)
     }
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
-        if let Some(p) = self.walk_dir(data, AvlDirection::Right) {
+        if let Some(p) = self.walk_dir(data.into(), AvlDirection::Right) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -1083,7 +1096,7 @@ where
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
-        if let Some(p) = self.walk_dir(data, AvlDirection::Left) {
+        if let Some(p) = self.walk_dir(data.into(), AvlDirection::Left) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -1092,10 +1105,10 @@ where
 
     #[inline]
     fn walk_dir(
-        &self, mut data_ptr: *const P::Target, dir: AvlDirection,
+        &self, mut data_ptr: NonNull<P::Target>, dir: AvlDirection,
     ) -> Option<NonNull<P::Target>> {
         let dir_inverse = dir.reverse();
-        let node = unsafe { (*data_ptr).get_node() };
+        let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
         if !temp.is_null() {
             unsafe {
@@ -1109,14 +1122,17 @@ where
                 return None;
             }
             loop {
-                let pdir = self.parent_direction(data_ptr, parent);
+                let pdir = self.parent_direction(data_ptr.as_ptr(), parent);
                 if pdir == dir_inverse {
                     return Some(unsafe { NonNull::new_unchecked(parent as *mut P::Target) });
                 }
-                data_ptr = parent;
+                let data_ptr_raw = parent as *mut P::Target;
                 parent = unsafe { (*parent).get_node() }.parent;
                 if parent.is_null() {
                     return None;
+                }
+                unsafe {
+                    data_ptr = NonNull::new_unchecked(data_ptr_raw);
                 }
             }
         }
@@ -1145,7 +1161,10 @@ where
             if current.direction.is_some() && current.direction != Some(direction) {
                 return AvlSearchResult { node: current.node, direction: None, _phan: PhantomData };
             }
-            if let Some(node) = self.walk_dir(current.node, direction) {
+            if let Some(node) = self.walk_dir(
+                unsafe { NonNull::new_unchecked(current.node as *mut P::Target) },
+                direction,
+            ) {
                 return AvlSearchResult {
                     node: node.as_ptr(),
                     direction: None,
