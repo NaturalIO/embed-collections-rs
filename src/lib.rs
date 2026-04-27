@@ -40,10 +40,12 @@ impl<T> Pointer for *const T {
         unsafe { &**self }
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         p as *const T
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         self as *const T
     }
@@ -58,10 +60,12 @@ impl<T> Pointer for *mut T {
         unsafe { &**self }
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         p as *mut T
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         self as *mut T
     }
@@ -75,10 +79,12 @@ impl<T> Pointer for NonNull<T> {
         unsafe { self.as_ref() }
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         unsafe { NonNull::new_unchecked(p as *mut T) }
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         self.as_ptr()
     }
@@ -92,10 +98,12 @@ impl<T> Pointer for Box<T> {
         self
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         unsafe { Box::from_raw(p as *mut T) }
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         Box::into_raw(self)
     }
@@ -109,10 +117,12 @@ impl<T> Pointer for Rc<T> {
         self
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         unsafe { Rc::from_raw(p) }
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         Rc::into_raw(self)
     }
@@ -126,12 +136,33 @@ impl<T> Pointer for Arc<T> {
         self
     }
 
+    #[inline]
     unsafe fn from_raw(p: *const Self::Target) -> Self {
         unsafe { Arc::from_raw(p) }
     }
 
+    #[inline]
     fn into_raw(self) -> *const Self::Target {
         Arc::into_raw(self)
+    }
+}
+
+impl<T> Pointer for &T {
+    type Target = T;
+
+    #[inline]
+    fn as_ref(&self) -> &Self::Target {
+        self
+    }
+
+    #[inline]
+    unsafe fn from_raw(p: *const Self::Target) -> Self {
+        unsafe { &*p }
+    }
+
+    #[inline]
+    fn into_raw(self) -> *const Self::Target {
+        self as *const T
     }
 }
 
