@@ -1,5 +1,6 @@
 use super::*;
 use crate::Pointer;
+use core::mem::MaybeUninit;
 use core::ptr::null;
 
 // TODO IntoIter
@@ -98,5 +99,75 @@ where
             (*node).get_node().detach();
             Some(P::from_raw(node))
         }
+    }
+}
+
+pub struct AvlIter<'a, P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    tree: &'a AvlTree<P, Tag>,
+    cur: Option<NonNull<P::Target>>,
+    dir: AvlDirection,
+    temp: MaybeUninit<P>,
+}
+
+/// A lending iterator for AvlTree
+///
+/// NOTE: If you use the [Iterator] interface (for iteration), you only get &P::Target.
+///
+/// you can use next_ref() to get &P
+impl<'a, P, Tag> AvlIter<'a, P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline]
+    pub(crate) fn new(
+        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: AvlDirection,
+    ) -> Self {
+        Self { tree, cur: init, dir, temp: MaybeUninit::uninit() }
+    }
+
+    /// Return a reference of P (you can P.clone() of P has Clone)
+    ///
+    /// NOTE: this is a lending iterator.
+    /// Unfortunately rust Iterator trait don't let us do this because of lifetime limitation
+    ///
+    /// # Example
+    ///
+    /// ```
+    ///
+    /// ```
+    #[inline]
+    pub fn next_ref(&mut self) -> Option<&P> {
+        let cur: NonNull<P::Target> = self.cur.take()?;
+        self.temp.write(unsafe { P::from_raw(cur.as_ptr()) });
+        let p = self.tree.walk_dir(cur, self.dir);
+        self.cur = p;
+        Some(unsafe { self.temp.assume_init_ref() })
+    }
+}
+
+unsafe impl<'a, P, Tag> Send for AvlIter<'a, P, Tag>
+where
+    P: Pointer + Send,
+    P::Target: AvlItem<Tag>,
+{
+}
+
+impl<'a, P, Tag> Iterator for AvlIter<'a, P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    type Item = &'a P::Target;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cur: NonNull<P::Target> = self.cur.take()?;
+        let p = self.tree.walk_dir(cur, self.dir);
+        self.cur = p;
+        Some(unsafe { cur.as_ref() })
     }
 }
