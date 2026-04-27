@@ -23,7 +23,12 @@ where
     }
 }
 
-unsafe impl<'a, P: Pointer + Send, Tag> Send for AvlDrain<'a, P, Tag> where P::Target: AvlItem<Tag> {}
+unsafe impl<'a, P, Tag> Send for AvlDrain<'a, P, Tag>
+where
+    P: Pointer + Send,
+    P::Target: AvlItem<Tag>,
+{
+}
 
 impl<'a, P: Pointer, Tag> Iterator for AvlDrain<'a, P, Tag>
 where
