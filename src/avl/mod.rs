@@ -55,11 +55,11 @@
 //! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
 //!
 //! tree.add(node.clone(), |a, b| a.value.cmp(&b.value));
-//! assert_eq!(tree.get_count(), 1);
+//! assert_eq!(tree.len(), 1);
 //!
 //! // Remove by reference (detach from avl tree)
 //! tree.remove_ref(&node);
-//! assert_eq!(tree.get_count(), 0);
+//! assert_eq!(tree.len(), 0);
 //! ```
 //!
 
@@ -206,8 +206,8 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    pub root: *const P::Target,
-    count: i64,
+    root: *const P::Target,
+    count: usize,
     _phan: PhantomData<fn(P, &Tag)>,
 }
 
@@ -357,7 +357,13 @@ where
         AvlDrain::new(self)
     }
 
-    pub fn get_count(&self) -> i64 {
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
         self.count
     }
 
@@ -831,7 +837,7 @@ where
                 break;
             }
         } else if !imm_data.is_null() {
-            assert!(self.count > 0);
+            debug_assert!(self.count > 0);
             self.count -= 1;
             self.root = imm_data;
         }
@@ -1160,7 +1166,7 @@ where
         let c = {
             #[cfg(feature = "std")]
             {
-                ((self.get_count() + 10) as f32).log2() as usize
+                ((self.len() + 10) as f32).log2() as usize
             }
             #[cfg(not(feature = "std"))]
             {
