@@ -458,7 +458,7 @@ impl<K: Ord, V> InterNode<K, V> {
         let key = grand.remove_mid_child(right_idx);
         let right_count = right.key_count();
         let mut self_count = self.key_count();
-        debug_assert!(right_count + self_count + 1 <= Self::cap());
+        debug_assert!(right_count + self_count < Self::cap());
         // Insert separator key from grandparent with right's leftmost child
         self.insert_no_split_with_idx(self_count, key, right.get_child_ptr(0));
         // Copy all keys and remaining children from right node

@@ -116,8 +116,8 @@ mod tests;
 
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
 pub struct BTreeMap<K: Ord + Clone + Sized, V: Sized> {
-    /// Root node (may be None for empty tree)
-    /// Option<Node> is larger than Option<NonNull<NodeHeader>>
+    // Root node (may be None for empty tree)
+    // `Option<Node>` is larger than `Option<NonNull<NodeHeader>>`
     root: Option<NonNull<NodeHeader>>,
     /// Number of elements in the tree
     len: usize,
@@ -314,7 +314,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 Entry::Vacant(VacantEntry { tree: self, key, idx, leaf: Some(leaf) })
             }
         } else {
-            return Entry::Vacant(VacantEntry { tree: self, key, idx: 0, leaf: None });
+            Entry::Vacant(VacantEntry { tree: self, key, idx: 0, leaf: None })
         }
     }
 
@@ -371,14 +371,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     #[inline]
-    fn init_empty<'a>(&'a mut self, key: K, value: V) -> &'a mut V {
+    fn init_empty(&mut self, key: K, value: V) -> &mut V {
         debug_assert!(self.root.is_none());
         unsafe {
             // empty tree
             let mut leaf = LeafNode::<K, V>::alloc();
             self.root = Some(leaf.to_root_ptr());
             self.len = 1;
-            return &mut *leaf.insert_no_split_with_idx(0, key, value);
+            &mut *leaf.insert_no_split_with_idx(0, key, value)
         }
     }
 
@@ -413,6 +413,16 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Remove a key from the map, returning the value if it existed
+    ///
+    /// #Example
+    ///
+    /// ```
+    /// use embed_collections::BTreeMap;
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1, "a");
+    /// assert_eq!(map.remove(&1), Some("a"));
+    /// assert_eq!(map.remove(&1), None);
+    /// ```
     pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
@@ -433,6 +443,42 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 self.handle_leaf_underflow(leaf, true);
             }
             Some(val)
+        } else {
+            None
+        }
+    }
+
+    /// Remove a key from the map, returning the (key, value) if it existed
+    ///
+    /// #Example
+    ///
+    /// ```
+    /// use embed_collections::BTreeMap;
+    /// let mut map = BTreeMap::new();
+    /// map.insert(1, "a");
+    /// assert_eq!(map.remove_entry(&1), Some((1, "a")));
+    /// assert_eq!(map.remove_entry(&1), None);
+    /// ```
+    pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        let mut leaf = self
+            .search_leaf_with(|inter| inter.find_leaf_with_cache::<Q>(self.clear_cache(), key))?;
+        let (idx, is_equal) = leaf.search(key);
+        if is_equal {
+            trace_log!("{leaf:?} remove {idx}");
+            let (_key, val) = leaf.remove_pair_no_borrow(idx);
+            self.len -= 1;
+            // Check for underflow and handle merge
+            let new_count = leaf.key_count();
+            let min_count = LeafNode::<K, V>::cap() >> 1;
+            if new_count < min_count && self.root_is_inter() {
+                // The cache should already contain the path from the entry lookup
+                self.handle_leaf_underflow(leaf, true);
+            }
+            Some((_key, val))
         } else {
             None
         }
@@ -498,26 +544,20 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     Err(_) => return None,
                 },
             },
-            Bound::Unbounded => {
-                if let Some(ent) = self.first_entry() {
-                    ent
-                } else {
-                    return None;
-                }
-            }
+            Bound::Unbounded => self.first_entry()?,
         };
         loop {
-            if let Some((_next_k, _next_v)) = ent.peek_forward() {
-                if end_contains!(_next_k) {
-                    let next_key = _next_k.clone();
-                    let (_k, _v) = ent._remove_entry(false);
-                    cb(&_k, &_v);
-                    if let Entry::Occupied(_ent) = self.entry(next_key) {
-                        ent = _ent;
-                        continue;
-                    } else {
-                        unreachable!();
-                    }
+            if let Some((_next_k, _next_v)) = ent.peek_forward()
+                && end_contains!(_next_k)
+            {
+                let next_key = _next_k.clone();
+                let (_k, _v) = ent._remove_entry(false);
+                cb(&_k, &_v);
+                if let Entry::Occupied(_ent) = self.entry(next_key) {
+                    ent = _ent;
+                    continue;
+                } else {
+                    unreachable!();
                 }
             }
             let (_k, _v) = ent._remove_entry(true);
@@ -772,7 +812,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // must be inter, don't have LEAF_MASK
             assert_eq!(_old_root.as_ptr(), left_ptr);
         }
-        return Err(new_root);
+        Err(new_root)
     }
 
     /// Handle leaf node underflow by merging with sibling
@@ -1277,20 +1317,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn pop_first(&mut self) -> Option<(K, V)> {
-        match self.first_entry() {
-            Some(entry) => Some(entry.remove_entry()),
-            _ => None,
-        }
+        self.first_entry().map(|entry| entry.remove_entry())
     }
 
     /// Removes and returns the last key-value pair in the map
     /// Returns `None` if the map is empty
     #[inline]
     pub fn pop_last(&mut self) -> Option<(K, V)> {
-        match self.last_entry() {
-            Some(entry) => Some(entry.remove_entry()),
-            _ => None,
-        }
+        self.last_entry().map(|entry| entry.remove_entry())
     }
 
     /// Returns an iterator over the map's entries
@@ -1376,15 +1410,15 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// Returns `None` if the map is empty.
     #[inline]
     pub fn first_cursor(&self) -> Cursor<'_, K, V> {
-        if let Some(leaf) = self.search_leaf_with(|inter| inter.find_first_leaf(None)) {
-            if leaf.key_count() > 0 {
-                return Cursor {
-                    leaf: Some(leaf),
-                    is_exist: true,
-                    idx: 0,
-                    _marker: Default::default(),
-                };
-            }
+        if let Some(leaf) = self.search_leaf_with(|inter| inter.find_first_leaf(None))
+            && leaf.key_count() > 0
+        {
+            return Cursor {
+                leaf: Some(leaf),
+                is_exist: true,
+                idx: 0,
+                _marker: Default::default(),
+            };
         }
         Cursor { leaf: None, is_exist: true, idx: 0, _marker: Default::default() }
     }

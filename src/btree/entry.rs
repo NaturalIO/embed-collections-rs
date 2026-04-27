@@ -264,14 +264,14 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     #[inline]
     pub fn move_backward(self) -> Result<Self, Self> {
         if self.idx > 0 {
-            return Ok(Self { tree: self.tree, leaf: self.leaf, idx: self.idx - 1 });
+            Ok(Self { tree: self.tree, leaf: self.leaf, idx: self.idx - 1 })
         } else if let Some(leaf) = self.leaf.get_left_node() {
             if let Some(info) = self.tree._get_info().as_mut() {
                 info.move_left();
             }
             let count = leaf.key_count();
             debug_assert!(count > 0);
-            return Ok(Self { tree: self.tree, leaf, idx: count - 1 });
+            Ok(Self { tree: self.tree, leaf, idx: count - 1 })
         } else {
             Err(self)
         }
@@ -284,13 +284,13 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     pub fn move_forward(self) -> Result<Self, Self> {
         let next_idx = self.idx + 1;
         if self.leaf.key_count() > next_idx {
-            return Ok(Self { tree: self.tree, leaf: self.leaf, idx: next_idx });
+            Ok(Self { tree: self.tree, leaf: self.leaf, idx: next_idx })
         } else if let Some(right) = self.leaf.get_right_node() {
             if let Some(info) = self.tree._get_info().as_mut() {
                 info.move_right();
             }
             debug_assert!(right.key_count() > 0);
-            return Ok(Self { tree: self.tree, leaf: right, idx: 0 });
+            Ok(Self { tree: self.tree, leaf: right, idx: 0 })
         } else {
             Err(self)
         }
@@ -302,24 +302,22 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// If key is not in strict order among the neighbors, return  Err() .
     #[inline]
     pub fn alter_key(&mut self, k: K) -> Result<(), ()> {
-        if let Some((_k, _v)) = self.peek_backward() {
-            if _k >= &k {
-                return Err(());
-            }
+        if let Some((_k, _v)) = self.peek_backward()
+            && _k >= &k
+        {
+            return Err(());
         }
-        if let Some((_k, _v)) = self.peek_forward() {
-            if _k <= &k {
-                return Err(());
-            }
+        if let Some((_k, _v)) = self.peek_forward()
+            && _k <= &k
+        {
+            return Err(());
         }
         unsafe {
             let k_ref = (*self.leaf.key_ptr(self.idx)).assume_init_mut();
-            if self.idx == 0 {
-                if self.tree._get_info().is_some() {
-                    // We need to keep the PathCache intact, use peek rather than move_to_ancenstor
-                    // it's allowed to move the entry or remove afterwards
-                    self.tree.update_ancestor_sep_key::<false>(k.clone());
-                }
+            if self.idx == 0 && self.tree._get_info().is_some() {
+                // We need to keep the PathCache intact, use peek rather than move_to_ancenstor
+                // it's allowed to move the entry or remove afterwards
+                self.tree.update_ancestor_sep_key::<false>(k.clone());
             }
             *k_ref = k;
             Ok(())
@@ -409,10 +407,10 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
                     // get_raw_pair will validate idx
                     return Some((&*k, &*v));
                 }
-                if let Some(right) = leaf.get_right_node() {
-                    if let Some((k, v)) = right.get_raw_pair(0) {
-                        return Some((&*k, &*v));
-                    }
+                if let Some(right) = leaf.get_right_node()
+                    && let Some((k, v)) = right.get_raw_pair(0)
+                {
+                    return Some((&*k, &*v));
                 }
             }
         }

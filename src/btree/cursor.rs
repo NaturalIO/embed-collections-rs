@@ -273,10 +273,10 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Cursor<'a, K, V> {
                     // get_raw_pair will validate idx
                     return Some((&*k, &*v));
                 }
-                if let Some(right) = leaf.get_right_node() {
-                    if let Some((k, v)) = right.get_raw_pair(0) {
-                        return Some((&*k, &*v));
-                    }
+                if let Some(right) = leaf.get_right_node()
+                    && let Some((k, v)) = right.get_raw_pair(0)
+                {
+                    return Some((&*k, &*v));
                 }
             }
         }
