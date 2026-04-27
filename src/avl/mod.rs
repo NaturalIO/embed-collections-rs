@@ -211,6 +211,13 @@ where
     _phan: PhantomData<fn(P, &Tag)>,
 }
 
+unsafe impl<P, Tag> Send for AvlTree<P, Tag>
+where
+    P: Pointer + Send,
+    P::Target: AvlItem<Tag>,
+{
+}
+
 /// Result of a search operation in an [`AvlTree`].
 ///
 /// An `AvlSearchResult` identifies either:
