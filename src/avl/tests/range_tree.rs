@@ -114,7 +114,7 @@ impl RangeTree {
     }
 
     pub fn is_empty(&self) -> bool {
-        if 0 == self.root.get_count() {
+        if 0 == self.root.len() {
             return true;
         }
         false
@@ -126,8 +126,8 @@ impl RangeTree {
     }
 
     #[inline(always)]
-    pub fn get_count(&self) -> i64 {
-        self.root.get_count()
+    pub fn len(&self) -> i64 {
+        self.root.len()
     }
 
     #[inline(always)]
@@ -370,7 +370,7 @@ impl RangeTree {
     /// return only when segment overlaps with [start, start+size]
     #[inline]
     pub fn find(&self, start: u64, size: u64) -> Option<Arc<RangeSeg>> {
-        if self.root.get_count() == 0 {
+        if self.root.len() == 0 {
             return None;
         }
         assert!(size > 0, "range tree find size={} error", size);
@@ -385,7 +385,7 @@ impl RangeTree {
     #[inline]
     pub fn find_contained(&self, start: u64, size: u64) -> Option<&RangeSeg> {
         assert!(size > 0, "range tree find size={} error", size);
-        if self.root.get_count() == 0 {
+        if self.root.len() == 0 {
             return None;
         }
         let end = start + size;
@@ -448,7 +448,7 @@ fn range_tree_add() {
 
     rt.add(0, 2);
     assert_eq!(2, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -459,7 +459,7 @@ fn range_tree_add() {
     // left join
     rt.add_and_merge(2, 5);
     assert_eq!(7, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -468,7 +468,7 @@ fn range_tree_add() {
     // without join
     rt.add_and_merge(10, 5);
     assert_eq!(12, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -477,7 +477,7 @@ fn range_tree_add() {
     // right join
     rt.add_and_merge(8, 2);
     assert_eq!(14, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -486,7 +486,7 @@ fn range_tree_add() {
     // left and right join
     rt.add_and_merge(7, 1);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -503,7 +503,7 @@ fn range_tree_add_and_merge() {
 
     rt.add_and_merge(0, 2);
     assert_eq!(2, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -514,7 +514,7 @@ fn range_tree_add_and_merge() {
     // left join
     rt.add_and_merge(2, 5);
     assert_eq!(7, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -523,7 +523,7 @@ fn range_tree_add_and_merge() {
     // without join
     rt.add_and_merge(15, 5);
     assert_eq!(12, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(16, 1);
     assert!(rs.is_some());
@@ -532,7 +532,7 @@ fn range_tree_add_and_merge() {
     // right join
     rt.add_and_merge(13, 2);
     assert_eq!(14, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(16, 1);
     assert!(rs.is_some());
@@ -541,7 +541,7 @@ fn range_tree_add_and_merge() {
     // duplicate
     rt.add_and_merge(14, 8);
     assert_eq!(16, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -554,7 +554,7 @@ fn range_tree_add_and_merge() {
     // without join
     rt.add_and_merge(25, 5);
     assert_eq!(21, rt.get_space());
-    assert_eq!(3, rt.root.get_count());
+    assert_eq!(3, rt.root.len());
 
     let rs = rt.find_contained(26, 1);
     assert!(rs.is_some());
@@ -563,7 +563,7 @@ fn range_tree_add_and_merge() {
     // duplicate
     rt.add_and_merge(12, 20);
     assert_eq!(27, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(0, 1);
     assert!(rs.is_some());
@@ -576,7 +576,7 @@ fn range_tree_add_and_merge() {
     // left and right join
     rt.add_and_merge(7, 5);
     assert_eq!(32, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -591,12 +591,12 @@ fn range_tree_remove() {
     // add [0, 15]
     rt.add(0, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     // remove [7, 8] expect [0, 7] [8, 15]
     rt.remove(7, 1);
     assert_eq!(14, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -606,7 +606,7 @@ fn range_tree_remove() {
     // remove [12, 15] expect [0, 7] [8, 12]
     rt.remove(12, 3);
     assert_eq!(11, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -616,7 +616,7 @@ fn range_tree_remove() {
     // remove [2, 5] expect [0, 2] [5, 7] [8, 12]
     rt.remove(2, 3);
     assert_eq!(8, rt.get_space());
-    assert_eq!(3, rt.root.get_count());
+    assert_eq!(3, rt.root.len());
 
     let rs = rt.find_contained(5, 1);
     assert!(rs.is_some());
@@ -626,7 +626,7 @@ fn range_tree_remove() {
     // remove [8, 10] expect [0, 2] [5, 7] [10, 12]
     rt.remove(8, 2);
     assert_eq!(6, rt.get_space());
-    assert_eq!(3, rt.root.get_count());
+    assert_eq!(3, rt.root.len());
 
     let rs = rt.find_contained(10, 1);
     assert!(rs.is_some());
@@ -636,7 +636,7 @@ fn range_tree_remove() {
     // remove [0, 2] expect [5, 7] [10, 12]
     rt.remove(0, 2);
     assert_eq!(4, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(5, 1);
     assert!(rs.is_some());
@@ -652,7 +652,7 @@ fn range_tree_walk() {
     rt.add(12, 8);
     rt.add(32, 16);
     assert_eq!(30, rt.get_space());
-    assert_eq!(4, rt.root.get_count());
+    assert_eq!(4, rt.root.len());
 
     fn cb_print(rs: &RangeSeg) {
         println!("walk callback cb_print range_seg:{:?}", rs);
@@ -675,7 +675,7 @@ fn range_tree_iter() {
         count += 1;
         total_space += rs.end.get() - rs.start.get();
     }
-    assert_eq!(count, rt.get_count() as usize);
+    assert_eq!(count, rt.len() as usize);
     assert_eq!(total_space, rt.get_space());
     assert_eq!(4, count);
     assert_eq!(30, total_space);
@@ -745,12 +745,12 @@ fn range_tree_remove1() {
     // add [0, 15]
     rt.add(0, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     // remove [7, 10] expect [0, 7] [10, 15]
     rt.remove_and_split(7, 3);
     assert_eq!(12, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -760,7 +760,7 @@ fn range_tree_remove1() {
     // remove right over [13, 18] expect [0, 7] [10, 13]
     rt.remove_and_split(13, 5);
     assert_eq!(10, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -770,7 +770,7 @@ fn range_tree_remove1() {
     // remove nothing [9, 10] expect [0, 7] [10, 13]
     assert!(!rt.remove_and_split(9, 1));
     assert_eq!(10, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -780,7 +780,7 @@ fn range_tree_remove1() {
     // remove left over [9, 11] expect [0, 7] [11, 13]
     rt.remove_and_split(9, 2);
     assert_eq!(9, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -790,7 +790,7 @@ fn range_tree_remove1() {
     // remove [6, 12] expect [0, 6] [12, 13]
     rt.remove_and_split(6, 6);
     assert_eq!(7, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(0, 5);
     assert!(rs.is_some());
@@ -805,7 +805,7 @@ fn range_tree_remove2() {
     // add [1, 16]
     rt.add(1, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -815,7 +815,7 @@ fn range_tree_remove2() {
     // remove left over and right over [0, 20] expect []
     rt.remove_and_split(0, 20);
     assert_eq!(0, rt.get_space());
-    assert_eq!(0, rt.root.get_count());
+    assert_eq!(0, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_none());
@@ -824,7 +824,7 @@ fn range_tree_remove2() {
     // add [1, 16]
     rt.add(1, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -839,7 +839,7 @@ fn range_tree_remove3() {
     // add [1, 16]
     rt.add(1, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -849,7 +849,7 @@ fn range_tree_remove3() {
     // add [33, 48]
     rt.add(33, 15);
     assert_eq!(30, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(40, 1);
     assert!(rs.is_some());
@@ -859,7 +859,7 @@ fn range_tree_remove3() {
     // add [49, 64]
     rt.add(49, 15);
     assert_eq!(45, rt.get_space());
-    assert_eq!(3, rt.root.get_count());
+    assert_eq!(3, rt.root.len());
 
     let rs = rt.find_contained(50, 1);
     assert!(rs.is_some());
@@ -869,7 +869,7 @@ fn range_tree_remove3() {
     // remove left over and right over [6, 56] expect [1, 6] [56, 64]
     rt.remove_and_split(6, 50);
     assert_eq!(13, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(58, 1);
     assert!(rs.is_some());
@@ -889,7 +889,7 @@ fn range_tree_remove4() {
     // add [1, 16]
     rt.add(1, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -899,7 +899,7 @@ fn range_tree_remove4() {
     // add [33, 48]
     rt.add(33, 15);
     assert_eq!(30, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(40, 1);
     assert!(rs.is_some());
@@ -909,7 +909,7 @@ fn range_tree_remove4() {
     // remove right over [6, 56] expect [1, 6]
     rt.remove_and_split(6, 50);
     assert_eq!(5, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(3, 1);
     assert!(rs.is_some());
@@ -924,7 +924,7 @@ fn range_tree_remove5() {
     // add [1, 16]
     rt.add(1, 15);
     assert_eq!(15, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(11, 1);
     assert!(rs.is_some());
@@ -934,7 +934,7 @@ fn range_tree_remove5() {
     // add [33, 48]
     rt.add(33, 15);
     assert_eq!(30, rt.get_space());
-    assert_eq!(2, rt.root.get_count());
+    assert_eq!(2, rt.root.len());
 
     let rs = rt.find_contained(40, 1);
     assert!(rs.is_some());
@@ -944,7 +944,7 @@ fn range_tree_remove5() {
     // remove left over [0, 40] expect [40, 48]
     rt.remove_and_split(0, 40);
     assert_eq!(8, rt.get_space());
-    assert_eq!(1, rt.root.get_count());
+    assert_eq!(1, rt.root.len());
 
     let rs = rt.find_contained(42, 1);
     assert!(rs.is_some());

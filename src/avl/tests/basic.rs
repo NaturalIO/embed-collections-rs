@@ -5,7 +5,7 @@ use super::*;
 fn int_avl_node() {
     let mut tree = new_inttree();
 
-    assert_eq!(tree.get_count(), 0);
+    assert_eq!(tree.len(), 0);
     assert!(tree.first().is_none());
     assert!(tree.last().is_none());
 
@@ -82,7 +82,7 @@ fn int_avl_tree_order() {
         tree.add_int_node(new_intnode(i));
     }
     tree.validate_tree();
-    assert_eq!(tree.get_count(), max as i64);
+    assert_eq!(tree.len(), max as i64);
 
     let mut count = 0;
     let mut current = tree.first();
@@ -114,7 +114,7 @@ fn int_avl_tree_order() {
     for i in 0..max {
         assert!(tree.remove_int(i));
     }
-    assert_eq!(tree.get_count(), 0);
+    assert_eq!(tree.len(), 0);
 
     let end_ts = Instant::now();
     println!("duration {}", end_ts.duration_since(start_ts).as_secs_f64());
@@ -130,11 +130,11 @@ fn int_avl_tree_fixed1() {
         let rs = tree.find_int(*i);
         assert!(rs.get_node_ref().is_some(), "add error {}", i);
     }
-    assert_eq!(tree.get_count(), arr.len() as i64);
+    assert_eq!(tree.len(), arr.len() as i64);
     for i in arr.iter() {
         assert!(tree.remove_int(*i));
     }
-    assert_eq!(tree.get_count(), 0);
+    assert_eq!(tree.len(), 0);
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn int_avl_tree_random() {
         assert!(tree.remove_int(test_list[index]));
     }
     tree.validate_tree();
-    assert_eq!(0, tree.get_count());
+    assert_eq!(0, tree.len());
 }
 
 #[test]
@@ -227,7 +227,7 @@ fn int_avl_tree_insert_here() {
     let here = unsafe { rs.detach() };
     unsafe { tree.insert_here(new_intnode(5), here, AvlDirection::Left) };
     tree.validate_tree();
-    assert_eq!(tree.get_count(), 2);
+    assert_eq!(tree.len(), 2);
     assert_eq!(tree.find_int(5).get_node_ref().unwrap().value, 5);
 
     // Insert 15 after 10
@@ -235,7 +235,7 @@ fn int_avl_tree_insert_here() {
     let here = unsafe { rs.detach() };
     unsafe { tree.insert_here(new_intnode(15), here, AvlDirection::Right) };
     tree.validate_tree();
-    assert_eq!(tree.get_count(), 3);
+    assert_eq!(tree.len(), 3);
     assert_eq!(tree.find_int(15).get_node_ref().unwrap().value, 15);
 
     // Insert 3 before 5 (which is left child of 10)
@@ -243,14 +243,14 @@ fn int_avl_tree_insert_here() {
     let here = unsafe { rs.detach() };
     unsafe { tree.insert_here(new_intnode(3), here, AvlDirection::Left) };
     tree.validate_tree();
-    assert_eq!(tree.get_count(), 4);
+    assert_eq!(tree.len(), 4);
 
     // Insert 7 after 5
     let rs = tree.find_int(5);
     let here = unsafe { rs.detach() };
     unsafe { tree.insert_here(new_intnode(7), here, AvlDirection::Right) };
     tree.validate_tree();
-    assert_eq!(tree.get_count(), 5);
+    assert_eq!(tree.len(), 5);
 }
 
 #[test]
@@ -278,11 +278,11 @@ fn test_arc_avl_tree_remove_ref() {
     let mut tree = AvlTree::<Arc<IntAvlNode>, ()>::new();
     let node = Arc::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: 200 });
     tree.add(node.clone(), cmp_int_node);
-    assert_eq!(tree.get_count(), 1);
+    assert_eq!(tree.len(), 1);
     assert_eq!(Arc::strong_count(&node), 2);
 
     tree.remove_ref(&node);
-    assert_eq!(tree.get_count(), 0);
+    assert_eq!(tree.len(), 0);
     assert_eq!(Arc::strong_count(&node), 1);
 }
 
@@ -296,7 +296,7 @@ fn test_arc_avl_tree_remove_with() {
     assert!(removed.is_some());
     let removed_arc = removed.unwrap();
     assert_eq!(removed_arc.value, 300);
-    assert_eq!(tree.get_count(), 0);
+    assert_eq!(tree.len(), 0);
     // count: 1 (node) + 1 (removed_arc) = 2. Tree dropped its count.
     assert_eq!(Arc::strong_count(&node), 2);
 

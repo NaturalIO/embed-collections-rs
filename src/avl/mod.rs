@@ -55,11 +55,11 @@
 //! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
 //!
 //! tree.add(node.clone(), |a, b| a.value.cmp(&b.value));
-//! assert_eq!(tree.get_count(), 1);
+//! assert_eq!(tree.len(), 1);
 //!
 //! // Remove by reference (detach from avl tree)
 //! tree.remove_ref(&node);
-//! assert_eq!(tree.get_count(), 0);
+//! assert_eq!(tree.len(), 0);
 //! ```
 //!
 
@@ -357,7 +357,7 @@ where
         AvlDrain::new(self)
     }
 
-    pub fn get_count(&self) -> i64 {
+    pub fn len(&self) -> i64 {
         self.count
     }
 
@@ -1160,7 +1160,7 @@ where
         let c = {
             #[cfg(feature = "std")]
             {
-                ((self.get_count() + 10) as f32).log2() as usize
+                ((self.len() + 10) as f32).log2() as usize
             }
             #[cfg(not(feature = "std"))]
             {
