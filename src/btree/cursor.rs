@@ -72,7 +72,6 @@ impl<'a, K: Ord + Clone + Sized + 'a, V: Sized + 'a> Iterator for Cursor<'a, K, 
     /// assert_eq!(cursor.next(), Some((&3, &"b")));
     /// assert_eq!(cursor.next(), Some((&5, &"c")));
     /// assert_eq!(cursor.next(), None);
-
     ///
     /// // existing key
     /// let mut cursor = map.cursor(&3);
