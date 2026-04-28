@@ -137,8 +137,46 @@ where
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
+    /// use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+    /// use core::cell::UnsafeCell;
+    /// use core::cmp::Ordering;
+    /// extern crate alloc;
+    /// use alloc::sync::Arc;
     ///
+    /// struct MyNode {
+    ///     value: i32,
+    ///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+    /// }
+    ///
+    /// unsafe impl AvlItem<()> for MyNode {
+    ///
+    ///     type Key = i32;
+    ///
+    ///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+    ///         unsafe { &mut *self.avl_node.get() }
+    ///     }
+    ///
+    ///     fn borrow_key(&self) -> &Self::Key {
+    ///         &self.value
+    ///     }
+    /// }
+    ///
+    /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
+    ///
+    /// let new_node = | n: i32| {
+    ///     Arc::new(MyNode { value: n, avl_node: UnsafeCell::new(Default::default()) })
+    /// };
+    /// tree.add(new_node(1));
+    /// tree.add(new_node(2));
+    /// tree.add(new_node(3));
+    /// assert_eq!(tree.len(), 3);
+    ///
+    /// let mut iter = tree.iter_rev();
+    /// let mut all_nodes_rev = Vec::with_capacity(tree.len());
+    /// while let Some(node) = iter.next_ref() {
+    ///     all_nodes_rev.push(node.clone());
+    /// }
     /// ```
     #[inline]
     pub fn next_ref(&mut self) -> Option<&P> {

@@ -461,14 +461,36 @@ where
         self.count
     }
 
+    /// Adds a new element to the tree， takes the ownership of P.
+    ///
+    /// The `cmp_func` should compare two elements to determine their relative order.
+    /// Returns `true` if the element was added, `false` if an equivalent element
+    /// already exists (in which case the provided `node` is dropped).
     #[inline]
-    pub fn first(&self) -> Option<&P::Target> {
-        unsafe { return_end!(self, AvlDirection::Left).as_ref() }
-    }
+    pub fn add(&mut self, node: P) -> bool {
+        if self.count == 0 && self.root.is_null() {
+            self.root = node.into_raw();
+            self.count = 1;
+            return true;
+        }
 
-    #[inline]
-    pub fn last(&self) -> Option<&P::Target> {
-        unsafe { return_end!(self, AvlDirection::Right).as_ref() }
+        let w = self._find(node.as_ref(), as_avlitem!(P, Tag, cmp));
+        if w.direction.is_none() {
+            // To prevent memory leak, we must drop the node.
+            // But since we took ownership, we have to convert it back to P and drop it.
+            drop(node);
+            return false;
+        }
+
+        // Safety: We need to decouple the lifetime of 'w' from 'self' to call 'insert'.
+        // We extract the pointers and reconstruct the result.
+        let w_node = w.node;
+        let w_dir = w.direction;
+
+        let w_detached = AvlSearchResult { node: w_node, direction: w_dir, _phan: PhantomData };
+
+        self.insert(node, w_detached);
+        true
     }
 
     /// Inserts a new node into the tree at the location specified by a search result.
@@ -1284,6 +1306,16 @@ where
     }
 
     #[inline]
+    pub fn first(&self) -> Option<&P::Target> {
+        unsafe { return_end!(self, AvlDirection::Left).as_ref() }
+    }
+
+    #[inline]
+    pub fn last(&self) -> Option<&P::Target> {
+        unsafe { return_end!(self, AvlDirection::Right).as_ref() }
+    }
+
+    #[inline]
     pub fn nearest<'a>(
         &'a self, current: &AvlSearchResult<'a, P>, direction: AvlDirection,
     ) -> AvlSearchResult<'a, P> {
@@ -1348,38 +1380,6 @@ where
             }
         }
         assert_eq!(visited, self.count);
-    }
-
-    /// Adds a new element to the tree， takes the ownership of P.
-    ///
-    /// The `cmp_func` should compare two elements to determine their relative order.
-    /// Returns `true` if the element was added, `false` if an equivalent element
-    /// already exists (in which case the provided `node` is dropped).
-    #[inline]
-    pub fn add(&mut self, node: P) -> bool {
-        if self.count == 0 && self.root.is_null() {
-            self.root = node.into_raw();
-            self.count = 1;
-            return true;
-        }
-
-        let w = self._find(node.as_ref(), as_avlitem!(P, Tag, cmp));
-        if w.direction.is_none() {
-            // To prevent memory leak, we must drop the node.
-            // But since we took ownership, we have to convert it back to P and drop it.
-            drop(node);
-            return false;
-        }
-
-        // Safety: We need to decouple the lifetime of 'w' from 'self' to call 'insert'.
-        // We extract the pointers and reconstruct the result.
-        let w_node = w.node;
-        let w_dir = w.direction;
-
-        let w_detached = AvlSearchResult { node: w_node, direction: w_dir, _phan: PhantomData };
-
-        self.insert(node, w_detached);
-        true
     }
 }
 
