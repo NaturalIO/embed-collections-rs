@@ -94,7 +94,7 @@ where
         tree.add_int_node(tree.new_node(i));
     }
     tree.validate_tree();
-    assert_eq!(tree.len(), max as i64);
+    assert_eq!(tree.len(), max as usize);
 
     let mut count = 0;
     let mut current = tree.first();
@@ -147,7 +147,7 @@ where
         let rs = tree.find_int(*i);
         assert!(rs.get_node_ref().is_some(), "add error {}", i);
     }
-    assert_eq!(tree.len(), arr.len() as i64);
+    assert_eq!(tree.len(), arr.len());
     for i in arr.iter() {
         assert!(tree.remove_int(*i));
     }
