@@ -58,6 +58,15 @@ pub(crate) fn alive_count() -> usize {
     ALIVE_COUNT.load(SeqCst)
 }
 
+/// Get the current alive count (should be 0 at test end)
+pub(crate) fn inc_alive_count() -> usize {
+    ALIVE_COUNT.fetch_add(1, SeqCst)
+}
+
+pub(crate) fn dec_alive_count() -> usize {
+    ALIVE_COUNT.fetch_sub(1, SeqCst)
+}
+
 /// A test type that tracks alive count using a global static counter
 /// new() +1, clone() +1, drop() -1, should be 0 at test end
 pub(crate) struct CounterI32 {
