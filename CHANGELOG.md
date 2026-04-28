@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.10.0] - 2026-04-28
+
+### Added
+
+- avl: Add iter() & iter_rev(), support iterate &P::Target and get &P through next_ref()
+
+- btree: Add remove_entry()
+
+- Add SmartPointer trait
+
+- impl Pointer for &T
+
+- Pointer trait add as_ptr()
+
+- avl: Add missing Send
+
+### Changed
+
+- avl: Move cmp function into AvlItem trait, support borrow_key() and Ord
+
+- avl: Change get_count() to len()
+
+### Removed
+
+- avl: wake() is replace by iter()
+
 ## [0.9.0] - 2026-04-26
 
 ### Added
