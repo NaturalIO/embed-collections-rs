@@ -1,6 +1,6 @@
 mod basic;
 mod iter;
-//mod range_tree;
+mod range_tree;
 
 use super::*;
 use crate::{Pointer, SmartPointer};

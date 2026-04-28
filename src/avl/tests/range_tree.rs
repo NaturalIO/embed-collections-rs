@@ -1,3 +1,5 @@
+// Use crate range-tree-rs instead, this implementation is just to ensure avl is tested
+
 use super::super::*;
 use super::*;
 use alloc::sync::Arc;
@@ -15,11 +17,44 @@ pub struct RangeSeg {
     pub end: Cell<u64>,
 }
 
+impl PartialOrd for RangeSeg {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(Ord::cmp(self, other))
+    }
+}
+
+impl PartialEq for RangeSeg {
+    fn eq(&self, other: &Self) -> bool {
+        Ord::cmp(self, other) == Ordering::Equal
+    }
+}
+
+impl Eq for RangeSeg {}
+
+impl Ord for RangeSeg {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self.end.get() <= other.start.get() {
+            Ordering::Less
+        } else if self.start.get() >= other.end.get() {
+            Ordering::Greater
+        } else {
+            // intersection
+            Ordering::Equal
+        }
+    }
+}
+
 unsafe impl Send for RangeSeg {}
 
 unsafe impl AvlItem<()> for RangeSeg {
+    type Key = Self;
+
     fn get_node(&self) -> &mut AvlNode<Self, ()> {
         unsafe { &mut *self.node.get() }
+    }
+
+    fn borrow_key(&self) -> &Self::Key {
+        self
     }
 }
 
@@ -58,17 +93,6 @@ impl fmt::Debug for RangeSeg {
         let _ = write!(f, "( start: {}, end:{}, ", self.start.get(), self.end.get());
         let _ = write!(f, "node: {:?}, ", unsafe { &*self.node.get() });
         write!(f, ")")
-    }
-}
-
-// when return is overlapping, return equal
-fn range_tree_segment_cmp(a: &RangeSeg, b: &RangeSeg) -> Ordering {
-    if a.end.get() <= b.start.get() {
-        Ordering::Less
-    } else if a.start.get() >= b.end.get() {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
     }
 }
 
@@ -149,7 +173,7 @@ impl RangeTree {
             end: Cell::new(start + size),
             ..Default::default()
         };
-        let result = self.root.find(&rs_key, range_tree_segment_cmp);
+        let result = self.root.find(&rs_key);
         if result.direction.is_none() {
             panic!("allocating allocated {} of {:?}", &rs_key, result.get_exact().unwrap());
         }
@@ -170,7 +194,7 @@ impl RangeTree {
             end: Cell::new(start + size),
             ..Default::default()
         };
-        let result = self.root.find(&rs_key, range_tree_segment_cmp);
+        let result = self.root.find(&rs_key);
         if result.direction.is_none() {
             let ol_node = result.get_exact().unwrap();
             let max_start = if rs_key.start.get() > ol_node.start.get() {
@@ -205,7 +229,7 @@ impl RangeTree {
                 end: Cell::new(new_end),
                 ..Default::default()
             };
-            let result = self.root.find(&search_key, range_tree_segment_cmp);
+            let result = self.root.find(&search_key);
 
             if result.direction.is_some() {
                 // No more overlapping nodes
@@ -228,7 +252,7 @@ impl RangeTree {
         }
         let search_key =
             RangeSeg { start: Cell::new(new_start), end: Cell::new(new_end), ..Default::default() };
-        let result = self.root.find(&search_key, range_tree_segment_cmp);
+        let result = self.root.find(&search_key);
 
         let detached_result = unsafe { result.detach() };
         self.space += new_end - new_start;
@@ -307,7 +331,7 @@ impl RangeTree {
         let end = start + size;
         let search_rs =
             RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        let result = self.root.find(&search_rs, range_tree_segment_cmp);
+        let result = self.root.find(&search_rs);
         if !result.is_exact() {
             return false;
         }
@@ -376,7 +400,7 @@ impl RangeTree {
         assert!(size > 0, "range tree find size={} error", size);
         let end = start + size;
         let rs = RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        let result = self.root.find(&rs, range_tree_segment_cmp);
+        let result = self.root.find(&rs);
         result.get_exact()
     }
 
@@ -391,7 +415,7 @@ impl RangeTree {
         let end = start + size;
         let rs_search =
             RangeSeg { start: Cell::new(start), end: Cell::new(end), ..Default::default() };
-        self.root.find_contained(&rs_search, range_tree_segment_cmp)
+        self.root.find_contained(&rs_search)
     }
 
     #[inline]
@@ -425,7 +449,7 @@ impl RangeTree {
     }
 
     pub fn validate(&self) {
-        self.root.validate(|a, b| a.start.get().cmp(&b.start.get()));
+        self.root.validate();
     }
 }
 
