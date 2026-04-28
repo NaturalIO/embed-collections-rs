@@ -1,17 +1,29 @@
 mod basic;
 mod iter;
 mod range_tree;
+use crate::test::{dec_alive_count, inc_alive_count};
 
 use super::*;
 use crate::{Pointer, SmartPointer};
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
-use fastrand::Rng;
-use std::time::Instant;
 
 pub struct IntAvlNode {
     pub value: i64,
     pub node: UnsafeCell<AvlNode<Self, ()>>,
+}
+
+impl IntAvlNode {
+    pub fn new(value: i64) -> Self {
+        inc_alive_count();
+        Self { value, node: UnsafeCell::new(AvlNode::default()) }
+    }
+}
+
+impl Drop for IntAvlNode {
+    fn drop(&mut self) {
+        dec_alive_count();
+    }
 }
 
 impl fmt::Debug for IntAvlNode {
@@ -96,6 +108,6 @@ where
     P: SmartPointer<Target = IntAvlNode>,
 {
     pub fn new_node(&self, i: i64) -> P {
-        P::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: i })
+        P::new(IntAvlNode::new(i))
     }
 }
