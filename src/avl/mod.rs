@@ -2,6 +2,11 @@
 //!
 //! The algorithm origin from open-zfs
 //!
+//! The ordering of avl tree is defined by [AvlItem] trait . There're two scenario:
+//! - borrow field as key from the node struct
+//! - impl Ord for struct itself
+//! Refer to the example of [AvlItem] document.
+//!
 //! # Examples
 //!
 //! ## Using `Box` to search and remove by key
@@ -10,6 +15,8 @@
 //! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
 //! use core::cell::UnsafeCell;
 //! use core::cmp::Ordering;
+//! extern crate alloc;
+//! use alloc::sync::Arc;
 //!
 //! struct MyNode {
 //!     value: i32,
@@ -17,51 +24,42 @@
 //! }
 //!
 //! unsafe impl AvlItem<()> for MyNode {
+//!
+//!     type Key = i32;
+//!
 //!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
 //!         unsafe { &mut *self.avl_node.get() }
 //!     }
+//!
+//!     fn borrow_key(&self) -> &Self::Key {
+//!         &self.value
+//!     }
 //! }
+//!
+//! // A boxed example
 //!
 //! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
-//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) }), |a, b| a.value.cmp(&b.value));
+//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) }));
 //!
 //! // Search and remove
-//! if let Some(node) = tree.remove_by_key(&10, |key, node| key.cmp(&node.value)) {
+//! if let Some(node) = tree.remove_by_key(&10) {
 //!     assert_eq!(node.value, 10);
 //! }
-//! ```
+//! assert!(tree.is_empty());
 //!
-//! ## Using `Arc` for multiple ownership
-//!
-//! remove_ref only available to `Arc` and `Rc`
-//!
-//! ```rust
-//! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
-//! use core::cell::UnsafeCell;
-//! use std::sync::Arc;
-//!
-//! struct MyNode {
-//!     value: i32,
-//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
-//! }
-//!
-//! unsafe impl AvlItem<()> for MyNode {
-//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
-//!         unsafe { &mut *self.avl_node.get() }
-//!     }
-//! }
+//! // Using `Arc` for multiple ownership
+//! // remove_ref only available to `Arc` and `Rc`
 //!
 //! let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
 //! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
 //!
-//! tree.add(node.clone(), |a, b| a.value.cmp(&b.value));
+//! tree.add(node.clone());
 //! assert_eq!(tree.len(), 1);
 //!
 //! // Remove by reference (detach from avl tree)
 //! tree.remove_ref(&node);
 //! assert_eq!(tree.len(), 0);
 //! ```
-//!
 
 mod iter;
 pub use iter::*;
@@ -90,8 +88,96 @@ use core::{
 /// Implementors must ensure `get_node` returns a valid reference to the `AvlNode`
 /// embedded within `Self`. Users must use `UnsafeCell` to hold `AvlNode` to support
 /// interior mutability required by list operations.
+///
+/// # Example (struct field as key)
+///
+/// ```
+/// use embed_collections::avl::{AvlItem, AvlNode};
+/// use core::cell::UnsafeCell;
+///
+/// pub struct IntAvlNode {
+///     pub value: i64,
+///     pub node: UnsafeCell<AvlNode<Self, ()>>,
+/// }
+/// unsafe impl AvlItem<()> for IntAvlNode {
+///     type Key = i64;
+///
+///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
+///         unsafe { &mut *self.node.get() }
+///     }
+///
+///     fn borrow_key(&self) -> &Self::Key {
+///         &self.value
+///     }
+/// }
+/// ```
+///
+/// # Example (impl Ord for struct)
+///
+/// ```
+/// use embed_collections::avl::{AvlItem, AvlNode};
+/// use core::cell::{Cell, UnsafeCell};
+/// use core::cmp::Ordering;
+///
+/// pub struct RangeSeg {
+///     node: UnsafeCell<AvlNode<Self, ()>>,
+///     pub start: Cell<u64>,
+///     pub end: Cell<u64>,
+/// }
+///
+/// impl PartialOrd for RangeSeg {
+///     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+///         Some(Ord::cmp(self, other))
+///     }
+/// }
+/// impl PartialEq for RangeSeg {
+///     fn eq(&self, other: &Self) -> bool {
+///         Ord::cmp(self, other) == Ordering::Equal
+///     }
+/// }
+/// impl Eq for RangeSeg {}
+///
+/// impl Ord for RangeSeg {
+///     fn cmp(&self, other: &Self) -> Ordering {
+///         if self.end.get() <= other.start.get() {
+///             Ordering::Less
+///         } else if self.start.get() >= other.end.get() {
+///             Ordering::Greater
+///         } else {
+///             // intersection
+///             Ordering::Equal
+///         }
+///     }
+/// }
+/// unsafe impl Send for RangeSeg {}
+/// unsafe impl AvlItem<()> for RangeSeg {
+///     type Key = Self;
+///
+///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
+///         unsafe { &mut *self.node.get() }
+///     }
+///
+///     fn borrow_key(&self) -> &Self::Key {
+///         self
+///     }
+/// }
+/// ```
 pub unsafe trait AvlItem<Tag>: Sized {
+    type Key: Ord;
+
     fn get_node(&self) -> &mut AvlNode<Self, Tag>;
+
+    #[inline(always)]
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.borrow_key().cmp(other.borrow_key())
+    }
+
+    #[inline(always)]
+    fn cmp_key(&self, key: &Self::Key) -> Ordering {
+        key.cmp(self.borrow_key())
+    }
+
+    fn borrow_key(&self) -> &Self::Key;
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -116,6 +202,12 @@ macro_rules! avlchild_to_balance {
             AvlDirection::Left => -1,
             AvlDirection::Right => 1,
         }
+    };
+}
+
+macro_rules! as_avlitem {
+    ($P: tt, $Tag: tt, $name: ident) => {
+        <$P::Target as AvlItem<$Tag>>::$name
     };
 }
 
@@ -270,7 +362,7 @@ impl<'a, P: Pointer> AvlSearchResult<'a, P> {
     ///
     /// Used in `RangeTree::add`:
     /// ```ignore
-    /// let result = self.root.find(&rs_key, range_tree_segment_cmp);
+    /// let result = self.root.find(&rs_key);
     /// // result is AvlSearchResult<'a, ...> and borrows self.root
     ///
     /// let detached = unsafe { result.detach() };
@@ -344,6 +436,7 @@ where
     P::Target: AvlItem<Tag>,
 {
     /// Creates a new, empty `AvlTree`.
+    #[inline]
     pub fn new() -> Self {
         AvlTree { count: 0, root: null(), _phan: Default::default() }
     }
@@ -357,10 +450,17 @@ where
         AvlDrain::new(self)
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    #[inline]
     pub fn len(&self) -> i64 {
         self.count
     }
 
+    #[inline]
     pub fn first(&self) -> Option<&P::Target> {
         unsafe { return_end!(self, AvlDirection::Left).as_ref() }
     }
@@ -389,7 +489,8 @@ where
     /// ```rust
     /// use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
     /// use core::cell::UnsafeCell;
-    /// use std::sync::Arc;
+    /// extern crate alloc;
+    /// use alloc::sync::Arc;
     ///
     /// struct MyNode {
     ///     value: i32,
@@ -397,14 +498,20 @@ where
     /// }
     ///
     /// unsafe impl AvlItem<()> for MyNode {
+    ///     type Key = i32;
+    ///
     ///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
     ///         unsafe { &mut *self.avl_node.get() }
+    ///     }
+    ///
+    ///     fn borrow_key(&self) -> &Self::Key {
+    ///         &self.value
     ///     }
     /// }
     ///
     /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
     /// let key = 42;
-    /// let result = tree.find(&key, |k, n| k.cmp(&n.value));
+    /// let result = tree.find(&key);
     ///
     /// if !result.is_exact() {
     ///     let new_node = Arc::new(MyNode {
@@ -846,8 +953,8 @@ where
     /// The `cmp_func` should compare the key `K` with the elements in the tree.
     /// Returns `Some(P)` if an exact match was found and removed, `None` otherwise.
     #[inline]
-    pub fn remove_by_key<K>(&mut self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>) -> Option<P> {
-        let result = self.find(val, cmp_func);
+    pub fn remove_by_key(&mut self, val: &'_ as_avlitem!(P, Tag, Key)) -> Option<P> {
+        let result = self.find(val);
         self.remove_with(unsafe { result.detach() })
     }
 
@@ -877,12 +984,16 @@ where
 
     /// Searches for an element in the tree.
     ///
-    /// The `cmp_func` should compare the key `K` with the elements in the tree.
     /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
     /// or where a new element should be inserted.
     #[inline]
-    pub fn find<'a, K>(
-        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    pub fn find<'a>(&'a self, val: &'_ as_avlitem!(P, Tag, Key)) -> AvlSearchResult<'a, P> {
+        self._find::<as_avlitem!(P, Tag, Key)>(val, |_val, other| _val.cmp(other.borrow_key()))
+    }
+
+    #[inline]
+    fn _find<'a, K>(
+        &'a self, val: &'_ K, cmp_func: AvlCmpFunc<K, P::Target>,
     ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
@@ -928,8 +1039,8 @@ where
 
     // for range tree, val may overlap multiple range(node), ensure return the smallest
     #[inline]
-    pub fn find_contained<'a, K>(
-        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    pub fn find_contained<'a>(
+        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
     ) -> Option<&'a P::Target> {
         if self.root.is_null() {
             return None;
@@ -937,7 +1048,7 @@ where
         let mut node_data = self.root;
         let mut result_node: *const P::Target = null();
         loop {
-            let diff = cmp_func(val, unsafe { &*node_data });
+            let diff = unsafe { &*node_data }.cmp_key(val);
             match diff {
                 Ordering::Equal => {
                     let node = unsafe { (*node_data).get_node() };
@@ -972,15 +1083,15 @@ where
 
     // for slab, return any block larger or equal than search param
     #[inline]
-    pub fn find_larger_eq<'a, K>(
-        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+    pub fn find_larger_eq<'a>(
+        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
     ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
         }
         let mut node_data = self.root;
         loop {
-            let diff = cmp_func(val, unsafe { &*node_data });
+            let diff = unsafe { &*node_data }.cmp_key(val);
             match diff {
                 Ordering::Equal => {
                     return AvlSearchResult {
@@ -1014,7 +1125,7 @@ where
     /// For range tree
     #[inline]
     pub fn find_nearest<'a, K>(
-        &'a self, val: &K, cmp_func: AvlCmpFunc<K, P::Target>,
+        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
     ) -> AvlSearchResult<'a, P> {
         if self.root.is_null() {
             return AvlSearchResult::default();
@@ -1023,7 +1134,7 @@ where
         let mut node_data = self.root;
         let mut nearest_node = null();
         loop {
-            let diff = cmp_func(val, unsafe { &*node_data });
+            let diff = unsafe { &*node_data }.cmp_key(val);
             match diff {
                 Ordering::Equal => {
                     return AvlSearchResult {
@@ -1139,16 +1250,16 @@ where
     }
 
     #[inline]
-    fn validate_node(&self, data: *const P::Target, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
+    fn validate_node(&self, data: *const P::Target) {
         let node = unsafe { (*data).get_node() };
         let left = node.left;
         if !left.is_null() {
-            assert!(cmp_func(unsafe { &*left }, unsafe { &*data }) != Ordering::Greater);
+            assert!(unsafe { &*left }.cmp(unsafe { &*data }) != Ordering::Greater);
             assert_eq!(unsafe { (*left).get_node() }.get_parent(), data);
         }
         let right = node.right;
         if !right.is_null() {
-            assert!(cmp_func(unsafe { &*right }, unsafe { &*data }) != Ordering::Less);
+            assert!(unsafe { &*right }.cmp(unsafe { &*data }) != Ordering::Less);
             assert_eq!(unsafe { (*right).get_node() }.get_parent(), data);
         }
     }
@@ -1175,7 +1286,7 @@ where
         AvlSearchResult::default()
     }
 
-    pub fn validate(&self, cmp_func: AvlCmpFunc<P::Target, P::Target>) {
+    pub fn validate(&self) {
         let c = {
             #[cfg(feature = "std")]
             {
@@ -1205,11 +1316,11 @@ where
                     continue;
                 }
                 visited += 1;
-                self.validate_node(data, cmp_func);
+                self.validate_node(data);
                 data = unsafe { (*data).get_node() }.get_child(AvlDirection::Right);
             } else if !stack.is_empty() {
                 let _data = stack.pop().unwrap();
-                self.validate_node(_data, cmp_func);
+                self.validate_node(_data);
                 visited += 1;
                 let node = unsafe { (*_data).get_node() };
                 data = node.get_child(AvlDirection::Right);
@@ -1226,14 +1337,14 @@ where
     /// Returns `true` if the element was added, `false` if an equivalent element
     /// already exists (in which case the provided `node` is dropped).
     #[inline]
-    pub fn add(&mut self, node: P, cmp_func: AvlCmpFunc<P::Target, P::Target>) -> bool {
+    pub fn add(&mut self, node: P) -> bool {
         if self.count == 0 && self.root.is_null() {
             self.root = node.into_raw();
             self.count = 1;
             return true;
         }
 
-        let w = self.find(node.as_ref(), cmp_func);
+        let w = self._find(node.as_ref(), as_avlitem!(P, Tag, cmp));
         if w.direction.is_none() {
             // To prevent memory leak, we must drop the node.
             // But since we took ownership, we have to convert it back to P and drop it.
