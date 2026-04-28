@@ -25,10 +25,19 @@ pub trait Pointer: Sized {
 
     fn as_ref(&self) -> &Self::Target;
 
+    #[inline(always)]
+    fn as_ptr(&self) -> *const Self::Target {
+        self.as_ref() as *const Self::Target
+    }
+
     #[allow(clippy::missing_safety_doc)]
     unsafe fn from_raw(p: *const Self::Target) -> Self;
 
     fn into_raw(self) -> *const Self::Target;
+}
+
+pub trait SmartPointer: Pointer {
+    fn new(t: Self::Target) -> Self;
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -109,6 +118,13 @@ impl<T> Pointer for Box<T> {
     }
 }
 
+impl<T> SmartPointer for Box<T> {
+    #[inline]
+    fn new(inner: T) -> Self {
+        Box::new(inner)
+    }
+}
+
 impl<T> Pointer for Rc<T> {
     type Target = T;
 
@@ -128,6 +144,13 @@ impl<T> Pointer for Rc<T> {
     }
 }
 
+impl<T> SmartPointer for Rc<T> {
+    #[inline]
+    fn new(inner: T) -> Self {
+        Rc::new(inner)
+    }
+}
+
 impl<T> Pointer for Arc<T> {
     type Target = T;
 
@@ -144,6 +167,13 @@ impl<T> Pointer for Arc<T> {
     #[inline]
     fn into_raw(self) -> *const Self::Target {
         Arc::into_raw(self)
+    }
+}
+
+impl<T> SmartPointer for Arc<T> {
+    #[inline]
+    fn new(inner: T) -> Self {
+        Arc::new(inner)
     }
 }
 
