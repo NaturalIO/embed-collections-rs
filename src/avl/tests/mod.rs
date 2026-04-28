@@ -1,9 +1,11 @@
 mod basic;
 mod iter;
-mod range_tree;
+//mod range_tree;
 
 use super::*;
+use crate::{Pointer, SmartPointer};
 use core::cell::UnsafeCell;
+use core::ops::{Deref, DerefMut};
 use fastrand::Rng;
 use std::time::Instant;
 
@@ -25,32 +27,29 @@ impl fmt::Display for IntAvlNode {
 }
 
 unsafe impl AvlItem<()> for IntAvlNode {
+    type Key = i64;
+
     fn get_node(&self) -> &mut AvlNode<Self, ()> {
         unsafe { &mut *self.node.get() }
     }
+
+    fn borrow_key(&self) -> &Self::Key {
+        &self.value
+    }
 }
 
-pub type IntAvlTree = AvlTree<Box<IntAvlNode>, ()>;
+pub struct IntAvlTree<P: Pointer<Target = IntAvlNode>>(AvlTree<P, ()>);
 
-pub fn new_intnode(i: i64) -> Box<IntAvlNode> {
-    Box::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: i })
-}
+impl<P> IntAvlTree<P>
+where
+    P: Pointer<Target = IntAvlNode>,
+{
+    pub fn new() -> Self {
+        Self(AvlTree::<P, ()>::new())
+    }
 
-pub fn new_inttree() -> IntAvlTree {
-    AvlTree::<Box<IntAvlNode>, ()>::new()
-}
-
-pub fn cmp_int_node(a: &IntAvlNode, b: &IntAvlNode) -> Ordering {
-    a.value.cmp(&b.value)
-}
-
-pub fn cmp_int(a: &i64, b: &IntAvlNode) -> Ordering {
-    a.cmp(&b.value)
-}
-
-impl AvlTree<Box<IntAvlNode>, ()> {
     pub fn remove_int(&mut self, i: i64) -> bool {
-        if let Some(_node) = self.remove_by_key(&i, cmp_int) {
+        if let Some(_node) = self.0.remove_by_key(&i) {
             // node is Box<IntAvlNode>, dropped automatically
             return true;
         }
@@ -59,19 +58,44 @@ impl AvlTree<Box<IntAvlNode>, ()> {
         false
     }
 
-    pub fn add_int_node(&mut self, node: Box<IntAvlNode>) -> bool {
-        self.add(node, cmp_int_node)
+    pub fn add_int_node(&mut self, node: P) -> bool {
+        self.0.add(node)
     }
 
     pub fn validate_tree(&self) {
-        self.validate(cmp_int_node);
+        self.0.validate();
     }
 
-    pub fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, Box<IntAvlNode>> {
-        self.find(&i, cmp_int)
+    pub fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, P> {
+        self.0.find(&i)
     }
+}
 
-    pub fn find_node<'a>(&'a self, node: &'a IntAvlNode) -> AvlSearchResult<'a, Box<IntAvlNode>> {
-        self.find(node, cmp_int_node)
+impl<P> Deref for IntAvlTree<P>
+where
+    P: Pointer<Target = IntAvlNode>,
+{
+    type Target = AvlTree<P, ()>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<P> DerefMut for IntAvlTree<P>
+where
+    P: Pointer<Target = IntAvlNode>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<P> IntAvlTree<P>
+where
+    P: SmartPointer<Target = IntAvlNode>,
+{
+    pub fn new_node(&self, i: i64) -> P {
+        P::new(IntAvlNode { node: UnsafeCell::new(AvlNode::default()), value: i })
     }
 }

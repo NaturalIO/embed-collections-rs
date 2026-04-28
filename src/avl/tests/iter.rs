@@ -1,10 +1,16 @@
 use super::*;
+use rstest::*;
 
-#[test]
-fn test_avl_drain() {
-    let mut tree = new_inttree();
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn test_arc_drain<P>(#[case] mut tree: IntAvlTree<P>)
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode>,
+{
     for i in 0..100 {
-        tree.add_int_node(new_intnode(i));
+        tree.add_int_node(tree.new_node(i));
     }
     assert_eq!(tree.len(), 100);
 
@@ -18,11 +24,16 @@ fn test_avl_drain() {
     assert!(tree.first().is_none());
 }
 
-#[test]
-fn test_avl_iter() {
-    let mut tree = new_inttree();
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn test_arc_iter<P>(#[case] mut tree: IntAvlTree<P>)
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode>,
+{
     for i in 0..100 {
-        tree.add_int_node(new_intnode(i));
+        tree.add_int_node(tree.new_node(i));
     }
     assert_eq!(tree.len(), 100);
 
@@ -40,3 +51,13 @@ fn test_avl_iter() {
     }
     assert_eq!(count, 100);
 }
+
+/*
+#[test]
+fn test_avl_prev_and_next() {
+    let mut tree = new_inttree();
+    for i in 0..100 {
+        tree.add_int_node(tree.new_node(i));
+    }
+}
+*/
