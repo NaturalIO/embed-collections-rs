@@ -27,3 +27,6 @@ jobs:
 
     - name: no_std build check
       run: cargo build --no-default-features --features full
+
+    - name: Clippy with default
+      run: cargo clippy -F full -- -D warnings
