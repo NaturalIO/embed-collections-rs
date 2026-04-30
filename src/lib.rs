@@ -210,6 +210,8 @@ pub mod slist;
 pub mod slist_owned;
 pub mod various;
 pub use various::Various;
+pub mod various_map;
+pub use various_map::VariousMap;
 #[cfg(feature = "btree")]
 pub mod btree;
 #[cfg(feature = "btree")]

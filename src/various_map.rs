@@ -1,6 +1,7 @@
-use alloc::collections::btree_map;
 use alloc::collections::BTreeMap;
+use alloc::collections::btree_map;
 use core::borrow::Borrow;
+use core::fmt::Debug;
 use core::iter;
 use core::option; // Added for option::IntoIter
 
@@ -60,8 +61,8 @@ pub enum Entry<'a, K: 'a, V: 'a> {
 pub enum OccupiedEntry<'a, K: 'a, V: 'a> {
     One {
         map: &'a mut VariousMap<K, V>, // Reference to the parent map to allow removal
-        key_ref: &'a K, // Reference to the key in the One variant
-        value_ref: &'a mut V, // Mutable reference to the value in the One variant
+        key_ref: &'a K,                // Reference to the key in the One variant
+        value_ref: &'a mut V,          // Mutable reference to the value in the One variant
     },
     Multi(btree_map::OccupiedEntry<'a, K, V>),
 }
@@ -92,7 +93,9 @@ where
                     assert_eq!(&k, key_ref, "Key mismatch during OccupiedEntry::One::remove");
                     v
                 } else {
-                    unreachable!("Map state changed unexpectedly during OccupiedEntry::One::remove");
+                    unreachable!(
+                        "Map state changed unexpectedly during OccupiedEntry::One::remove"
+                    );
                 }
             }
             OccupiedEntry::Multi(entry) => entry.remove(),
@@ -108,11 +111,7 @@ where
         match std::mem::replace(self.map, VariousMap::Empty) {
             VariousMap::Empty => {
                 *self.map = VariousMap::One(self.key, value);
-                if let VariousMap::One(_, v_ref) = self.map {
-                    v_ref
-                } else {
-                    unreachable!()
-                }
+                if let VariousMap::One(_, v_ref) = self.map { v_ref } else { unreachable!() }
             }
             VariousMap::One(k, v) => {
                 let mut btree = BTreeMap::new();
@@ -129,7 +128,9 @@ where
             VariousMap::Multi(mut btree) => {
                 // This case should be handled by Entry::Multi(btree_map::VacantEntry)
                 // This implies an error in the Entry::entry logic if we reach here
-                unreachable!("VacantEntry::insert should not be called on a Multi map that was already Multi");
+                unreachable!(
+                    "VacantEntry::insert should not be called on a Multi map that was already Multi"
+                );
             }
         }
     }
@@ -246,17 +247,21 @@ impl<K, V> VariousMap<K, V> {
             Self::Empty => Entry::Vacant(VacantEntry { map: self, key }),
             Self::One(k_ref, v_ref) => {
                 if key == *k_ref {
-                    Entry::Occupied(OccupiedEntry::One { map: self, key_ref: k_ref, value_ref: v_ref })
+                    Entry::Occupied(OccupiedEntry::One {
+                        map: self,
+                        key_ref: k_ref,
+                        value_ref: v_ref,
+                    })
                 } else {
                     Entry::Vacant(VacantEntry { map: self, key })
                 }
             }
-            Self::Multi(map) => {
-                match map.entry(key) {
-                    btree_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry::Multi(entry)),
-                    btree_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry { map: self, key: entry.into_key() }),
+            Self::Multi(map) => match map.entry(key) {
+                btree_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry::Multi(entry)),
+                btree_map::Entry::Vacant(entry) => {
+                    Entry::Vacant(VacantEntry { map: self, key: entry.into_key() })
                 }
-            }
+            },
         }
     }
 
