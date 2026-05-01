@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.11.0] - 2026-05-01
+
+### Added
+
+- Add VariousMap (a temporary map wraps std BTreeMap with `Option<(K, V)>` to delay allocation)
+
 ## [0.10.0] - 2026-04-28
 
 ### Added
