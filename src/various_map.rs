@@ -184,14 +184,54 @@ impl<'a, K, V> Iterator for Iter<'a, K, V> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Iter::One(iter) => {
+            Self::One(iter) => {
                 if let Some(item) = iter.next() {
                     Some((&item.0, &item.1))
                 } else {
                     None
                 }
             }
-            Iter::Multi(iter) => iter.next(),
+            Self::Multi(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::One(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+            Self::Multi(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+        }
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for Iter<'a, K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => iter.len(),
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => {
+                if let Some(item) = iter.next_back() {
+                    Some((&item.0, &item.1))
+                } else {
+                    None
+                }
+            }
+            Self::Multi(iter) => iter.next_back(),
         }
     }
 }
@@ -209,6 +249,32 @@ impl<K, V> Iterator for IntoIter<K, V> {
         match self {
             Self::One(iter) => iter.take(),
             Self::Multi(iter) => iter.next(),
+        }
+    }
+}
+
+impl<K, V> ExactSizeIterator for IntoIter<K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => {
+                if iter.is_some() {
+                    1
+                } else {
+                    0
+                }
+            }
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<K, V> DoubleEndedIterator for IntoIter<K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.take(),
+            Self::Multi(iter) => iter.next_back(),
         }
     }
 }
