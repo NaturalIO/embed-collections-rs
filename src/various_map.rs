@@ -7,6 +7,7 @@ use core::option;
 /// A tempoary map optimise for empty or one condition,
 /// to delay allocation.
 ///
+/// Initial to be Option<(K, V)>.
 /// If multi item inserted, transit from Option to std::collections::BTreeMap.
 pub enum VariousMap<K, V> {
     One(Option<(K, V)>),

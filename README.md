@@ -2,27 +2,32 @@
 
 docs.rs: <https://docs.rs/embed-collections/latest/embed_collections/>
 
-`embed-collections` provides memory efficient data structures for Rust.
-For embedding environment and server applications that need tight memory management.
+<!-- cargo-rdme start -->
 
-This crate provides two categories:
+
+## embed-collections
+
+A collection of memory efficient data structures, for embedding environment and server applications that need tight memory management.
+
+This crate provides two categories of modules:
 
 - Cache efficient collections:
-    - [`ConstVec`]: Fixed capacity inline vec
-    - [`SegList`](https://docs.rs/embed-collections/latest/embed_collections/seg_list/index.html):  A cache aware list to store elements with adaptive size segments
-    - [`Various`](https://docs.rs/embed-collections/latest/embed_collections/various/index.html): For various elements passing between functions, zero or one condition will use Option, otherwise will using `SegList`
-    - [`BTreeMap`](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html): A cache aware B+tree implementation, optimized for numeric types, with special entry API allows peeking adjacent values.
+    - [const_vec](https://docs.rs/embed-collections/latest/embed_collections/const_vec/): Fixed capacity inline vec
+    - [seg_list](#seglist--various):  A cache aware (short-live) list to store elements with adaptive size segments
+    - [various](#seglist--various): A short-live list wrapping `SegList` with `Option<T>` to delay allocation.
+    - [btree](#btree): A cache aware B+tree for lone-live and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
+    - [various_map](https://docs.rs/embed-collections/latest/embed_collections/various_map/): A short-live map wrapping BTreeMap (std) with `Option<(K, V)>` to delay allocation.
 
-- Intrusive collections:
+- [Intrusive collections](#intrusive-collections):
     - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
-    - [`dlist`](https://docs.rs/embed-collections/latest/embed_collections/dlist/index.html): Intrusive Doubly Linked List (Queue / Stack).
-    - [`slist`](https://docs.rs/embed-collections/latest/embed_collections/slist/index.html): Intrusive Singly Linked List ( Queue / stack).
-    - [`slist_owned`](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/index.html): An intrusive slist but with safe and more compact interface
-    - [`avl`](https://docs.rs/embed-collections/latest/embed_collections/avl/index.html): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+    - [dlist](https://docs.rs/embed-collections/latest/embed_collections/dlist/): Intrusive Doubly Linked List (Queue / Stack).
+    - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
+    - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
+    - [avl](https://docs.rs/embed-collections/latest/embed_collections/avl/): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
 
-## SegList & Various
+### SegList & Various
 
-`SegList` and `Various` is designed for parameter passing.
+[SegList](https://docs.rs/embed-collections/latest/embed_collections/seg_list/) and [Various](https://docs.rs/embed-collections/latest/embed_collections/various/) is designed for parameter passing.
 
 More CPU-cache friendly compared to `LinkedList`. And because it does not re-allocate, it's faster than `Vec::push()` when the number of elements is small.
 It's nice to the memory allocator (always allocate with fixed size segment).
@@ -38,9 +43,9 @@ Benchmark: append + drain (x86_64, cache line 128 bytes):
 | 100 | 471.1 ns | 464.0 ns | ~1.0x |
 | 500 | 2.77 µs | 895.5 ns | 3.1x slower |
 
-## B+tree
+### B+tree
 
-We provide a [BTreeMap](https://docs.rs/embed-collections/latest/embed_collections/btree/index.html) for single-threaded long-term in-memory storage.
+We provide a [BTreeMap](https://docs.rs/embed-collections/latest/embed_collections/btree/) for single-threaded long-term in-memory storage.
 It's a cache aware b+tree:
 
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
@@ -108,7 +113,7 @@ into_iter (me/s)|btree|std
 100k|360.18|56.742
 
 
-## Intrusive Collections
+### Intrusive Collections
 
 intrusive collection is often used in c/c++ code, they does not need extra allocation.
 But the disadvantages includes: complexity to write, bad for cache hit when the node is too small
@@ -126,7 +131,7 @@ There're three usage scenarios:
    (for example, the item is holding by Arc in other structure).
 
 
-### Difference to `intrusive-collections` crate
+#### Difference to `intrusive-collections` crate
 
 This crate choose to use trait instead of c like `offset_of!`, mainly because:
 
@@ -138,7 +143,7 @@ This crate choose to use trait instead of c like `offset_of!`, mainly because:
   and using memtion to return the node ref is more safer approach.
   For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
 
-### instrusive link list example
+#### instrusive link list example
 
 ```rust
 use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
@@ -196,7 +201,7 @@ assert_eq!(cache_list.pop_front().unwrap().val, 20);
 assert_eq!(io_list.pop_front().unwrap().val, 20);
 ```
 
-## Feature Flags
+### Feature Flags
 
 *   **`default`**: Enabled by default. Includes the `std` features.
 *   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
@@ -208,3 +213,5 @@ assert_eq!(io_list.pop_front().unwrap().val, 20);
 
 To compile with `no_std` and only the `slist` module, you would use:
 `cargo build --no-default-features --features slist`
+
+<!-- cargo-rdme end -->
