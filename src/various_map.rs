@@ -2,7 +2,6 @@ use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
 use core::borrow::Borrow;
 use core::fmt::Debug;
-use core::iter;
 use core::option;
 
 pub enum VariousMap<K, V> {
@@ -60,7 +59,7 @@ impl<K: Ord, V> VariousMap<K, V> {
         K: Ord,
     {
         let (old_k, old_v) = match self {
-            Self::One(ref mut item) => {
+            Self::One(item) => {
                 if item.is_none() {
                     item.replace((key, value));
                     return None;
@@ -72,7 +71,7 @@ impl<K: Ord, V> VariousMap<K, V> {
                 }
                 (old_k, old_v)
             }
-            Self::Multi(ref mut map) => {
+            Self::Multi(map) => {
                 return map.insert(key, value);
             }
         };
