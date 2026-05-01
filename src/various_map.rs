@@ -431,7 +431,6 @@ where
 impl<'a, K, V> Entry<'a, K, V>
 where
     K: Ord,
-    V: Default,
 {
     #[inline]
     pub fn or_insert(self, default: V) -> &'a mut V {
