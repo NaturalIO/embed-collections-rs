@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
 use core::borrow::Borrow;
-use core::fmt::Debug;
+use core::mem::MaybeUninit;
 use core::option;
 
 pub enum VariousMap<K, V> {
@@ -82,61 +82,6 @@ impl<K: Ord, V> VariousMap<K, V> {
         None
     }
 
-    //    pub fn entry(&mut self, key: K) -> Entry<'_, K, V>
-    //    where
-    //        K: PartialEq + Eq + Ord + Clone + Debug,
-    //        V: PartialEq + Debug + Default,
-    //    {
-    //        let old_self_state = std::mem::replace(self, Self::Empty);
-    //
-    //        match old_self_state {
-    //            Self::Empty => {
-    //                Entry::EmptyVacant {
-    //                    key,
-    //                    parent_map_ref: self as *mut VariousMap<K, V>, // Raw pointer
-    //                }
-    //            }
-    //            Self::One(item) => {
-    //                if key == k_val {
-    //                    item.1 =
-    //                    let k_ref;
-    //                    let v_ref;
-    //                    unsafe {
-    //                        let map_ptr = self as *mut VariousMap<K, V>;
-    //                        if let VariousMap::One((k_inner, v_inner)) = &mut *map_ptr {
-    //                            k_ref = &*k_inner;
-    //                            v_ref = &mut *v_inner;
-    //                        } else {
-    //                            unreachable!(
-    //                                "Map state changed unexpectedly to non-One after put back One variant"
-    //                            );
-    //                        }
-    //                    }
-    //
-    //                    Entry::OneOccupied {
-    //                        k_ref,
-    //                        v_ref,
-    //                        parent_map_ref: self as *mut VariousMap<K, V>,
-    //                    }
-    //                } else {
-    //                    Entry::OneToMultiVacant {
-    //                        key,
-    //                        old_k: k_val,
-    //                        old_v: v_val,
-    //                        parent_map_ref: self as *mut VariousMap<K, V>,
-    //                    }
-    //                }
-    //            }
-    //            Self::Multi(map) => {
-    //                *self = Self::Multi(map);
-    //                match self {
-    //                    Self::Multi(map_ref) => Entry::Multi(map_ref.entry(key)),
-    //                    _ => unreachable!(),
-    //                }
-    //            }
-    //        }
-    //    }
-
     #[inline]
     pub fn iter(&self) -> Iter<'_, K, V> {
         match self {
@@ -201,118 +146,237 @@ impl<K, V> Iterator for IntoIter<K, V> {
     }
 }
 
-/*
+// New Entry API Definitions (Revised)
 pub enum Entry<'a, K: 'a, V: 'a> {
-    /// An entry that exists in the `One` variant of `VariousMap`.
-    Occupied {
-        k_ref: &'a K,
-        v_ref: &'a mut V,
-        parent_map_ref: *mut VariousMap<K, V>, // Changed to raw pointer
-    },
-    /// A vacant entry where `VariousMap` is `Empty`.
-    Vacant {
-        key: K,
-        parent_map_ref: *mut VariousMap<K, V>, // Changed to raw pointer
-    },
-    /// A vacant entry where `VariousMap` is `One`, but the key doesn't match.
-    OneToMultiVacant {
-        key: K,                                // The new key to insert
-        old_k: K,                              // The key from the existing `One` variant
-        old_v: V,                              // The value from the existing `One` variant
-        parent_map_ref: *mut VariousMap<K, V>, // Changed to raw pointer
-    },
-    /// Delegates to `BTreeMap`'s entry.
-    Multi(btree_map::Entry<'a, K, V>),
+    Occupied(OccupiedEntry<'a, K, V>),
+    Vacant(VacantEntry<'a, K, V>),
+}
+
+pub enum OccupiedEntry<'a, K: 'a, V: 'a> {
+    One(&'a mut Option<(K, V)>),
+    Multi(btree_map::OccupiedEntry<'a, K, V>),
+}
+
+impl<'a, K, V> OccupiedEntry<'a, K, V>
+where
+    K: Ord,
+{
+    #[inline]
+    pub fn get(&self) -> &V {
+        match self {
+            Self::One(o) => &o.as_ref().unwrap().1,
+            Self::Multi(ent) => ent.get(),
+        }
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut V {
+        match self {
+            Self::One(o) => &mut o.as_mut().unwrap().1,
+            Self::Multi(ent) => ent.get_mut(),
+        }
+    }
+
+    #[inline]
+    pub fn key(&self) -> &K {
+        match self {
+            Self::One(o) => &o.as_ref().unwrap().0,
+            Self::Multi(ent) => ent.key(),
+        }
+    }
+
+    #[inline]
+    pub fn remove(self) -> V {
+        match self {
+            Self::One(o) => {
+                let (_k, v) = o.take().unwrap();
+                return v;
+            }
+            Self::Multi(ent) => ent.remove(),
+        }
+    }
+
+    #[inline]
+    pub fn remove_entry(self) -> (K, V) {
+        match self {
+            Self::One(o) => o.take().unwrap(),
+            Self::Multi(ent) => ent.remove_entry(),
+        }
+    }
+
+    #[inline]
+    pub fn insert(self, value: V) -> V {
+        match self {
+            Self::One(o) => {
+                let (k, old_v) = o.take().unwrap();
+                o.replace((k, value));
+                old_v
+            }
+            Self::Multi(mut ent) => ent.insert(value),
+        }
+    }
+
+    #[inline]
+    pub fn into_mut(self) -> &'a mut V {
+        match self {
+            Self::One(o) => &mut o.as_mut().unwrap().1,
+            Self::Multi(ent) => ent.into_mut(),
+        }
+    }
+}
+
+pub struct VacantEntry<'a, K: 'a, V: 'a> {
+    pub(crate) key: K,                        // Owned key to insert
+    pub(crate) map: &'a mut VariousMap<K, V>, // Reference to the VariousMap
+}
+
+impl<'a, K, V> VacantEntry<'a, K, V>
+where
+    K: Ord,
+{
+    #[inline]
+    pub fn key(&self) -> &K {
+        &self.key
+    }
+
+    #[inline]
+    pub fn into_key(self) -> K {
+        self.key
+    }
+
+    #[inline]
+    pub fn insert(self, value: V) -> &'a mut V {
+        let mut _value = MaybeUninit::new(value);
+        let mut _key = MaybeUninit::new(self.key);
+        let map = self.map;
+        if let VariousMap::One(item) = map {
+            if item.is_none() {
+                unsafe {
+                    item.replace((_key.assume_init_read(), _value.assume_init_read()));
+                }
+                // we should have return here, but don't because of the borrow checker
+            } else {
+                let (old_k, old_v) = item.take().unwrap();
+                unsafe {
+                    if &old_k == _key.assume_init_ref() {
+                        item.replace((_key.assume_init_read(), _value.assume_init_read()));
+                    } else {
+                        let _ = item;
+                        let mut _map = BTreeMap::new();
+                        _map.insert(old_k, old_v);
+                        *map = VariousMap::Multi(_map);
+                    }
+                }
+            }
+        }
+        match map {
+            VariousMap::One(Some(item)) => &mut item.1,
+            VariousMap::Multi(map) => unsafe {
+                map.entry(_key.assume_init_read()).or_insert(_value.assume_init_read())
+            },
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl<'a, K, V> Entry<'a, K, V>
 where
-    K: PartialEq + Eq + Ord + Clone + Debug,
-    V: PartialEq + Debug + Default,
+    K: Ord,
+    V: Default,
 {
+    #[inline]
     pub fn or_insert(self, default: V) -> &'a mut V {
         match self {
-            Entry::OneOccupied { v_ref, .. } => v_ref,
-            Entry::EmptyVacant { key, parent_map_ref } => unsafe {
-                let map = &mut *parent_map_ref;
-                *map = VariousMap::One(key, default);
-                if let VariousMap::One(_, v_ref) = map { v_ref } else { unreachable!() }
-            },
-            Entry::OneToMultiVacant { key, old_k, old_v, parent_map_ref } => unsafe {
-                let map = &mut *parent_map_ref;
-                let mut btree = BTreeMap::new();
-                btree.insert(old_k, old_v);
-                let inserted_key = key.clone();
-                btree.insert(key, default);
-                *map = VariousMap::Multi(btree);
-                if let VariousMap::Multi(map_inner) = map {
-                    map_inner.get_mut(&inserted_key).unwrap()
-                } else {
-                    unreachable!()
-                }
-            },
-            Entry::Multi(btree_entry) => btree_entry.or_insert(default),
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(default),
         }
     }
 
+    #[inline]
     pub fn or_insert_with<F: FnOnce() -> V>(self, default_fn: F) -> &'a mut V {
         match self {
-            Entry::OneOccupied { v_ref, .. } => v_ref,
-            Entry::EmptyVacant { key, parent_map_ref } => unsafe {
-                let map = &mut *parent_map_ref;
-                *map = VariousMap::One(key, default_fn());
-                if let VariousMap::One(_, v_ref) = map { v_ref } else { unreachable!() }
-            },
-            Entry::OneToMultiVacant { key, old_k, old_v, parent_map_ref } => unsafe {
-                let map = &mut *parent_map_ref;
-                let mut btree = BTreeMap::new();
-                btree.insert(old_k, old_v);
-                let inserted_key = key.clone();
-                btree.insert(key, default_fn());
-                *map = VariousMap::Multi(btree);
-                if let VariousMap::Multi(map_inner) = map {
-                    map_inner.get_mut(&inserted_key).unwrap()
-                } else {
-                    unreachable!()
-                }
-            },
-            Entry::Multi(btree_entry) => btree_entry.or_insert_with(default_fn),
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(default_fn()),
         }
     }
 
-    pub fn and_modify<F>(self, f: F) -> Self
+    #[inline]
+    pub fn and_modify<F>(mut self, f: F) -> Self
     where
         F: FnOnce(&mut V),
     {
+        if let Entry::Occupied(ref mut entry) = self {
+            f(entry.get_mut());
+        }
+        self
+    }
+
+    #[inline]
+    pub fn key(&self) -> &K {
         match self {
-            Entry::OneOccupied { v_ref, k_ref, parent_map_ref } => {
-                f(v_ref);
-                Entry::OneOccupied { v_ref, k_ref, parent_map_ref }
-            }
-            Entry::Multi(btree_entry) => Entry::Multi(btree_entry.and_modify(f)),
-            _ => self, // Vacant entries don't get modified.
+            Entry::Occupied(entry) => entry.key(),
+            Entry::Vacant(entry) => entry.key(),
         }
     }
 
-    pub fn remove(self) -> V {
+    #[inline]
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
         match self {
-            Entry::OneOccupied { v_ref, parent_map_ref, .. } => unsafe {
-                let map = &mut *parent_map_ref;
-                let old_map_state = std::mem::replace(map, VariousMap::Empty);
-                if let VariousMap::One(_, v) = old_map_state {
-                    v
-                } else {
-                    unreachable!(
-                        "Map state changed unexpectedly during Entry::OneOccupied::remove"
-                    );
+            Entry::Occupied(mut ent) => {
+                match ent {
+                    OccupiedEntry::One(ref mut o) => {
+                        let (k, _old_v) = o.take().unwrap();
+                        o.replace((k, value));
+                    }
+                    OccupiedEntry::Multi(ref mut ent) => {
+                        ent.insert(value);
+                    }
                 }
-            },
-            Entry::Multi(btree_entry) => match btree_entry {
-                btree_map::Entry::Occupied(occupied_entry) => occupied_entry.remove(),
-                btree_map::Entry::Vacant(_) => panic!("Called remove on a vacant entry"),
-            },
-            _ => panic!("Called remove on a vacant entry"),
+                ent
+            }
+            Entry::Vacant(entry) => {
+                let mut _value = MaybeUninit::new(value);
+                let mut _key = MaybeUninit::new(entry.key);
+                let map = entry.map;
+                if let VariousMap::One(item) = map {
+                    if item.is_none() {
+                        unsafe {
+                            item.replace((_key.assume_init_read(), _value.assume_init_read()));
+                        }
+                        // we should have return here, but don't because of the borrow checker
+                    } else {
+                        let (old_k, old_v) = item.take().unwrap();
+                        unsafe {
+                            if &old_k == _key.assume_init_ref() {
+                                item.replace((_key.assume_init_read(), _value.assume_init_read()));
+                            } else {
+                                let _ = item;
+                                let mut _map = BTreeMap::new();
+                                _map.insert(old_k, old_v);
+                                *map = VariousMap::Multi(_map);
+                            }
+                        }
+                    }
+                }
+                match map {
+                    VariousMap::One(o) => OccupiedEntry::One(o),
+                    VariousMap::Multi(map) => {
+                        let ent = unsafe {
+                            map.entry(_key.assume_init_read())
+                                .insert_entry(_value.assume_init_read())
+                        };
+                        OccupiedEntry::Multi(ent)
+                    }
+                }
+            }
         }
     }
+
+    #[inline]
+    pub fn or_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.or_insert_with(Default::default)
+    }
 }
-*/
