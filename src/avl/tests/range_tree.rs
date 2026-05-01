@@ -1,7 +1,6 @@
 // Use crate range-tree-rs instead, this implementation is just to ensure avl is tested
 
 use super::super::*;
-use super::*;
 use alloc::sync::Arc;
 use core::{
     cell::{Cell, UnsafeCell},
