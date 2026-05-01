@@ -1,4 +1,4 @@
-//! Various - A small-list optimization container for efficient parameter passing.
+//! Various: A small-list optimization container for efficient parameter passing.
 //!
 //! `Various<T>` optimizing for the common case of a single element (use Option initially).
 //! It's storage can be seamless grow when more elements pushed, using [SegList](crate::seg_list),

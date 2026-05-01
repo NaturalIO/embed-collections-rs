@@ -1,4 +1,4 @@
-//! Segmented List - A segmented list with cache-friendly node sizes.
+//! SegList : A segmented list with cache-friendly node sizes.
 //!
 //! Support push() / pop() from the tail, and one-time consume all elements.
 //! It does not support random access.

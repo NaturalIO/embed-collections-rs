@@ -1,3 +1,9 @@
+//! VariousMap: Provide a tempoary map optimise for empty or one condition,
+//! to delay allocation.
+//!
+//! Initial to be Option<(K, V)>.
+//! If multi item inserted, transit from Option to std::collections::BTreeMap.
+
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
 use core::borrow::Borrow;
