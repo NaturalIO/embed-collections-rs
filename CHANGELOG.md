@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.11.3] - 2026-05-07
+
+### Fixed
+
+- btree: Fix debug assert when tree split
+
 ## [0.11.2] - 2026-05-01
 
 ### Fixed
