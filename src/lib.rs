@@ -47,12 +47,18 @@
 //! It's a cache aware b+tree:
 //!
 //! - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
-//! - Optimized for numeric type, and tight arrangement sequential inserting.
-//! - Capacity in compile-time determined according to the size of Key, Value.
-//! - Smart optimization for sequential insert
+//!   - Capacity in compile-time determined according to the size of Key, Value.
+//!   - Reduce memory fragmentation by alignment.
+//! - **Optimised for numeric key**
+//!   - Respecting numeric space for sequential insertion.
+//!   - Reduce latency for sequential insertion.
 //! - Faster iteration and teardown
-//! - Key type needs `Clone`
-//! - Special API:
+//! - **Limitation**:
+//!   - K should have clone (for propagate into the InterNode during split)
+//!   - K & V should <= CACHE_LINE_SIZE - 16
+//!     - It make sure InterNode can hold  at least two children.
+//!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
+//! - **Special API**:
 //!   - Peak and move to previous/next `Entry` (for modification).
 //!   - Alter key of an OccupiedEntry.
 //!   - Batch remove with range.
@@ -64,51 +70,53 @@
 //! - The std impl has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
 //! - The std cursor API is still unstable (as of 1.94) and relatively complex to use.
 //!
-//! **benchmark**:
+//! **benchmark**
 //!
-//! (platform: intel i7-8550U, key: u32, value: u32, rust 1.92)
+//! platform: intel i7-8550U, key: u32, value: u32, rust 1.92.
 //!
-//! insert_seq (me/s)|btree|std
+//! Measured in million ops for different size of dataset:
+//!
+//! insert_seq |btree|std
 //! -|-|-
-//! 1k|88.956|20.001
-//! 10k|75.291|16.04
-//! 100k|45.959|11.207
+//! 1k|**88.956**|20.001
+//! 10k|**75.291**|16.04
+//! 100k|**45.959**|11.207
 //!
-//! insert_rand (me/s)|btree|std|avl(box)|avl(arc)
+//! insert_rand|btree|std|avl(box)|avl(arc)
 //! -|-|-|-|-
-//! 1k|21.311|17.792|11.172|9.5397
-//! 10k|14.268|11.587|6.3669|5.651
-//! 100k|5.4814|3.0691|0.78|0.732
+//! 1k|**21.311**|17.792|11.172|9.5397
+//! 10k|**14.268**|11.587|6.3669|5.651
+//! 100k|**5.4814**|3.0691|0.78|0.732
 //!
-//! get_seq (me/s)|btree|std
+//! get_seq|btree|std
 //! -|-|-
-//! 1k|59.448|34.248
-//! 10k|37.225|27.571
-//! 100k|30.77|19.907
+//! 1k|**59.448**|34.248
+//! 10k|**37.225**|27.571
+//! 100k|**30.77**|19.907
 //!
-//! get_rand (me/s)|btree|std|avl(box)|avl(arc)
+//! get_rand|btree|std|avl(box)|avl(arc)
 //! -|-|-|-|-
-//! 1k|47.33|27.651|24.254|23.466
-//! 10k|19.358|16.868|11.771|10.806
-//! 100k|5.2584|3.2569|1.4423|1.2712
+//! 1k|**47.33**|27.651|24.254|23.466
+//! 10k|**19.358**|16.868|11.771|10.806
+//! 100k|**5.2584**|3.2569|1.4423|1.2712
 //!
-//! remove_rand (me/s)|btree|std
+//! remove_rand |btree|std
 //! -|-|-
-//! 1k|20.965|15.968
-//! 10k|16.073|11.701
-//! 100k|5.0214|3.0724
+//! 1k|**20.965**|15.968
+//! 10k|**16.073**|11.701
+//! 100k|**5.0214**|3.0724
 //!
-//! iter (me/s)|btree|std
+//! iter|btree|std
 //! -|-|-
 //! 1k|1342.8|346.8
 //! 10k|1209.4|303.83
-//! 100k|152.57|51.147
+//! 100k|**152.57**|51.147
 //!
-//! into_iter (me/s)|btree|std
+//! into_iter|btree|std
 //! -|-|-
 //! 1k|396.07|143.81
 //! 10k|397.05|81.389
-//! 100k|360.18|56.742
+//! 100k|**360.18**|56.742
 //!
 //!
 //! ## Intrusive Collections

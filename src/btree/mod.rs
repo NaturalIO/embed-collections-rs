@@ -1,21 +1,30 @@
 //! B+Tree Map - A in memory cache-optimized B+Tree for single-threaded use.
 //!
 //! ## Feature outlines
-//! - Designed for CPU cache efficiency and memory efficiency
-//! - Optimised for numeric key type
-//!   - Typical scenario: [range-tree-rs](https://docs.rs/range-tree-rs)
 //! - A B+tree. Data stores only at leaf level, with links at leaf level.
 //!   - Provides efficient iteration of data
 //!   - Linear search within nodes, respecting cacheline boundaries
+//!   - Reduce memory fragmentation by alignment.
+//! - Optimised for numeric key type
+//!   - Typical scenario: [range-tree-rs](https://docs.rs/range-tree-rs)
+//!   - Respecting numeric space for sequential insertion.
+//!   - Reduce latency for sequential insertion.
+//! - Support string keys, but optimization is non-goal
+//!   - You may look for other structures with prefix compression: Art, Masstree.
 //! - Nodes are filled up in 4 cache lines (256 bytes on x86_64)
 //!   - keys stored in first 128B (with header)
 //!   - Values/pointers stored in last 128B
-//!   - the capacity is calculated according to the size of K, V, with limitations:
-//!     - K & V should <= CACHE_LINE_SIZE - 16  (If K & V is larger should put into `Box`)
-//! - Specially Cursor & Entry API which allow to modify after moving the cursor to adjacent data.
+//!   - the capacity is calculated according to the size of K, V
+//! - **Limitation**:
+//!   - K should have clone (for propagate into the InterNode during split)
+//!   - K & V should <= CACHE_LINE_SIZE - 16
+//!     - It make sure InterNode can hold  at least two children.
+//!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
 //! - The detail design notes are with the source in mod.rs and node.rs
 //!
 //! ## Special APIs
+//!
+//! We have special Cursor & Entry API, which allow to modify after moving the cursor to adjacent data.
 //!
 //! Batch removal:
 //! - [BTreeMap::remove_range()]
@@ -45,11 +54,11 @@
 
 # Designer notes
 
- Target scenario:  To maintain slab tree for disk, lets say 1 billion nodes, this design is aim for high fan-out.
+Target scenario:  To maintain slab tree for disk, lets say 1 billion nodes, this design is aim for high fan-out.
 
- Since There're no parent pointer, no fence keys. So we maintain a cache to accelerate the look
- up for parent nodes.
- Since we support combining cursor moving in Entry API (try to merge with previous or next adjacent
+Since There're no parent pointer, no fence keys. So we maintain a cache to accelerate the look up for parent nodes.
+
+Since we support combining cursor moving in Entry API (try to merge with previous or next adjacent
  node). But user can call `remove()` on moved cursor.
 
 ## Acceleration Search for finding the parent using PathCache
