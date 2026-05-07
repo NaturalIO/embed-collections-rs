@@ -1,6 +1,6 @@
 use super::super::*;
 use crate::test::{CounterI32, alive_count, reset_alive_count, setup_log};
-use captains_log::logfn;
+use captains_log::{log_println, logfn};
 use rstest::rstest;
 
 /// sequenctial delete all elements
@@ -215,7 +215,7 @@ fn test_mix_remove_range_random(setup_log: (), #[case] count: usize, #[case] ite
         Ok(val) => val.parse().expect("TEST_SEED must be a valid u64"),
         Err(_) => fastrand::u64(..),
     };
-    println!("=== test_remove_range_random seed: {} ===", seed);
+    println!("=== test_mix_remove_range_random seed: {} ===", seed);
     let mut rng = fastrand::Rng::with_seed(seed);
     let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
 
@@ -225,12 +225,13 @@ fn test_mix_remove_range_random(setup_log: (), #[case] count: usize, #[case] ite
         for _ in 0..count {
             let k = rng.i32(0..20000);
             if !map.contains_key(&k) {
+                trace_log!("insert {k:?}");
                 map.insert(k.into(), (k * 10).into());
                 inserted += 1;
             }
         }
         map.validate();
-        println!(
+        log_println!(
             "Iter {}: Inserted {} elements, len: {}, height: {}",
             i,
             inserted,
@@ -247,7 +248,7 @@ fn test_mix_remove_range_random(setup_log: (), #[case] count: usize, #[case] ite
             }
 
             let range = CounterI32::from(k1)..=CounterI32::from(k2);
-            println!("Removing range [{}, {}]", k1, k2);
+            log_println!("Removing range [{}..={}]", k1, k2);
             map.remove_range(range);
             map.validate();
 

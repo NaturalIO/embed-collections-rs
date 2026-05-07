@@ -1,4 +1,7 @@
 use super::super::{inter::*, leaf::*, *};
+use crate::test::setup_log;
+use captains_log::logfn;
+use rstest::*;
 
 #[test]
 fn test_btree_large_tree_split_seq() {
@@ -55,4 +58,28 @@ fn test_node_capacity() {
     assert!(leaf_cap >= 2, "Leaf should hold at least 2 items");
     // Internal: n keys, n+1 children
     assert!(inter_cap >= 2, "Internal node should hold at least 2 keys");
+}
+
+#[logfn]
+#[rstest]
+fn test_btree_split_leaf_root_with_treeinfo(setup_log: ()) {
+    let mut map: BTreeMap<u32, u32> = BTreeMap::new();
+    let leaf_cap = LeafNode::<u32, u32>::cap();
+    for k in 0..(leaf_cap + 1) {
+        map.insert(k, k * 10);
+    }
+    assert_eq!(map.leaf_count(), 2);
+    map.validate();
+    for k in 0..(leaf_cap + 1) {
+        map.remove(&k);
+    }
+    map.validate();
+    assert_eq!(map.leaf_count(), 1);
+    assert_eq!(map.len(), 0);
+    // re-insert
+    for k in 0..(leaf_cap + 1) {
+        map.insert(k, k * 10);
+    }
+    assert_eq!(map.leaf_count(), 2);
+    map.validate();
 }

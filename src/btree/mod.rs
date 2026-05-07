@@ -709,7 +709,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // If we have parent nodes in cache, process them iteratively
         while let Some((mut parent, idx)) = info.pop() {
             if !parent.is_full() {
-                trace_log!("propagate_split {parent:?}:{idx} insert {right_ptr:p}");
+                trace_log!("propagate_split normal {parent:?}:{idx} insert {right_ptr:p}");
                 // should insert next to left_ptr
                 parent.insert_no_split_with_idx(idx, promote_key, right_ptr);
                 return Ok(flags);
@@ -805,12 +805,15 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         info.inc_inter_count();
         // No more parents in cache, create new root
         let new_root = InterNode::<K, V>::new_root(height + 1, promote_key, left_ptr, right_ptr);
+
         // to avoid borrow issue, set root outside
         #[cfg(debug_assertions)]
         {
-            let _old_root = self.root.as_ref().unwrap();
-            // must be inter, don't have LEAF_MASK
-            assert_eq!(_old_root.as_ptr(), left_ptr);
+            let mut _old_root = self.root.as_ref().unwrap();
+            if height == 0 {
+                left_ptr = LeafNode::<K, V>::wrap_root_ptr(left_ptr).as_ptr();
+            }
+            assert_eq!(_old_root.as_ptr(), left_ptr, "height {}", height + 1);
         }
         Err(new_root)
     }
