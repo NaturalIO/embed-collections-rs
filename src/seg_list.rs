@@ -421,6 +421,8 @@ struct Segment<T> {
     header: NonNull<SegHeader<T>>,
 }
 
+unsafe impl<T: Send> Send for Segment<T> {}
+
 impl<T> Segment<T> {
     // data_offset is the same for both base and large layouts
     const DATA_OFFSET: usize = Self::calc_data_offset();
