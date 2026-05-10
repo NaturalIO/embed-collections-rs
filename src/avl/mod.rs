@@ -212,7 +212,7 @@ macro_rules! as_avlitem {
     };
 }
 
-pub struct AvlNode<T: Sized, Tag> {
+pub struct AvlNode<T: AvlItem<Tag>, Tag> {
     pub left: *const T,
     pub right: *const T,
     pub parent: *const T,
@@ -220,7 +220,7 @@ pub struct AvlNode<T: Sized, Tag> {
     _phan: PhantomData<fn(&Tag)>,
 }
 
-unsafe impl<T, Tag> Send for AvlNode<T, Tag> {}
+unsafe impl<T: AvlItem<Tag> + Send, Tag> Send for AvlNode<T, Tag> {}
 
 impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     #[inline(always)]
@@ -262,7 +262,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     }
 }
 
-impl<T, Tag> Default for AvlNode<T, Tag> {
+impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
     fn default() -> Self {
         Self { left: null(), right: null(), parent: null(), balance: 0, _phan: Default::default() }
     }
