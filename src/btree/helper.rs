@@ -52,6 +52,8 @@ pub(super) struct TreeInfo<K: Ord, V> {
     _marker: PhantomData<(K, V)>,
 }
 
+unsafe impl<K: Ord + Send, V: Send> Send for TreeInfo<K, V> {}
+
 /// Reverse (top-of-stack → bottom) iterator produced by [`TreeInfo::_iter`].
 pub(super) struct TreeInfoIter<'a, K: Ord, V> {
     info: &'a TreeInfo<K, V>,

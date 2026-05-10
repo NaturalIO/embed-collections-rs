@@ -23,6 +23,9 @@ pub(super) struct LeafNode<K, V> {
     base: NodeBase,
     _phan: PhantomData<fn(&K, &V)>,
 }
+
+unsafe impl<K: Send, V: Send> Send for LeafNode<K, V> {}
+
 impl<K, V> Clone for LeafNode<K, V> {
     #[inline(always)]
     fn clone(&self) -> Self {
