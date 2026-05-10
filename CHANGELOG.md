@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.11.4] - 2026-05-10
+
+### Fixed
+
+- avl: Add trait requirement to AvlNode struct
+
+- seg_list: Fix missing Send in iterators
+
+- btree: Fix missing Send in iterators
+
 ## [0.11.3] - 2026-05-07
 
 ### Fixed
@@ -25,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- VariousMap: Fix Entry unecceissary Default requirement
+- VariousMap: Fix Entry unnecessary Default requirement
 
 ## [0.11.1] - 2026-05-01
 
