@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.11.5] - 2026-05-13
+
+### Added
+
+- various_map: Add keys(), values(), values_mut(), iter_mut()
+
 ## [0.11.4] - 2026-05-10
 
 ### Fixed
