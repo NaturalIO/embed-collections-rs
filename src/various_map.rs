@@ -102,6 +102,38 @@ impl<K: Ord, V> VariousMap<K, V> {
     }
 
     #[inline]
+    pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
+        match self {
+            Self::One(o) => IterMut::One(o.iter_mut()),
+            Self::Multi(map) => IterMut::Multi(map.iter_mut()),
+        }
+    }
+
+    #[inline]
+    pub fn keys(&self) -> Keys<'_, K, V> {
+        match self {
+            Self::One(o) => Keys::One(o.iter()),
+            Self::Multi(map) => Keys::Multi(map.keys()),
+        }
+    }
+
+    #[inline]
+    pub fn values(&self) -> Values<'_, K, V> {
+        match self {
+            Self::One(o) => Values::One(o.iter()),
+            Self::Multi(map) => Values::Multi(map.values()),
+        }
+    }
+
+    #[inline]
+    pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
+        match self {
+            Self::One(o) => ValuesMut::One(o.iter_mut()),
+            Self::Multi(map) => ValuesMut::Multi(map.values_mut()),
+        }
+    }
+
+    #[inline]
     pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
         let mut exists = false;
         match self {
@@ -236,6 +268,69 @@ impl<'a, K, V> DoubleEndedIterator for Iter<'a, K, V> {
     }
 }
 
+pub enum IterMut<'a, K, V> {
+    One(option::IterMut<'a, (K, V)>),
+    Multi(btree_map::IterMut<'a, K, V>),
+}
+
+impl<'a, K, V> Iterator for IterMut<'a, K, V> {
+    type Item = (&'a K, &'a mut V);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => {
+                if let Some(item) = iter.next() {
+                    Some((&item.0, &mut item.1))
+                } else {
+                    None
+                }
+            }
+            Self::Multi(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::One(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+            Self::Multi(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+        }
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for IterMut<'a, K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => iter.len(),
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a, K, V> DoubleEndedIterator for IterMut<'a, K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => {
+                if let Some(item) = iter.next_back() {
+                    Some((&item.0, &mut item.1))
+                } else {
+                    None
+                }
+            }
+            Self::Multi(iter) => iter.next_back(),
+        }
+    }
+}
+
 pub enum IntoIter<K, V> {
     One(Option<(K, V)>),
     Multi(btree_map::IntoIter<K, V>),
@@ -274,6 +369,179 @@ impl<K, V> DoubleEndedIterator for IntoIter<K, V> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self {
             Self::One(iter) => iter.take(),
+            Self::Multi(iter) => iter.next_back(),
+        }
+    }
+}
+
+pub enum Keys<'a, K, V> {
+    One(option::Iter<'a, (K, V)>),
+    Multi(btree_map::Keys<'a, K, V>),
+}
+
+impl<'a, K, V> Clone for Keys<'a, K, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        match self {
+            Self::One(iter) => Self::One(iter.clone()),
+            Self::Multi(iter) => Self::Multi(iter.clone()),
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for Keys<'a, K, V> {
+    type Item = &'a K;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next().map(|item| &item.0),
+            Self::Multi(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::One(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+            Self::Multi(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+        }
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for Keys<'a, K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => iter.len(),
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a, K, V> DoubleEndedIterator for Keys<'a, K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next_back().map(|item| &item.0),
+            Self::Multi(iter) => iter.next_back(),
+        }
+    }
+}
+
+pub enum Values<'a, K, V> {
+    One(option::Iter<'a, (K, V)>),
+    Multi(btree_map::Values<'a, K, V>),
+}
+
+impl<'a, K, V> Clone for Values<'a, K, V> {
+    #[inline]
+    fn clone(&self) -> Self {
+        match self {
+            Self::One(iter) => Self::One(iter.clone()),
+            Self::Multi(iter) => Self::Multi(iter.clone()),
+        }
+    }
+}
+
+impl<'a, K, V> Iterator for Values<'a, K, V> {
+    type Item = &'a V;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next().map(|item| &item.1),
+            Self::Multi(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::One(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+            Self::Multi(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+        }
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for Values<'a, K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => iter.len(),
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a, K, V> DoubleEndedIterator for Values<'a, K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next_back().map(|item| &item.1),
+            Self::Multi(iter) => iter.next_back(),
+        }
+    }
+}
+
+pub enum ValuesMut<'a, K, V> {
+    One(option::IterMut<'a, (K, V)>),
+    Multi(btree_map::ValuesMut<'a, K, V>),
+}
+
+impl<'a, K, V> Iterator for ValuesMut<'a, K, V> {
+    type Item = &'a mut V;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next().map(|item| &mut item.1),
+            Self::Multi(iter) => iter.next(),
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::One(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+            Self::Multi(iter) => {
+                let l = iter.len();
+                (l, Some(l))
+            }
+        }
+    }
+}
+
+impl<'a, K, V> ExactSizeIterator for ValuesMut<'a, K, V> {
+    #[inline]
+    fn len(&self) -> usize {
+        match self {
+            Self::One(iter) => iter.len(),
+            Self::Multi(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a, K, V> DoubleEndedIterator for ValuesMut<'a, K, V> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(iter) => iter.next_back().map(|item| &mut item.1),
             Self::Multi(iter) => iter.next_back(),
         }
     }
@@ -678,5 +946,68 @@ mod tests {
         let occupied = map.entry(1).insert_entry("one_updated".to_string());
         assert_eq!(occupied.get(), &"one_updated".to_string());
         assert_eq!(map.get(&1), Some(&"one_updated".to_string()));
+    }
+
+    #[test]
+    fn test_keys() {
+        let mut map = VariousMap::new();
+        map.insert(1, "one".to_string());
+        assert_eq!(map.keys().collect::<Vec<_>>(), vec![&1]);
+
+        map.insert(2, "two".to_string());
+        let mut keys = map.keys().collect::<Vec<_>>();
+        keys.sort();
+        assert_eq!(keys, vec![&1, &2]);
+    }
+
+    #[test]
+    fn test_values() {
+        let mut map = VariousMap::new();
+        map.insert(1, "one".to_string());
+        assert_eq!(map.values().collect::<Vec<_>>(), vec![&"one".to_string()]);
+
+        map.insert(2, "two".to_string());
+        let mut values = map.values().collect::<Vec<_>>();
+        values.sort();
+        assert_eq!(values, vec![&"one".to_string(), &"two".to_string()]);
+    }
+
+    #[test]
+    fn test_values_mut() {
+        let mut map = VariousMap::new();
+        map.insert(1, "one".to_string());
+        for v in map.values_mut() {
+            *v = "one_updated".to_string();
+        }
+        assert_eq!(map.get(&1), Some(&"one_updated".to_string()));
+
+        map.insert(2, "two".to_string());
+        for v in map.values_mut() {
+            v.push_str("_mut");
+        }
+        assert_eq!(map.get(&1), Some(&"one_updated_mut".to_string()));
+        assert_eq!(map.get(&2), Some(&"two_mut".to_string()));
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut map = VariousMap::new();
+        map.insert(1, "one".to_string());
+        for (k, v) in map.iter_mut() {
+            assert_eq!(k, &1);
+            *v = "one_updated".to_string();
+        }
+        assert_eq!(map.get(&1), Some(&"one_updated".to_string()));
+
+        map.insert(2, "two".to_string());
+        for (k, v) in map.iter_mut() {
+            if *k == 1 {
+                *v = "one_final".to_string();
+            } else if *k == 2 {
+                *v = "two_final".to_string();
+            }
+        }
+        assert_eq!(map.get(&1), Some(&"one_final".to_string()));
+        assert_eq!(map.get(&2), Some(&"two_final".to_string()));
     }
 }
