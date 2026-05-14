@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.11.6] - 2026-05-14
+
+### Added
+
+various_map: Add missing IntoIter for &VariousMap
+
 ## [0.11.5] - 2026-05-13
 
 ### Added
