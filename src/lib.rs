@@ -209,8 +209,11 @@
 //!
 //! ## Feature Flags
 //!
-//! *   **`default`**: Enabled by default. Includes the `std` features.
+//! *   **`default`**: Enabled by default. Includes the `std`, `various`, `seglist` features.
 //! *   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
+//! *   **`seglist`**: Enable seg_list module
+//! *   **`various`**: Enable various_map module
+//! *   **`various` + `seglist`**: Enable various module
 //! *   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
 //! *   **`dlist`**: Enables the doubly linked list (`dlist`) module.
 //! *   **`avl`**: Enables the `avl` module.
@@ -419,16 +422,22 @@ pub mod const_vec;
 pub use const_vec::ConstVec;
 #[cfg(feature = "dlist")]
 pub mod dlist;
+#[cfg(feature = "seglist")]
 pub mod seg_list;
+#[cfg(feature = "seglist")]
 pub use seg_list::SegList;
 #[cfg(feature = "slist")]
 pub mod slist;
 #[cfg(feature = "slist")]
 pub mod slist_owned;
+#[cfg(all(feature = "various", feature = "seglist"))]
 pub mod various;
+#[cfg(all(feature = "various", feature = "seglist"))]
 pub use various::Various;
+#[cfg(feature = "various")]
 #[allow(private_interfaces)]
 pub mod various_map;
+#[cfg(feature = "various")]
 pub use various_map::VariousMap;
 #[cfg(feature = "btree")]
 pub mod btree;

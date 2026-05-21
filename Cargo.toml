@@ -1,6 +1,6 @@
 [package]
 name = "embed-collections"
-version = "0.11.6"
+version = "0.12.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "A collection of memory efficient and intrusive data structures"
@@ -9,13 +9,16 @@ categories = ["data-structures", "no-std"]
 homepage = "https://github.com/NaturalIO/embed-collections-rs"
 
 [features]
-default = ["std"]
+default = ["std", "seglist", "various"]
 std = []
 slist = []
 dlist = []
 avl = []
 btree = []
-full = ["slist", "dlist", "avl", "btree"]
+# for Various & VariousMap
+various = []
+seglist = []
+full = ["slist", "dlist", "avl", "btree", "various", "seglist"]
 # enable log for dev
 trace_log = ["dep:log"]
 
