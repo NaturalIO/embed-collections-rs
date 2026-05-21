@@ -28,5 +28,14 @@ jobs:
     - name: no_std build check
       run: cargo build --no-default-features --features full
 
+    - name: various build
+      run: cargo build --no-default-features -F various
+
+    - name: various + seglist build
+      run: cargo build --no-default-features -F various,seglist
+
+    - name: btree build
+      run: cargo build --no-default-features -F btree
+
     - name: Clippy with default
       run: cargo clippy -F full -- -D warnings
