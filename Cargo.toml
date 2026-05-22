@@ -11,14 +11,15 @@ homepage = "https://github.com/NaturalIO/embed-collections-rs"
 [features]
 default = ["std", "seglist", "various"]
 std = []
-slist = []
-dlist = []
 avl = []
 btree = []
+dlist = []
+irc = ["dep:atomic-traits"]
+seglist = []
+slist = []
 # for Various & VariousMap
 various = []
-seglist = []
-full = ["slist", "dlist", "avl", "btree", "various", "seglist"]
+full = ["avl", "btree", "dlist", "irc", "various", "seglist", "slist"]
 # enable log for dev
 trace_log = ["dep:log"]
 
@@ -28,6 +29,7 @@ trace_log = ["dep:log"]
 
 [dependencies]
 log = { version="0", optional=true}
+atomic-traits = { version="0.4", optional=true}
 
 [dev-dependencies]
 rstest = "0"

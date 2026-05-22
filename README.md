@@ -19,7 +19,8 @@ This crate provides two categories of modules:
     - [various_map](https://docs.rs/embed-collections/latest/embed_collections/various_map/): A short-live map wrapping BTreeMap (std) with `Option<(K, V)>` to delay allocation.
 
 - [Intrusive collections](#intrusive-collections):
-    - Supports various smart pointer types: owned (Box), multiple ownership (Arc, Rc), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
+    - Provide [Pointer] [SmartPointer] trait for smart pointer types: owned (Box),  multiple ownership (Arc, Rc, [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/)), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
+    - [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/): Intrusive ref counter.
     - [dlist](https://docs.rs/embed-collections/latest/embed_collections/dlist/): Intrusive Doubly Linked List (Queue / Stack).
     - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
     - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
@@ -211,13 +212,17 @@ assert_eq!(io_list.pop_front().unwrap().val, 20);
 
 ### Feature Flags
 
-*   **`default`**: Enabled by default. Includes the `std` features.
+*   **`default`**: Enabled by default. Includes the `std`, `various`, `seglist` features.
+*   **`full`**: Includes everything but std
 *   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
-*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
-*   **`dlist`**: Enables the doubly linked list (`dlist`) module.
 *   **`avl`**: Enables the `avl` module.
 *   **`btree`**: Enable the btree module.
-*   **`full`**: Enabled by default. Includes `slist`, `dlist`, and `avl`.
+*   **`dlist`**: Enables the doubly linked list (`dlist`) module.
+*   **`irc`**: Enables the `irc` (intrusive ref count) module.
+*   **`various`**: Enable various_map module
+*   **`various` + `seglist`**: Enable various module
+*   **`seglist`**: Enable seg_list module
+*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
 
 To compile with `no_std` and only the `slist` module, you would use:
 `cargo build --no-default-features --features slist`
