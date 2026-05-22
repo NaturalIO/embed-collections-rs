@@ -1,3 +1,60 @@
+//! Intrusive Reference Counter (Irc)
+//!
+//! `Irc` is an intrusive reference counting smart pointer, similar to `Arc` but without weak reference support.
+//! It requires the inner type to implement [IrcItem] trait to provide a counter field.
+//!
+//! The underlayer of `Irc` is Box, unlike `Arc` which wrap a hidden ArcInner on your inner types,
+//! Irc use the same memory location of your inner types.
+//!
+//! [IrcItem::on_drop] in the trait allow you to have the ownship of underlying inner memory after the reference count of Irc is dropped.
+//!
+//! # Example
+//!
+//! ```rust
+//! use embed_collections::irc::{Irc, IrcItem};
+//! use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+//! use crossfire::oneshot;
+//! use std::thread;
+//! use std::time::Duration;
+//!
+//! // Usually we use Irc for some large structure, but we show a simple demo here.
+//! struct MyItem {
+//!     is_done: AtomicBool,
+//!     counter: AtomicUsize,
+//!     done_tx: Option<oneshot::TxOneshot<Box<MyItem>>>,
+//! }
+//!
+//! unsafe impl IrcItem<()> for MyItem {
+//!     type Counter = AtomicUsize;
+//!     fn counter(&self) -> &Self::Counter {
+//!         &self.counter
+//!     }
+//!
+//!     // overwrite default behavior to send the item through channel
+//!     fn on_drop(mut this: Box<Self>) {
+//!         let done_tx = this.done_tx.take().unwrap();
+//!         done_tx.send(this);
+//!     }
+//! }
+//!
+//! let (done_tx, done_rx) = oneshot::oneshot();
+//! let boxed_item = Box::new(MyItem {
+//!     is_done: AtomicBool::new(false),
+//!     counter: AtomicUsize::new(0),
+//!     done_tx: Some(done_tx),
+//! });
+//!
+//! // Convert from Box to Irc, which does not have additional allocation.
+//! let item = Irc::<_, ()>::from(boxed_item);
+//! thread::spawn(move || {
+//!     thread::sleep(Duration::from_secs(1));
+//!     item.is_done.store(true, Ordering::SeqCst);
+//!     drop(item);
+//! });
+//! let item: Box<MyItem> = done_rx.recv().unwrap();
+//! assert!(item.is_done.load(Ordering::SeqCst));
+//! ```
+
 use crate::{Pointer, SmartPointer};
 use alloc::boxed::Box;
 use atomic_traits::{
@@ -32,7 +89,9 @@ where
 
     /// The default behavior for Irc is dropping the boxed inner.
     ///
-    /// You can overwrite this if you want to send the inner somewhere
+    /// You can overwrite this if you want to send the inner somewhere.
+    /// We pass box here to reduce moving cost.
+    #[allow(clippy::boxed_local)]
     #[inline(always)]
     fn on_drop(_this: Box<Self>) {}
 
@@ -44,7 +103,7 @@ where
 
 /// Intrusive reference counter, which support conversion bwteween `Box<T>`.
 ///
-/// It does not support weak reference
+/// It does not support weak reference.
 pub struct Irc<T: IrcItem<Tag>, Tag> {
     inner: NonNull<T>,
     _phan: PhantomData<fn(&Tag)>,
@@ -79,6 +138,37 @@ impl<T: IrcItem<Tag>, Tag> Irc<T, Tag> {
     ///
     /// it's possible to return false when counter drop to 1,
     /// Because of using Acquire load and Release on drop.
+    ///
+    /// # Example
+    ///
+    ///
+    /// ```rust
+    /// use embed_collections::irc::{Irc, IrcItem};
+    /// use core::sync::atomic::AtomicUsize;
+    ///
+    /// struct Tag;
+    ///
+    /// struct MyItem {
+    ///     value: i32,
+    ///     counter: AtomicUsize,
+    /// }
+    ///
+    /// unsafe impl IrcItem<Tag> for MyItem {
+    ///     type Counter = AtomicUsize;
+    ///     fn counter(&self) -> &Self::Counter {
+    ///         &self.counter
+    ///     }
+    /// }
+    ///
+    /// // Create a new Irc
+    /// let irc1 = Irc::<_, Tag>::new(MyItem { value: 10, counter: AtomicUsize::new(0) });
+    /// assert_eq!(irc1.value, 10);
+    /// assert!(irc1.is_unique());
+    ///
+    /// // Clone the Irc
+    /// let irc2 = irc1.clone();
+    /// assert_eq!(irc1.strong_count(), 2);
+    /// assert!(!irc1.is_unique());
     #[inline]
     pub fn is_unique(&self) -> bool {
         // Safety:
@@ -100,6 +190,42 @@ impl<T: IrcItem<Tag>, Tag> Irc<T, Tag> {
 
 impl<T: IrcItem<Tag> + Clone, Tag> Irc<T, Tag> {
     /// The Cow function, the same as `Arc::make_mut()`
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use embed_collections::irc::{Irc, IrcItem};
+    /// use core::sync::atomic::AtomicUsize;
+    ///
+    /// struct Tag;
+    /// struct MyItem {
+    ///     value: i32,
+    ///     counter: AtomicUsize,
+    /// }
+    ///
+    /// impl Clone for MyItem {
+    ///     fn clone(&self) -> Self {
+    ///         Self { value: self.value, counter: AtomicUsize::new(0) }
+    ///     }
+    /// }
+    ///
+    /// unsafe impl IrcItem<Tag> for MyItem {
+    ///     type Counter = AtomicUsize;
+    ///     fn counter(&self) -> &Self::Counter {
+    ///         &self.counter
+    ///     }
+    /// }
+    ///
+    /// let mut irc1 = Irc::<_, Tag>::new(MyItem { value: 10, counter: AtomicUsize::new(0) });
+    /// let irc2 = irc1.clone();
+    ///
+    /// // This will clone the inner item because it's shared
+    /// let m = Irc::make_mut(&mut irc1);
+    /// m.value = 20;
+    ///
+    /// assert_eq!(irc1.value, 20);
+    /// assert_eq!(irc2.value, 10);
+    /// ```
     #[inline]
     pub fn make_mut(this: &mut Self) -> &mut T {
         if !this.is_unique() {
@@ -210,5 +336,168 @@ impl<T: IrcItem<Tag>, Tag> SmartPointer for Irc<T, Tag> {
     #[inline]
     fn new(inner: T) -> Self {
         Irc::new(inner)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::{CounterI32, alive_count, reset_alive_count};
+    use core::sync::atomic::AtomicUsize;
+    use std::thread;
+
+    struct Tag;
+
+    struct TestItem {
+        value: CounterI32,
+        counter: AtomicUsize,
+    }
+
+    impl TestItem {
+        fn new(val: i32) -> Self {
+            Self { value: CounterI32::new(val), counter: AtomicUsize::new(0) }
+        }
+    }
+
+    impl Clone for TestItem {
+        fn clone(&self) -> Self {
+            Self { value: self.value.clone(), counter: AtomicUsize::new(0) }
+        }
+    }
+
+    unsafe impl IrcItem<Tag> for TestItem {
+        type Counter = AtomicUsize;
+        fn counter(&self) -> &Self::Counter {
+            &self.counter
+        }
+    }
+
+    #[test]
+    fn test_basic() {
+        reset_alive_count();
+        {
+            let item = TestItem::new(10);
+            let irc1 = Irc::<_, Tag>::new(item);
+            assert_eq!(irc1.value.value, 10);
+            assert_eq!(irc1.strong_count(), 1);
+            assert!(irc1.is_unique());
+            assert_eq!(alive_count(), 1);
+
+            let irc2 = irc1.clone();
+            assert_eq!(irc1.strong_count(), 2);
+            assert_eq!(irc2.strong_count(), 2);
+            assert!(!irc1.is_unique());
+            assert_eq!(alive_count(), 1);
+
+            drop(irc1);
+            assert_eq!(irc2.strong_count(), 1);
+            assert!(irc2.is_unique());
+            assert_eq!(alive_count(), 1);
+        }
+        assert_eq!(alive_count(), 0);
+    }
+
+    #[test]
+    fn test_get_mut() {
+        reset_alive_count();
+        let mut irc = Irc::<_, Tag>::new(TestItem::new(10));
+        assert!(Irc::get_mut(&mut irc).is_some());
+
+        let _irc2 = irc.clone();
+        assert!(Irc::get_mut(&mut irc).is_none());
+    }
+
+    #[test]
+    fn test_make_mut() {
+        reset_alive_count();
+        let mut irc = Irc::<_, Tag>::new(TestItem::new(10));
+
+        // Unique, no clone
+        {
+            let m = Irc::make_mut(&mut irc);
+            m.value.value = 20;
+        }
+        assert_eq!(irc.value.value, 20);
+        assert_eq!(alive_count(), 1);
+
+        // Not unique, should clone
+        let irc2 = irc.clone();
+        assert_eq!(alive_count(), 1);
+        {
+            let m = Irc::make_mut(&mut irc);
+            m.value.value = 30;
+        }
+        assert_eq!(irc.value.value, 30);
+        assert_eq!(irc2.value.value, 20);
+        assert_eq!(alive_count(), 2);
+
+        assert!(irc.is_unique());
+        assert!(irc2.is_unique());
+    }
+
+    #[test]
+    fn test_multithread_count() {
+        reset_alive_count();
+        {
+            let irc = Irc::<_, Tag>::new(TestItem::new(0));
+            let mut handles = vec![];
+
+            for _ in 0..10 {
+                let irc_clone = irc.clone();
+                handles.push(thread::spawn(move || {
+                    for _ in 0..1000 {
+                        let temp = irc_clone.clone();
+                        assert_eq!(temp.value.value, 0);
+                    }
+                }));
+            }
+
+            for handle in handles {
+                handle.join().unwrap();
+            }
+
+            assert_eq!(irc.strong_count(), 1);
+            assert!(irc.is_unique());
+            assert_eq!(alive_count(), 1);
+        }
+        assert_eq!(alive_count(), 0);
+    }
+
+    #[test]
+    fn test_multithread_drop() {
+        reset_alive_count();
+        {
+            let irc = Irc::<_, Tag>::new(TestItem::new(0));
+            let mut handles = vec![];
+            for _ in 0..10 {
+                let irc_clone = irc.clone();
+                handles.push(thread::spawn(move || {
+                    for _ in 0..1000 {
+                        let temp = irc_clone.clone();
+                        assert_eq!(temp.value.value, 0);
+                    }
+                }));
+            }
+            drop(irc);
+            for handle in handles {
+                handle.join().unwrap();
+            }
+        }
+        assert_eq!(alive_count(), 0);
+    }
+
+    #[test]
+    fn test_drop_all() {
+        reset_alive_count();
+        let irc = Irc::<_, Tag>::new(TestItem::new(0));
+        let mut clones = vec![];
+        for _ in 0..100 {
+            clones.push(irc.clone());
+        }
+        assert_eq!(alive_count(), 1);
+        drop(clones);
+        assert_eq!(alive_count(), 1);
+        drop(irc);
+        assert_eq!(alive_count(), 0);
     }
 }
