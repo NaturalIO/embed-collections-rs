@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.12.1] - 2026-05-22
+
+### Added
+
+- Add Irc (intrusive ref count) gated by `irc` feature
+
 ## [0.12.0] - 2026-05-21
 
 ### Changed
