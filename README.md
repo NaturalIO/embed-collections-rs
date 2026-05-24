@@ -35,7 +35,7 @@ This crate provides two categories of modules:
 **Disclaimer**
 
 Intrusive code is not recommended unless you are full aware of what you are doing.
-Most trait is mark `unsafe`. While we try to give you freedom, not letting the rules probibit
+Most traits are mark with `unsafe`. While we try to give you freedom, not letting the rules probibit
 you build highly customized logic, this library still has regular scheduled Miri test routine.
 
 ### SegList & Various
