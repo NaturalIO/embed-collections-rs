@@ -599,4 +599,28 @@ mod tests {
         }
         assert_eq!(alive_count(), 0);
     }
+
+    fn test_irc_with_waitgroup() {}
+
+    #[test]
+    fn test_irc_inside_irc() {
+        struct QuorumTask {
+            value: CounterI32,
+            quorum: AtomicU8,
+            counter_mem: AtomicUsize,
+        }
+
+        impl QuorumTask {
+            fn new(val: i32) -> Self {
+                Self { value: CounterI32::new(val), counter: AtomicUsize::new(0) }
+            }
+        }
+
+        unsafe impl IrcItem<()> for TestItem {
+            type Counter = AtomicUsize;
+            fn counter(&self) -> &Self::Counter {
+                &self.counter
+            }
+        }
+    }
 }
