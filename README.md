@@ -19,12 +19,25 @@ This crate provides two categories of modules:
     - [various_map](https://docs.rs/embed-collections/latest/embed_collections/various_map/): A short-live map wrapping BTreeMap (std) with `Option<(K, V)>` to delay allocation.
 
 - [Intrusive collections](#intrusive-collections):
-    - Provide [Pointer] [SmartPointer] trait for smart pointer types: owned (Box),  multiple ownership (Arc, Rc, [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/)), raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
-    - [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/): Intrusive ref counter.
-    - [dlist](https://docs.rs/embed-collections/latest/embed_collections/dlist/): Intrusive Doubly Linked List (Queue / Stack).
-    - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
-    - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
-    - [avl](https://docs.rs/embed-collections/latest/embed_collections/avl/): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+    - All container types support by [Pointer] [SmartPointer] trait:
+      - std `Box` (owned),
+      - std `Arc`, `Rc` (multiple ownership)
+      - [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/): Highly customized Intrusive Reference Counter. See the detail in
+      module doc.
+      - [WaitGroupZeroGuard](https://docs.rs/crossfire/latest/crossfire/waitgroup/struct.WaitGroupZeroGuard.html):  see the doc in `crossfire` crate
+      - raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
+    - Structs:
+      - [dlist](https://docs.rs/embed-collections/latest/embed_collections/dlist/): Intrusive Doubly Linked List (Queue / Stack).
+      - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
+      - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
+      - [avl](https://docs.rs/embed-collections/latest/embed_collections/avl/): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+
+
+**Disclaimer**
+
+Intrusive code is not recommended unless you are full aware of what you are doing.
+Most trait is mark `unsafe`. While we try to give you freedom, not letting the rules probibit
+you build highly customized logic, this library still has regular scheduled Miri test routine.
 
 ### SegList & Various
 
@@ -125,7 +138,11 @@ into_iter|btree|std
 ### Intrusive Collections
 
 intrusive collection is often used in c/c++ code, they does not need extra allocation.
-But the disadvantages includes: complexity to write, bad for cache hit when the node is too small
+But the disadvantages includes:
+
+- Complex to write (This crate seal most boilderplates)
+
+- Linking heap object to another is bad for cache hit (Use structure like [SegList] is preferable)
 
 There're three usage scenarios:
 
@@ -133,7 +150,8 @@ There're three usage scenarios:
    `Rc`, but you have to use UnsafeCell for internal mutation.
 
 2. Push `Box` to the list, the list own the items until they are popped, it's better than std
-   LinkedList because no additional allocation is needed.
+   LinkedList because no additional allocation is needed.  It will not move the item
+   in-and-out of hidden `Box` on every push / pop.  
 
 3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
    for temporary usage. You must ensure the list item not dropped be other refcount
