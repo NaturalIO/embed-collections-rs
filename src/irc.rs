@@ -6,9 +6,27 @@
 //! The underlayer of `Irc` is Box, unlike `Arc` which wrap a hidden ArcInner on your inner types,
 //! Irc use the same memory location of your inner types.
 //!
-//! [IrcItem::on_drop] in the trait allow you to have the ownship of underlying inner memory after the reference count of Irc is dropped.
+//! # Benefits
 //!
-//! # Example
+//! - No need to manual implementing the inc / dec on counter.
+//!
+//! - No enforced weak counter if you don't need it (every atomic op has cost).
+//!
+//! - [IrcItem::on_drop] in the trait allow you to have the ownship of underlying inner memory after
+//!   the reference count of Irc is dropped. And you only need to define the drop behavior once,
+//!   instead of write the same logic `Arc::into_inner` in every possible places
+//!   (If forgetting so make your code block and hard to debug).
+//!
+//! - Using `Irc` to wrap a `Box`, no additional memory allocation and memory fragmentation, no
+//!   additional dereference cost (than using `Arc<Box<T>>`)
+//!
+//! - You can allocate a box from the time of its birth and wrap it will `Irc` for temporary usage,
+//!   don't need to move bytes from / to stack. (especially when the inner object is large)
+//!
+//! - Advanced usage, multiple layer customized counter, on the same heap object, while preserving
+//!   the safe boundary
+//!
+//! # Example (Irc wrapping a Box)
 //!
 //! ```rust
 //! use embed_collections::irc::{Irc, IrcItem};

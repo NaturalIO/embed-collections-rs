@@ -21,7 +21,7 @@
 //!       - std `Box` (owned),
 //!       - std `Arc`, `Rc` (multiple ownership)
 //!       - [Irc](crate::irc): Highly customized Intrusive Reference Counter. See the detail in
-//!       module doc.
+//!         module doc.
 //!       - [WaitGroupZeroGuard](https://docs.rs/crossfire/latest/crossfire/waitgroup/struct.WaitGroupZeroGuard.html):  see the doc in `crossfire` crate
 //!       - raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
 //!     - Structs:
@@ -148,7 +148,7 @@
 //!
 //! 2. Push `Box` to the list, the list own the items until they are popped, it's better than std
 //!    LinkedList because no additional allocation is needed.  It will not move the item
-//!    in-and-out of hidden `Box` on every push / pop.  
+//!    in-and-out of hidden `Box` on every push / pop.
 //!
 //! 3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
 //!    for temporary usage. You must ensure the list item not dropped be other refcount

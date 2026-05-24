@@ -23,7 +23,7 @@ This crate provides two categories of modules:
       - std `Box` (owned),
       - std `Arc`, `Rc` (multiple ownership)
       - [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/): Highly customized Intrusive Reference Counter. See the detail in
-      module doc.
+        module doc.
       - [WaitGroupZeroGuard](https://docs.rs/crossfire/latest/crossfire/waitgroup/struct.WaitGroupZeroGuard.html):  see the doc in `crossfire` crate
       - raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
     - Structs:
@@ -31,7 +31,6 @@ This crate provides two categories of modules:
       - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
       - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
       - [avl](https://docs.rs/embed-collections/latest/embed_collections/avl/): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
-
 
 **Disclaimer**
 
@@ -151,7 +150,7 @@ There're three usage scenarios:
 
 2. Push `Box` to the list, the list own the items until they are popped, it's better than std
    LinkedList because no additional allocation is needed.  It will not move the item
-   in-and-out of hidden `Box` on every push / pop.  
+   in-and-out of hidden `Box` on every push / pop.
 
 3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
    for temporary usage. You must ensure the list item not dropped be other refcount
