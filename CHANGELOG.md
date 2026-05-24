@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.12.2] - 2026-05-25
+
+- irc: Change the IrcItem trait to support custom container, backward compatible with default param
+
 ## [0.12.1] - 2026-05-22
 
 ### Added
