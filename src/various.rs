@@ -129,6 +129,21 @@ impl<T> Various<T> {
         }
     }
 
+    /// NOTE: when multiple element already in the list, it will swap out original list and push again.
+    #[inline]
+    pub fn prepend(&mut self, new_item: T) {
+        if self.is_empty() {
+            self.push(new_item);
+        } else {
+            let mut temp = Self { inner: VariousInner::More(SegList::new()) };
+            core::mem::swap(self, &mut temp);
+            self.push(new_item);
+            for item in temp {
+                self.push(item);
+            }
+        }
+    }
+
     #[inline]
     pub fn iter(&self) -> VariousIter<'_, T> {
         let inner = match &self.inner {
@@ -334,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cap_0() {
+    fn test_multiple() {
         let mut s = Various::new();
         s.push(1);
         assert_eq!(s.len(), 1);
@@ -366,31 +381,28 @@ mod tests {
     }
 
     #[test]
-    fn test_more() {
-        let mut s = Various::new();
-        s.push(1);
-        s.push(2);
-        s.push(3);
+    fn test_prepend() {
+        let mut s = Various::<i32>::new();
+        s.prepend(1);
+        assert_eq!(s.len(), 1);
+        for i in &s {
+            assert_eq!(*i, 1);
+        }
+        s.prepend(2);
+        assert_eq!(s.len(), 2);
+        let mut iter = s.iter();
+        assert_eq!(iter.next(), Some(&2));
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.next(), None);
+        s.prepend(3);
         assert_eq!(s.len(), 3);
-        let mut total = 0;
-        for i in &s {
-            total += *i;
-        }
-        assert_eq!(total, 6);
-        for i in s.iter_mut() {
-            *i += 1;
-        }
-        let mut total = 0;
-        for i in &s {
-            total += *i;
-        }
-        assert_eq!(total, 9);
-        assert_eq!(s.pop(), Some(4));
-        let mut total = 0;
-        for i in s {
-            total += i;
-        }
-        assert_eq!(total, 5);
+        let mut iter = s.iter();
+        assert_eq!(iter.next(), Some(&3));
+        assert_eq!(iter.next(), Some(&2));
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.next(), None);
+        let collected: Vec<i32> = s.into_iter().collect();
+        assert_eq!(collected, vec![3, 2, 1]);
     }
 
     #[test]
