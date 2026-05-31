@@ -65,6 +65,24 @@ impl<K: Ord, V> VariousMap<K, V> {
     }
 
     #[inline]
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        match self {
+            Self::One(map) => {
+                if let Some(m) = &map {
+                    if m.0.borrow() == key { Some(map.take().unwrap().1) } else { None }
+                } else {
+                    None
+                }
+            }
+            Self::Multi(map) => map.remove(key),
+        }
+    }
+
+    #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V>
     where
         K: Ord,
@@ -1019,5 +1037,56 @@ mod tests {
         }
         assert_eq!(map.get(&1), Some(&"one_final".to_string()));
         assert_eq!(map.get(&2), Some(&"two_final".to_string()));
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut map = VariousMap::new();
+        // Remove from empty
+        assert_eq!(map.remove(&1), None);
+
+        // One variant
+        map.insert(1, "one".to_string());
+        assert_eq!(map.remove(&2), None);
+        assert_eq!(map.remove(&1), Some("one".to_string()));
+        assert!(map.is_empty());
+        assert_eq!(map.remove(&1), None);
+
+        // Multi variant
+        map.insert(1, "one".to_string());
+        map.insert(2, "two".to_string());
+        assert_eq!(map.remove(&3), None);
+        assert_eq!(map.remove(&1), Some("one".to_string()));
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(&2), Some(&"two".to_string()));
+        assert_eq!(map.remove(&2), Some("two".to_string()));
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_entry_api_remove() {
+        let mut map = VariousMap::new();
+
+        // One variant
+        map.insert(1, "one".to_string());
+        if let Entry::Occupied(ent) = map.entry(1) {
+            assert_eq!(ent.remove(), "one".to_string());
+        } else {
+            panic!("Should be occupied");
+        }
+        assert!(map.is_empty());
+
+        // Multi variant
+        map.insert(1, "one".to_string());
+        map.insert(2, "two".to_string());
+        if let Entry::Occupied(ent) = map.entry(2) {
+            let (k, v) = ent.remove_entry();
+            assert_eq!(k, 2);
+            assert_eq!(v, "two".to_string());
+        } else {
+            panic!("Should be occupied");
+        }
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key(&1));
     }
 }
