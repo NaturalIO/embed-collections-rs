@@ -196,6 +196,20 @@ where
         this.inner == other.inner
     }
 
+    /// Wrap a [Pointer] containing `T` with Irc.
+    ///
+    /// # Safety
+    ///
+    /// The counter will be increase by 1, but the previous value is not checked
+    #[inline]
+    pub unsafe fn with_unchecked(inner: P) -> Self {
+        inner.as_ref().counter().fetch_add(1u8.into(), Relaxed);
+        Self {
+            inner: unsafe { NonNull::new_unchecked(inner.into_raw() as *mut T) },
+            _phan: Default::default(),
+        }
+    }
+
     /// If is_unique returns true, then this thread is the only owner
     ///
     /// # False negative
