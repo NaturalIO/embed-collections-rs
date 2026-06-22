@@ -126,7 +126,7 @@ where
     }
 }
 
-/// Intrusive reference counter, which support conversion bwteween `P`.
+/// Intrusive reference counter, which support conversion between `P`.
 ///
 /// It does not support weak reference.
 pub struct Irc<T, Tag = (), P = Box<T>>
