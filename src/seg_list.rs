@@ -53,13 +53,14 @@
 //! assert_eq!(list.last(), Some(&30));
 //!
 //! // Drain all elements (consumes the list)
-//! let drained: Vec<i32> = list.drain().collect();
+//! let drained: Vec<i32> = list.into_iter().collect();
 //! assert_eq!(drained, vec![10, 20, 30]);
 //! ```
 
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
+use core::fmt;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ptr::{NonNull, null_mut};
 
@@ -239,27 +240,11 @@ impl<T> SegList<T> {
         }
     }
 
-    /// Returns a draining iterator that consumes the list and yields elements from head to tail
-    pub fn drain(mut self) -> SegListDrain<T> {
-        // Break the cycle and get the first segment
-        let mut first = self.break_first_node();
-        let cur = if self.count == 0 {
-            unsafe {
-                first.dealloc();
-            }
-            None
-        } else {
-            Some(first)
-        };
-        // To prevent drop from being called
-        core::mem::forget(self);
-        SegListDrain { cur, cur_idx: 0, forward: true }
-    }
-
     /// Returns a draining iterator that consumes the list and yields elements from tail to head
-    pub fn into_rev(mut self) -> SegListDrain<T> {
+    pub fn into_iter_rev(mut self) -> SegListIntoIter<T> {
         // break the cycle
         let mut first = self.break_first_node();
+        let remaining = self.count;
         let (cur, start_idx) = if self.count == 0 {
             unsafe {
                 first.dealloc();
@@ -272,7 +257,7 @@ impl<T> SegList<T> {
             (Some(tail_seg), start_idx)
         };
         core::mem::forget(self);
-        SegListDrain { cur, cur_idx: start_idx, forward: false }
+        SegListIntoIter { cur, cur_idx: start_idx, forward: false, remaining }
     }
 
     /// Returns a reference to the first element in the list
@@ -388,16 +373,49 @@ impl<T> Drop for SegList<T> {
 
 impl<T> IntoIterator for SegList<T> {
     type Item = T;
-    type IntoIter = SegListDrain<T>;
+    type IntoIter = SegListIntoIter<T>;
 
     #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        self.drain()
+    fn into_iter(mut self) -> Self::IntoIter {
+        // Break the cycle and get the first segment
+        let mut first = self.break_first_node();
+        let remaining = self.count;
+        let cur = if self.count == 0 {
+            unsafe {
+                first.dealloc();
+            }
+            None
+        } else {
+            Some(first)
+        };
+        // To prevent drop from being called
+        core::mem::forget(self);
+        SegListIntoIter { cur, cur_idx: 0, forward: true, remaining }
     }
 }
 
-impl<T: core::fmt::Debug> core::fmt::Debug for SegList<T> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl<'a, T> IntoIterator for &'a SegList<T> {
+    type Item = &'a T;
+    type IntoIter = SegListIter<'a, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut SegList<T> {
+    type Item = &'a mut T;
+    type IntoIter = SegListIterMut<'a, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for SegList<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SegList").field("len", &self.len()).finish()
     }
 }
@@ -722,18 +740,20 @@ impl<'a, T> ExactSizeIterator for SegListIterMut<'a, T> {}
 
 /// Draining iterator over SegList
 /// Consumes elements from head to tail (FIFO order) or tail to head (LIFO order)
-pub struct SegListDrain<T> {
+pub struct SegListIntoIter<T> {
     cur: Option<Segment<T>>,
     cur_idx: usize,
     forward: bool,
+    remaining: usize,
 }
 
-impl<T> Iterator for SegListDrain<T> {
+impl<T> Iterator for SegListIntoIter<T> {
     type Item = T;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let cur_seg = self.cur.as_mut()?;
+        self.remaining -= 1;
         unsafe {
             let item = (*cur_seg.item_ptr(self.cur_idx)).assume_init_read();
             let header = cur_seg.get_header();
@@ -770,18 +790,13 @@ impl<T> Iterator for SegListDrain<T> {
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = if let Some(_cur) = &self.cur {
-            // Estimate remaining elements - this is approximate for backward iteration
-            // across multiple segments, but sufficient for size_hint
-            1 // At least one element if cur is Some
-        } else {
-            0
-        };
-        (remaining, None)
+        (self.remaining, Some(self.remaining))
     }
 }
 
-impl<T> Drop for SegListDrain<T> {
+impl<T> ExactSizeIterator for SegListIntoIter<T> {}
+
+impl<T> Drop for SegListIntoIter<T> {
     fn drop(&mut self) {
         if let Some(mut cur) = self.cur.take() {
             unsafe {
@@ -918,11 +933,11 @@ mod tests {
     }
 
     #[test]
-    fn test_drain() {
+    fn test_into_iter() {
         // Get capacity per segment for CounterI32 (i32)
         let cap = Segment::<CounterI32>::base_cap();
 
-        // Scenario 1: Single segment, drain completely
+        // Scenario 1: Single segment, iter completely
         {
             reset_alive_count();
             {
@@ -934,14 +949,14 @@ mod tests {
                 assert!(list.len() < cap);
 
                 // Drain all elements
-                let drained: Vec<i32> = list.drain().map(|d| *d).collect();
+                let drained: Vec<i32> = list.into_iter().map(|d| *d).collect();
                 assert_eq!(drained, vec![0, 1, 2, 3, 4]);
             }
             // All 5 elements should be dropped by drain
             assert_eq!(alive_count(), 0);
         }
 
-        // Scenario 2: Three segments, drain first segment partially, then drop remaining
+        // Scenario 2: Three segments, iter first segment partially, then drop remaining
         {
             reset_alive_count();
             {
@@ -955,7 +970,7 @@ mod tests {
 
                 // Drain only half of first segment
                 let drain_count = cap / 2;
-                let mut drain_iter = list.drain();
+                let mut drain_iter = list.into_iter();
                 for i in 0..drain_count {
                     assert_eq!(*drain_iter.next().unwrap(), i as i32);
                 }
@@ -966,7 +981,7 @@ mod tests {
             assert_eq!(alive_count(), 0);
         }
 
-        // Scenario 3: Three segments, drain exactly first segment, then drop remaining
+        // Scenario 3: Three segments, iter exactly first segment, then drop remaining
         {
             reset_alive_count();
             {
@@ -979,7 +994,7 @@ mod tests {
                 assert_eq!(alive_count(), cap * 2 + 3);
 
                 // Drain exactly first segment
-                let mut drain_iter = list.drain();
+                let mut drain_iter = list.into_iter();
                 for i in 0..cap {
                     assert_eq!(*drain_iter.next().unwrap(), i as i32);
                 }
@@ -1227,7 +1242,7 @@ mod tests {
         }
 
         // Drain and verify FIFO order
-        let drained: Vec<u64> = list.drain().map(|s| s.data[0]).collect();
+        let drained: Vec<u64> = list.into_iter().map(|s| s.data[0]).collect();
         let expected: Vec<u64> = (0..40).collect();
         assert_eq!(drained, expected);
     }
@@ -1318,6 +1333,32 @@ mod tests {
     }
 
     #[test]
+    fn test_iter_exact_size() {
+        let mut list: SegList<i32> = SegList::new();
+
+        for i in 0..50 {
+            list.push(i);
+        }
+
+        // Test ExactSizeIterator on reverse iterator
+        let iter = list.iter();
+        assert_eq!(iter.len(), 50);
+
+        let mut iter = list.iter();
+        assert_eq!(iter.len(), 50);
+        assert_eq!(iter.next(), Some(&0));
+        assert_eq!(iter.len(), 49);
+        assert_eq!(iter.next(), Some(&1));
+        assert_eq!(iter.len(), 48);
+
+        // Test ExactSizeIterator on mutable reverse iterator
+        let mut iter_mut = list.iter_mut();
+        assert_eq!(iter_mut.len(), 50);
+        assert_eq!(iter_mut.next(), Some(&mut 0));
+        assert_eq!(iter_mut.len(), 49);
+    }
+
+    #[test]
     fn test_iter_rev_exact_size() {
         let mut list: SegList<i32> = SegList::new();
 
@@ -1331,59 +1372,85 @@ mod tests {
 
         let mut iter = list.iter_rev();
         assert_eq!(iter.len(), 50);
-        iter.next();
+        assert_eq!(iter.next(), Some(&49));
         assert_eq!(iter.len(), 49);
-        iter.next();
+        assert_eq!(iter.next(), Some(&48));
         assert_eq!(iter.len(), 48);
 
         // Test ExactSizeIterator on mutable reverse iterator
         let mut iter_mut = list.iter_mut_rev();
         assert_eq!(iter_mut.len(), 50);
-        iter_mut.next();
+        assert_eq!(iter_mut.next(), Some(&mut 49));
         assert_eq!(iter_mut.len(), 49);
     }
 
     #[test]
-    fn test_into_rev_single_segment() {
+    fn test_into_iter_rev_single_segment() {
         // Test with small number of elements (single segment)
         let mut list: SegList<i32> = SegList::new();
 
         for i in 0..10 {
             list.push(i);
         }
-
+        let mut iter = list.into_iter_rev();
+        assert_eq!(iter.len(), 10);
         // Test into_rev - should yield elements in LIFO order
-        let drained: Vec<i32> = list.into_rev().collect();
+        let mut drained: Vec<i32> = Vec::new();
+        assert_eq!(iter.next(), Some(9));
+        assert_eq!(iter.len(), 9);
+        drained.push(9);
+        let mut left: Vec<i32> = iter.collect();
+        drained.append(&mut left);
         let expected: Vec<i32> = (0..10).rev().collect();
         assert_eq!(drained, expected);
     }
 
     #[test]
-    fn test_into_rev_multi_segment() {
+    fn test_into_iter_multi_segment() {
         // Test with many elements (multiple segments)
         let mut list: SegList<i32> = SegList::new();
 
-        for i in 0..200 {
+        for i in 0..200i32 {
             list.push(i);
         }
-
-        // Test into_rev - should yield elements in LIFO order across segments
-        let drained: Vec<i32> = list.into_rev().collect();
-        let expected: Vec<i32> = (0..200).rev().collect();
-        assert_eq!(drained, expected);
+        let mut iter = list.into_iter();
+        assert_eq!(iter.len(), 200);
+        for i in 0..200i32 {
+            assert_eq!(iter.len(), 200 - (i as usize));
+            assert_eq!(iter.next(), Some(i));
+        }
+        assert_eq!(iter.next(), None);
     }
 
     #[test]
-    fn test_into_rev_empty() {
-        let list: SegList<i32> = SegList::new();
+    fn test_into_iter_rev_multi_segment() {
+        // Test with many elements (multiple segments)
+        let mut list: SegList<i32> = SegList::new();
 
-        let drained: Vec<i32> = list.into_rev().collect();
+        for i in 0..200i32 {
+            list.push(i);
+        }
+        let mut iter = list.into_iter_rev();
+        assert_eq!(iter.len(), 200);
+        for i in 0..200i32 {
+            assert_eq!(iter.len(), 200 - (i as usize));
+            assert_eq!(iter.next(), Some(199 - i));
+        }
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_into_iter_rev_empty() {
+        let list: SegList<i32> = SegList::new();
+        let iter = list.into_iter_rev();
+        assert_eq!(iter.len(), 0);
+        let drained: Vec<i32> = iter.collect();
         assert!(drained.is_empty());
     }
 
     #[test]
-    fn test_into_rev_partial() {
-        // Test partial consumption of into_rev
+    fn test_into_iter_rev_partial() {
+        // Test partial consumption of into_iter_rev
         let mut list: SegList<i32> = SegList::new();
 
         for i in 0..50 {
@@ -1391,13 +1458,14 @@ mod tests {
         }
 
         // Only drain half
-        let mut drain = list.into_rev();
+        let mut drain = list.into_iter_rev();
         let mut drained = Vec::new();
         for _ in 0..25 {
             if let Some(item) = drain.next() {
                 drained.push(item);
             }
         }
+        assert_eq!(drain.len(), 25);
         // Drop drain - remaining elements should be dropped properly
         drop(drain);
 
