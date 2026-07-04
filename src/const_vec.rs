@@ -25,6 +25,7 @@
 use core::fmt;
 use core::mem::MaybeUninit;
 use core::ops::{Deref, DerefMut};
+use core::slice;
 
 /// A fixed-size **inline** vector with const generic capacity
 pub struct ConstVec<T, const N: usize> {
@@ -328,7 +329,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     /// assert_eq!(iter.next(), None);
     /// ```
     #[inline]
-    pub fn iter(&self) -> core::slice::Iter<'_, T> {
+    pub fn iter(&self) -> slice::Iter<'_, T> {
         self.deref().iter()
     }
 
@@ -352,7 +353,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     /// assert_eq!(vec.get(2), Some(&6));
     /// ```
     #[inline]
-    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
         self.deref_mut().iter_mut()
     }
 }
@@ -360,14 +361,36 @@ impl<T, const N: usize> ConstVec<T, N> {
 impl<T, const N: usize> Deref for ConstVec<T, N> {
     type Target = [T];
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { core::slice::from_raw_parts::<T>(self.data.as_ptr() as *const T, self.len) }
     }
 }
 
 impl<T, const N: usize> DerefMut for ConstVec<T, N> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { core::slice::from_raw_parts_mut::<T>(self.data.as_mut_ptr() as *mut T, self.len) }
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a ConstVec<T, N> {
+    type Item = &'a T;
+    type IntoIter = slice::Iter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for &'a mut ConstVec<T, N> {
+    type Item = &'a mut T;
+    type IntoIter = slice::IterMut<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 
