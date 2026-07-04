@@ -51,6 +51,7 @@
 
 use crate::seg_list::SegList;
 use core::fmt;
+use core::iter::{ExactSizeIterator, Iterator};
 
 pub struct Various<T> {
     inner: VariousInner<T>,
@@ -231,7 +232,7 @@ impl<T> IntoIterator for Various<T> {
     fn into_iter(self) -> VariousIntoIter<T> {
         let inner = match self.inner {
             VariousInner::One(s) => VariousIntoIterInner::One(s.into_iter()),
-            VariousInner::More(s) => VariousIntoIterInner::More(s.drain()),
+            VariousInner::More(s) => VariousIntoIterInner::More(s.into_iter()),
         };
         VariousIntoIter { inner }
     }
@@ -240,10 +241,10 @@ impl<T> IntoIterator for Various<T> {
 impl<T> Various<T> {
     /// Returns a reverse consuming iterator
     #[inline]
-    pub fn into_rev(self) -> VariousIntoIter<T> {
+    pub fn into_iter_rev(self) -> VariousIntoIter<T> {
         let inner = match self.inner {
             VariousInner::One(s) => VariousIntoIterInner::One(s.into_iter()),
-            VariousInner::More(s) => VariousIntoIterInner::More(s.into_rev()),
+            VariousInner::More(s) => VariousIntoIterInner::More(s.into_iter_rev()),
         };
         VariousIntoIter { inner }
     }
@@ -251,11 +252,21 @@ impl<T> Various<T> {
 
 impl<'a, T> IntoIterator for &'a Various<T> {
     type Item = &'a T;
-
     type IntoIter = VariousIter<'a, T>;
 
+    #[inline]
     fn into_iter(self) -> VariousIter<'a, T> {
         self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Various<T> {
+    type Item = &'a mut T;
+    type IntoIter = VariousIterMut<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> VariousIterMut<'a, T> {
+        self.iter_mut()
     }
 }
 
@@ -268,16 +279,28 @@ enum VariousIterInner<'a, T> {
     More(crate::seg_list::SegListIter<'a, T>),
 }
 
-impl<'a, T> core::iter::Iterator for VariousIter<'a, T> {
+impl<'a, T> Iterator for VariousIter<'a, T> {
     type Item = &'a T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
             VariousIterInner::One(i) => i.next(),
             VariousIterInner::More(i) => i.next(),
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = match &self.inner {
+            VariousIterInner::One(i) => i.len(),
+            VariousIterInner::More(i) => i.len(),
+        };
+        (l, Some(l))
+    }
 }
+
+impl<'a, T> ExactSizeIterator for VariousIter<'a, T> {}
 
 pub struct VariousIterMut<'a, T> {
     inner: VariousIterMutInner<'a, T>,
@@ -288,16 +311,28 @@ enum VariousIterMutInner<'a, T> {
     More(crate::seg_list::SegListIterMut<'a, T>),
 }
 
-impl<'a, T> core::iter::Iterator for VariousIterMut<'a, T> {
+impl<'a, T> Iterator for VariousIterMut<'a, T> {
     type Item = &'a mut T;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
             VariousIterMutInner::One(i) => i.next(),
             VariousIterMutInner::More(i) => i.next(),
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = match &self.inner {
+            VariousIterMutInner::One(i) => i.len(),
+            VariousIterMutInner::More(i) => i.len(),
+        };
+        (l, Some(l))
+    }
 }
+
+impl<'a, T> ExactSizeIterator for VariousIterMut<'a, T> {}
 
 pub struct VariousIntoIter<T> {
     inner: VariousIntoIterInner<T>,
@@ -305,10 +340,10 @@ pub struct VariousIntoIter<T> {
 
 enum VariousIntoIterInner<T> {
     One(core::option::IntoIter<T>),
-    More(crate::seg_list::SegListDrain<T>),
+    More(crate::seg_list::SegListIntoIter<T>),
 }
 
-impl<T> core::iter::Iterator for VariousIntoIter<T> {
+impl<T> Iterator for VariousIntoIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -317,7 +352,18 @@ impl<T> core::iter::Iterator for VariousIntoIter<T> {
             VariousIntoIterInner::More(i) => i.next(),
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = match &self.inner {
+            VariousIntoIterInner::One(i) => i.len(),
+            VariousIntoIterInner::More(i) => i.len(),
+        };
+        (l, Some(l))
+    }
 }
+
+impl<T> ExactSizeIterator for VariousIntoIter<T> {}
 
 impl<T: fmt::Debug> fmt::Debug for Various<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -428,8 +474,9 @@ mod tests {
         s.push(1);
         s.push(2);
         s.push(3);
-
-        let collected: Vec<i32> = s.iter_rev().copied().collect();
+        let iter = s.iter_rev();
+        assert_eq!(iter.len(), 3);
+        let collected: Vec<i32> = iter.copied().collect();
         assert_eq!(collected, vec![3, 2, 1]);
 
         // Test mutable reverse iterator
@@ -444,7 +491,9 @@ mod tests {
     fn test_iter_rev_empty() {
         // Test reverse iterator with empty Various
         let s: Various<i32> = Various::new();
-        let collected: Vec<i32> = s.iter_rev().copied().collect();
+        let iter = s.iter_rev();
+        assert_eq!(iter.len(), 0);
+        let collected: Vec<i32> = iter.copied().collect();
         assert!(collected.is_empty());
 
         let mut s_mut: Various<i32> = Various::new();
@@ -457,8 +506,9 @@ mod tests {
         // Test reverse consuming iterator with single element
         let mut s = Various::new();
         s.push(42);
-
-        let collected: Vec<i32> = s.into_rev().collect();
+        let iter = s.into_iter_rev();
+        assert_eq!(iter.len(), 1);
+        let collected: Vec<i32> = iter.collect();
         assert_eq!(collected, vec![42]);
     }
 
@@ -469,8 +519,9 @@ mod tests {
         s.push(1);
         s.push(2);
         s.push(3);
-
-        let collected: Vec<i32> = s.into_rev().collect();
+        let iter = s.into_iter_rev();
+        assert_eq!(iter.len(), 3);
+        let collected: Vec<i32> = iter.collect();
         assert_eq!(collected, vec![3, 2, 1]);
     }
 
@@ -478,7 +529,9 @@ mod tests {
     fn test_into_rev_empty() {
         // Test reverse consuming iterator with empty Various
         let s: Various<i32> = Various::new();
-        let collected: Vec<i32> = s.into_rev().collect();
+        let iter = s.into_iter_rev();
+        assert_eq!(iter.len(), 0);
+        let collected: Vec<i32> = iter.collect();
         assert!(collected.is_empty());
     }
 }
