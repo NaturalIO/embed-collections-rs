@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.13.0] - 2026-07-05
+
+### Added
+
+- seg_list: Implement ExactSizeIterator, implement Iterator for & and &mut.
+
+- various: Implement ExactSizeIterator, implement Iterator for & and &mut.
+
+- const_vec: Implement Iterator for & and &mut.
+
+### Changed
+
+- seg_list: Rename `iter_rev()` to `into_iter_rev()`. Rename `SegListDrain` to `SegListIntoIter.
+
+- various: Rename `iter_rev()` to `into_iter_rev()`.
+
+### Removed
+
+- seg_list: Remove `drain()` because it's not like Vec::drain. you should use the `into_iter()`
+
 ## [0.12.4] - 2026-06-23
 
 ### Added
