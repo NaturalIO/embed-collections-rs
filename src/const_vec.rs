@@ -3,7 +3,8 @@
 //! # Features
 //! - It's smaller in size than `std::vec::Vec`.
 //! - push returns errors when the capacity is exceeded instead of reallocating.
-//! - No heap allocation after initial creation, better cache consistency
+//! - No heap allocation after initial creation, better cache consistency.
+//! - If you want heap allocation, use `Box<ConstVec<T, N>>`.
 //!
 //! # Example
 //! ```rust
