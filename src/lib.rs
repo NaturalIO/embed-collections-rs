@@ -467,9 +467,6 @@ pub use btree::BTreeMap;
 #[cfg(feature = "irc")]
 pub mod irc;
 
-#[cfg(test)]
-pub mod test;
-
 /// Cache line size in bytes
 #[cfg(any(
     target_arch = "x86_64",

@@ -49,28 +49,28 @@ pub fn setup_log() {
 static ALIVE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Reset the alive counter to 0
-pub(crate) fn reset_alive_count() {
+pub fn reset_alive_count() {
     ALIVE_COUNT.store(0, SeqCst);
 }
 
 /// Get the current alive count (should be 0 at test end)
-pub(crate) fn alive_count() -> usize {
+pub fn alive_count() -> usize {
     ALIVE_COUNT.load(SeqCst)
 }
 
 /// Get the current alive count (should be 0 at test end)
-pub(crate) fn inc_alive_count() -> usize {
+pub fn inc_alive_count() -> usize {
     ALIVE_COUNT.fetch_add(1, SeqCst)
 }
 
-pub(crate) fn dec_alive_count() -> usize {
+pub fn dec_alive_count() -> usize {
     ALIVE_COUNT.fetch_sub(1, SeqCst)
 }
 
 /// A test type that tracks alive count using a global static counter
 /// new() +1, clone() +1, drop() -1, should be 0 at test end
-pub(crate) struct CounterI32 {
-    pub(crate) value: i32,
+pub struct CounterI32 {
+    pub value: i32,
 }
 
 impl fmt::Display for CounterI32 {
@@ -85,7 +85,7 @@ impl fmt::Debug for CounterI32 {
 }
 
 impl CounterI32 {
-    pub(crate) fn new(value: i32) -> Self {
+    pub fn new(value: i32) -> Self {
         ALIVE_COUNT.fetch_add(1, SeqCst);
         Self { value }
     }
