@@ -13,27 +13,55 @@ init: git-hooks
 fmt: init
 	cargo fmt
 
-.PHONY: test-all
-test-all: test test-release test-leak
+.PHONY: build
+build: init
+	cargo build --no-default-features -p embed-avl
+	cargo build --no-default-features -p embed-btree
+	cargo build --no-default-features -p embed-constvec
+	cargo build --no-default-features -p embed-dlist
+	cargo build --no-default-features -p embed-seglist
+	cargo build --no-default-features -p embed-slist
+	cargo build --all-features -p embed-avl
+	cargo build --all-features -p embed-btree
+	cargo build --all-features -p embed-constvec
+	cargo build --all-features -p embed-dlist
+	cargo build --all-features -p embed-seglist
+	cargo build --all-features -p embed-slist
+
+.PHONY: clippy
+clippy: init
+	cargo clippy -p embed-avl -- -D warnings
+	cargo clippy -p embed-btree -- -D warnings
+	cargo clippy -p embed-constvec -- -D warnings
+	cargo clippy -p embed-dlist -- -D warnings
+	cargo clippy -p embed-seglist -- -D warnings
+	cargo clippy -p embed-slist -- -D warnings
 
 .PHONY: test
 test: init
-	RUST_BACKTRACE=1 cargo test ${ARGS} -F full --  --nocapture --test-threads=1
+	cd avl; make test;
+	cd btree; make test;
+	cd constvec; make test;
+	cd dlist; make test;
+	cd seglist; make test;
+	cd slist; make test;
 
-.PHONY: test_release
+.PHONY: test-release
 test-release: init
-	RUST_BACKTRACE=1 cargo test ${ARGS} --release -F full --  --nocapture --test-threads=1
+	cd avl; make test-release;
+	cd btree; make test-release;
+	cd constvec; make test-release;
+	cd dlist; make test-release;
+	cd seglist; make test-release;
+	cd slist; make test-release;
 
 test-leak:
-	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly nextest run ${ARGS} -F full,trace_log -r --no-capture -j 1
-
-.PHONY: build
-build: init
-	cargo build -F full
-
-.PHONY: build_nostd
-build_nostd: init
-	cargo build --no-default-features --features full
+	cd avl; make test-leak;
+	cd btree; make test-leak;
+	cd constvec; make test-leak;
+	cd dlist; make test-leak;
+	cd seglist; make test-leak;
+	cd slist; make test-leak;
 
 .DEFAULT_GOAL = build
 

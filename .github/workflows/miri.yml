@@ -23,6 +23,20 @@ jobs:
     - name: install miri
       run:  rustup component add --toolchain nightly-x86_64-unknown-linux-gnu miri
 
-    - name: Run miri tests
-      run: scripts/miri.sh -F full
+    - name: Run miri tests avl
+      run: cd avl; ../scripts/miri.sh
 
+    - name: Run miri tests btree
+      run: cd btree; ../scripts/miri.sh
+
+    - name: Run miri tests constvec
+      run: cd constvec; ../scripts/miri.sh
+
+    - name: Run miri tests seglist
+      run: cd seglist; ../scripts/miri.sh
+
+    - name: Run miri tests slist
+      run: cd slist; ../scripts/miri.sh
+
+    - name: Run miri tests dlist
+      run: cd dlist; ../scripts/miri.sh

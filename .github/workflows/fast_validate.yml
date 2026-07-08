@@ -19,23 +19,14 @@ jobs:
     - uses: actions/checkout@v2
     - uses: taiki-e/install-action@nextest
 
+    - name: no_std build check
+      run: make build
+
     - name: test
       run: make test
 
-    - name: test-leak
-      run: make test-leak
-
-    - name: no_std build check
-      run: cargo build --no-default-features --features full
-
-    - name: various build
-      run: cargo build --no-default-features -F various
-
-    - name: various + seglist build
-      run: cargo build --no-default-features -F various,seglist
-
-    - name: btree build
-      run: cargo build --no-default-features -F btree
+    - name: test
+      run: make test-release
 
     - name: Clippy with default
-      run: cargo clippy -F full -- -D warnings
+      run: make clippy

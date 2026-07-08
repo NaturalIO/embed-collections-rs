@@ -20,7 +20,7 @@ jobs:
     - uses: taiki-e/install-action@nextest
 
     - name: Build
-      run: cargo build --verbose
+      run: make build
 
     - name: Run tests
       run: make test

@@ -9,38 +9,75 @@ docs.rs: <https://docs.rs/embed-collections/latest/embed_collections/>
 
 A collection of memory efficient data structures, for embedding environment and server applications that need tight memory management.
 
-This crate provides two categories of modules:
+This repo consists some small crates.
 
-- Cache efficient collections:
-    - [const_vec](https://docs.rs/embed-collections/latest/embed_collections/const_vec/): Fixed capacity inline vec
-    - [seg_list](#seglist--various):  A cache aware (short-live) list to store elements with adaptive size segments
-    - [various](#seglist--various): A short-live list wrapping `SegList` with `Option<T>` to delay allocation.
-    - [btree](#btree): A cache aware B+tree for lone-live and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
-    - [various_map](https://docs.rs/embed-collections/latest/embed_collections/various_map/): A short-live map wrapping BTreeMap (std) with `Option<(K, V)>` to delay allocation.
+**NOTE: There nothing in the main crate, all modules have moved to sub crates**.
 
-- [Intrusive collections](#intrusive-collections):
-    - All container types support by [Pointer] [SmartPointer] trait:
-      - std `Box` (owned),
-      - std `Arc`, `Rc` (multiple ownership)
-      - [Irc](https://docs.rs/embed-collections/latest/embed_collections/irc/): Highly customized Intrusive Reference Counter. See the detail in
-        module doc.
-      - [WaitGroupZeroGuard](https://docs.rs/crossfire/latest/crossfire/waitgroup/struct.WaitGroupZeroGuard.html):  see the doc in `crossfire` crate
-      - raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
-    - Structs:
-      - [dlist](https://docs.rs/embed-collections/latest/embed_collections/dlist/): Intrusive Doubly Linked List (Queue / Stack).
-      - [slist](https://docs.rs/embed-collections/latest/embed_collections/slist/): Intrusive Singly Linked List ( Queue / stack).
-      - [slist_owned](https://docs.rs/embed-collections/latest/embed_collections/slist_owned/): An intrusive slist but with safe and more compact interface
-      - [avl](https://docs.rs/embed-collections/latest/embed_collections/avl/): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+### Cache efficient collections
+
+- [embed-constvec](https://docs.rs/embed-constvec): Fixed capacity inline vec
+- [embed-seglist](https://docs.rs/embed-seglist):  A cache aware (short-live) list to store elements with adaptive size segments
+- [embed-btree](https://docs.rs/embed-btree): A cache aware B+tree for lone-live and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
+
+### Intrusive collections:
+
+We support all-types from the [pointers](https://docs.rs/pointers) crate,
+with `Pointer` trait for intrusive collections:
+- raw pointers (`NonNull<T>`, `*const T`, `*mut T`)
+- std `Box` (owned),
+- std `Arc`, `Rc` (multiple ownership)
+- `Irc`: Highly customizable Intrusive Reference Counter.
+- [WaitGroupZeroGuard](https://docs.rs/crossfire/latest/crossfire/waitgroup/struct.WaitGroupZeroGuard.html):  see the doc in `crossfire` crate
+
+Sub crates:
+- [embed-dlist](https://docs.rs/embed-dlist): Intrusive Doubly Linked List (Queue / Stack).
+- [embed-slist](https://docs.rs/embed-slist): Intrusive Singly Linked List ( Queue / stack).
+- [embed-avl](https://docs.rs/embed-avl): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
 
 **Disclaimer**
 
 Intrusive code is not recommended unless you are full aware of what you are doing.
 Most traits are mark with `unsafe`. While we try to give you freedom, not letting the rules probibit
 you build highly customized logic, this library still has regular scheduled Miri test routine.
+But the disadvantages includes:
+
+- Complex to write (This crate seal most boilderplates)
+
+- Linking heap object to another is bad for cache hit (Use structure like `SegList` is preferable)
+
+There're three usage scenarios:
+
+1. Push smart pointer to the list, so that the list hold 1 ref count when the type is `Arc` /
+   `Rc`, but you have to use UnsafeCell for internal mutation.
+
+2. Push `Box` to the list, the list own the items until they are popped, it's better than std
+   LinkedList because no additional allocation is needed.  It will not move the item
+   in-and-out of hidden `Box` on every push / pop.
+
+3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
+   for temporary usage. You must ensure the list item not dropped be other refcount
+   (for example, the item is holding by Arc in other structure).
+
+
+#### Difference to `intrusive-collections` crate
+
+This crate choose to use trait instead of c like `offset_of!`, mainly because:
+
+- Mangling with offset conversion makes the code hard to read (for people not used to c style coding).
+
+- You don't have to understand some complex macro style.
+
+- It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
+  and using memtion to return the node ref is more safer approach.
+  For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
+
+<!-- cargo-rdme end -->
 
 ### SegList & Various
 
-[SegList](https://docs.rs/embed-collections/latest/embed_collections/seg_list/) and [Various](https://docs.rs/embed-collections/latest/embed_collections/various/) is designed for parameter passing.
+crate: [embed-seglist](https://docs.rs/embed-seglist)
+
+`SegList` and `Various` is designed for parameter passing.
 
 More CPU-cache friendly compared to `LinkedList`. And because it does not re-allocate, it's faster than `Vec::push()` when the number of elements is small.
 It's nice to the memory allocator (always allocate with fixed size segment).
@@ -56,9 +93,11 @@ Benchmark: append + drain (x86_64, cache line 128 bytes):
 | 100 | 471.1 ns | 464.0 ns | ~1.0x |
 | 500 | 2.77 µs | 895.5 ns | 3.1x slower |
 
-### B+tree
+### embed-btree
 
-We provide a [BTreeMap](https://docs.rs/embed-collections/latest/embed_collections/btree/) for single-threaded long-term in-memory storage.
+crate: [embed-btree](https://docs.rs/embed-btree)
+
+We provide a `BTreeMap` for single-threaded long-term in-memory storage.
 It's a cache aware b+tree:
 
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
@@ -133,46 +172,11 @@ into_iter|btree|std
 10k|397.05|81.389
 100k|**360.18**|56.742
 
-
-### Intrusive Collections
-
-intrusive collection is often used in c/c++ code, they does not need extra allocation.
-But the disadvantages includes:
-
-- Complex to write (This crate seal most boilderplates)
-
-- Linking heap object to another is bad for cache hit (Use structure like [SegList] is preferable)
-
-There're three usage scenarios:
-
-1. Push smart pointer to the list, so that the list hold 1 ref count when the type is `Arc` /
-   `Rc`, but you have to use UnsafeCell for internal mutation.
-
-2. Push `Box` to the list, the list own the items until they are popped, it's better than std
-   LinkedList because no additional allocation is needed.  It will not move the item
-   in-and-out of hidden `Box` on every push / pop.
-
-3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
-   for temporary usage. You must ensure the list item not dropped be other refcount
-   (for example, the item is holding by Arc in other structure).
-
-
-#### Difference to `intrusive-collections` crate
-
-This crate choose to use trait instead of c like `offset_of!`, mainly because:
-
-- Mangling with offset conversion makes the code hard to read (for people not used to c style coding).
-
-- You don't have to understand some complex macro style.
-
-- It's dangerous to use pointer offset conversion when the embedded Node not perfectly aligned,
-  and using memtion to return the node ref is more safer approach.
-  For example, the default `repr(Rust)` might reorder the field, or you mistakenly use `repr(packed)`.
-
 #### instrusive link list example
 
 ```rust
-use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
+use embed_dlist::{DLinkedList, DListItem, DListNode};
+use pointers::Pointer;
 use std::cell::UnsafeCell;
 use std::sync::Arc;
 
@@ -226,22 +230,3 @@ assert_eq!(io_list.pop_front().unwrap().val, 10);
 assert_eq!(cache_list.pop_front().unwrap().val, 20);
 assert_eq!(io_list.pop_front().unwrap().val, 20);
 ```
-
-### Feature Flags
-
-*   **`default`**: Enabled by default. Includes the `std`, `various`, `seglist` features.
-*   **`full`**: Includes everything but std
-*   **`std`**: Enables integration with the Rust standard library, including the `println!` macro for debugging. Disabling this feature enables `no_std` compilation.
-*   **`avl`**: Enables the `avl` module.
-*   **`btree`**: Enable the btree module.
-*   **`dlist`**: Enables the doubly linked list (`dlist`) module.
-*   **`irc`**: Enables the `irc` (intrusive ref count) module.
-*   **`various`**: Enable various_map module
-*   **`various` + `seglist`**: Enable various module
-*   **`seglist`**: Enable seg_list module
-*   **`slist`**: Enables the singly linked list (`slist`) and owned singly linked list (`slist_owned`) modules.
-
-To compile with `no_std` and only the `slist` module, you would use:
-`cargo build --no-default-features --features slist`
-
-<!-- cargo-rdme end -->
