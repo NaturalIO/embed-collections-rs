@@ -13,7 +13,7 @@ mod leaf_delete;
 mod split;
 
 use super::{helper::*, inter::*, leaf::*, node::*, *};
-use test_common::*;
+pub use embed_collections_test::*;
 
 pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized> {
     leaf_count: usize,

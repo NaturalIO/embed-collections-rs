@@ -13,7 +13,7 @@ readme = "../README.md"
 embed-collections = {path="../", version="1"}
 
 [dev-dependencies]
-test-common = {path="../test-common", version="0"}
+embed-collections-test = {path="../test-common"}
 log = { version="0"}
 
 

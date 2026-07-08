@@ -2,7 +2,6 @@ use super::*;
 use rstest::*;
 use std::boxed::Box;
 use std::sync::Arc;
-use test_common::{alive_count, reset_alive_count};
 
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]

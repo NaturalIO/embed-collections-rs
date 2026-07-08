@@ -1,9 +1,9 @@
 use super::super::{inter::*, leaf::*, *};
+use super::*;
 use captains_log::logfn;
 use rstest::*;
 use std::println;
 use std::vec;
-use test_common::setup_log;
 
 #[test]
 fn test_btree_large_tree_split_seq() {

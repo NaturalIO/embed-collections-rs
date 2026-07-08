@@ -840,7 +840,7 @@ impl<T> Drop for SegListIntoIter<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test_common::{CounterI32, alive_count, reset_alive_count};
+    use embed_collections_test::{CounterI32, alive_count, reset_alive_count};
 
     #[test]
     fn test_multiple_segments() {

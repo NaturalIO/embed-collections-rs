@@ -1,7 +1,7 @@
 mod basic;
 mod iter;
 mod range_tree;
-use test_common::{dec_alive_count, inc_alive_count};
+pub use embed_collections_test::*;
 
 use super::*;
 use core::cell::UnsafeCell;
