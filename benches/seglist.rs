@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use embed_collections::SegList;
+use embed_seglist::SegList;
 
 #[inline]
 fn bench_seglist(count: usize) {

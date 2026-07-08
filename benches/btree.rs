@@ -3,7 +3,7 @@
 mod btree_common;
 
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use embed_collections::btree::BTreeMap;
+use embed_btree::BTreeMap;
 
 use btree_common::{SIZES, TestData, size_desc};
 

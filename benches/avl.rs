@@ -4,7 +4,7 @@ mod btree_common;
 
 use core::cell::UnsafeCell;
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use embed_collections::avl::{AvlItem, AvlNode, AvlTree};
+use embed_avl::{AvlItem, AvlNode, AvlTree};
 use std::fmt;
 use std::sync::Arc;
 
@@ -25,8 +25,14 @@ impl fmt::Debug for IntAvlNode {
 }
 
 unsafe impl AvlItem<()> for IntAvlNode {
+    type Key = u32;
     fn get_node(&self) -> &mut AvlNode<Self, ()> {
         unsafe { &mut *self.node.get() }
+    }
+
+    #[inline]
+    fn borrow_key(&self) -> &u32 {
+        &self.value
     }
 }
 
@@ -41,13 +47,6 @@ fn new_intnode_arc(i: u32) -> Arc<IntAvlNode> {
 type IntAvlTreeBox = AvlTree<Box<IntAvlNode>, ()>;
 type IntAvlTreeArc = AvlTree<Arc<IntAvlNode>, ()>;
 
-fn cmp_int_node(a: &IntAvlNode, b: &IntAvlNode) -> std::cmp::Ordering {
-    a.value.cmp(&b.value)
-}
-fn cmp_int(a: &u32, b: &IntAvlNode) -> std::cmp::Ordering {
-    a.cmp(&b.value)
-}
-
 fn bench_insert_box(c: &mut Criterion) {
     for &size in &SIZES {
         let data = TestData::new_random(size);
@@ -59,7 +58,7 @@ fn bench_insert_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    tree.add(black_box(new_intnode_box(data.keys[i])), cmp_int_node);
+                    tree.add(black_box(new_intnode_box(data.keys[i])));
                 }
             });
         });
@@ -78,7 +77,7 @@ fn bench_insert_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    tree.add(black_box(new_intnode_arc(data.keys[i])), cmp_int_node);
+                    tree.add(black_box(new_intnode_arc(data.keys[i])));
                 }
             });
         });
@@ -97,7 +96,7 @@ fn bench_insert_sequential_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    tree.add(black_box(new_intnode_box(data.keys[i])), cmp_int_node);
+                    tree.add(black_box(new_intnode_box(data.keys[i])));
                 }
             });
         });
@@ -116,7 +115,7 @@ fn bench_insert_sequential_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    tree.add(black_box(new_intnode_arc(data.keys[i])), cmp_int_node);
+                    tree.add(black_box(new_intnode_arc(data.keys[i])));
                 }
             });
         });
@@ -131,7 +130,7 @@ fn bench_get_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
-            tree.add(new_intnode_box(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_box(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("get_rand_box");
@@ -139,7 +138,7 @@ fn bench_get_box(c: &mut Criterion) {
         group.bench_function(format!("{}", desc), |b| {
             b.iter(|| {
                 for i in 0..size {
-                    black_box(tree.find(&data.keys[i], cmp_int));
+                    black_box(tree.find(&data.keys[i]));
                 }
             });
         });
@@ -154,7 +153,7 @@ fn bench_get_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            tree.add(new_intnode_arc(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_arc(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("get_rand_arc");
@@ -162,7 +161,7 @@ fn bench_get_arc(c: &mut Criterion) {
         group.bench_function(format!("{}", desc), |b| {
             b.iter(|| {
                 for i in 0..size {
-                    black_box(tree.find(&data.keys[i], cmp_int));
+                    black_box(tree.find(&data.keys[i]));
                 }
             });
         });
@@ -177,7 +176,7 @@ fn bench_get_sequential_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
-            tree.add(new_intnode_box(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_box(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("get_seq_box");
@@ -185,7 +184,7 @@ fn bench_get_sequential_box(c: &mut Criterion) {
         group.bench_function(format!("{}", desc), |b| {
             b.iter(|| {
                 for i in 0..size {
-                    black_box(tree.find(&data.keys[i], cmp_int));
+                    black_box(tree.find(&data.keys[i]));
                 }
             });
         });
@@ -200,7 +199,7 @@ fn bench_get_sequential_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            tree.add(new_intnode_arc(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_arc(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("get_seq_arc");
@@ -208,7 +207,7 @@ fn bench_get_sequential_arc(c: &mut Criterion) {
         group.bench_function(format!("{}", desc), |b| {
             b.iter(|| {
                 for i in 0..size {
-                    black_box(tree.find(&data.keys[i], cmp_int));
+                    black_box(tree.find(&data.keys[i]));
                 }
             });
         });
@@ -223,7 +222,7 @@ fn bench_iter_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
-            tree.add(new_intnode_box(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_box(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("iter_box");
@@ -248,7 +247,7 @@ fn bench_iter_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            tree.add(new_intnode_arc(data.keys[i]), cmp_int_node);
+            tree.add(new_intnode_arc(data.keys[i]));
         }
 
         let mut group = c.benchmark_group("iter_arc");
@@ -278,13 +277,13 @@ fn bench_remove_box(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
-                        tree.add(new_intnode_box(data.keys[i]), cmp_int_node);
+                        tree.add(new_intnode_box(data.keys[i]));
                     }
                     tree
                 },
                 |mut tree: IntAvlTreeBox| {
                     for i in 0..size {
-                        black_box(tree.remove_by_key(&data.keys[i], cmp_int));
+                        black_box(tree.remove_by_key(&data.keys[i]));
                     }
                 },
                 criterion::BatchSize::LargeInput,
@@ -306,13 +305,13 @@ fn bench_remove_arc(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeArc::new();
                     for i in 0..size {
-                        tree.add(new_intnode_arc(data.keys[i]), cmp_int_node);
+                        tree.add(new_intnode_arc(data.keys[i]));
                     }
                     tree
                 },
                 |mut tree: IntAvlTreeArc| {
                     for i in 0..size {
-                        black_box(tree.remove_by_key(&data.keys[i], cmp_int));
+                        black_box(tree.remove_by_key(&data.keys[i]));
                     }
                 },
                 criterion::BatchSize::LargeInput,

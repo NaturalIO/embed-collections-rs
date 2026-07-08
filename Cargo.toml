@@ -11,19 +11,6 @@ keywords = ["intrusive", "linked-list", "collection", "avl", "btree"]
 categories = ["data-structures", "no-std"]
 homepage = "https://github.com/NaturalIO/embed-collections-rs"
 
-[features]
-default = ["std", "seglist", "various"]
-std = []
-avl = []
-btree = []
-dlist = []
-seglist = []
-slist = []
-# for Various & VariousMap
-various = []
-# enable log for dev
-trace_log = ["dep:log"]
-
 ## For profiling symbol
 #[profile.release]
 #debug = true
@@ -36,20 +23,22 @@ rstest = "0"
 criterion2 = { version="3.0.2"}
 captains-log = {version="0", features = ["ringfile"] }
 log = { version="0"}
+embed-avl = {path="avl"}
+embed-btree = {path="btree"}
+embed-seglist = {path="seglist"}
+fastrand = "2.3"
 
 [[bench]]
 name = "avl"
 harness = false
-required-features = ["avl"]
 
 [[bench]]
-name = "seg_list"
+name = "seglist"
 harness = false
 
 [[bench]]
 name = "btree"
 harness = false
-required-features = ["btree"]
 
 [[bench]]
 name = "btree_std"
