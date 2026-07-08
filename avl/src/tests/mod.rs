@@ -1,12 +1,13 @@
 mod basic;
 mod iter;
 mod range_tree;
-use crate::test::{dec_alive_count, inc_alive_count};
+use test_common::{dec_alive_count, inc_alive_count};
 
 use super::*;
-use crate::{Pointer, SmartPointer};
 use core::cell::UnsafeCell;
 use core::ops::{Deref, DerefMut};
+use pointers::{Pointer, SmartPointer};
+use std::println;
 
 pub struct IntAvlNode {
     pub value: i64,

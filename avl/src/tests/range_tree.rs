@@ -7,6 +7,8 @@ use core::{
     cmp::Ordering,
     fmt,
 };
+use std::println;
+use std::vec;
 
 #[derive(Default)]
 #[repr(C)]
@@ -452,7 +454,6 @@ impl RangeTree {
     }
 }
 
-#[cfg(feature = "std")]
 pub fn range_tree_print(tree: &RangeTree) {
     if tree.get_space() == 0 {
         println!("tree is empty");

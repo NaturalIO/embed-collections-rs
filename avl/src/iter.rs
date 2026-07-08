@@ -1,7 +1,7 @@
 use super::*;
-use crate::Pointer;
 use core::mem::MaybeUninit;
 use core::ptr::null;
+use pointers::Pointer;
 
 // TODO IntoIter
 
@@ -138,7 +138,7 @@ where
     /// # Example
     ///
     /// ```rust
-    /// use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+    /// use embed_avl::{AvlTree, AvlItem, AvlNode};
     /// use core::cell::UnsafeCell;
     /// use core::cmp::Ordering;
     /// extern crate alloc;

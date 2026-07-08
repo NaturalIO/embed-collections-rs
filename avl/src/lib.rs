@@ -1,3 +1,8 @@
+#![allow(rustdoc::redundant_explicit_links)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! An intrusive AVL tree implementation.
 //!
 //! The algorithm origin from open-zfs
@@ -13,7 +18,7 @@
 //! ## Using `Box` to search and remove by key
 //!
 //! ```rust
-//! use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+//! use embed_avl::{AvlTree, AvlItem, AvlNode};
 //! use core::cell::UnsafeCell;
 //! use core::cmp::Ordering;
 //! extern crate alloc;
@@ -62,12 +67,15 @@
 //! assert_eq!(tree.len(), 0);
 //! ```
 
+extern crate alloc;
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
 mod iter;
 pub use iter::*;
 #[cfg(test)]
 mod tests;
 
-use crate::Pointer;
 use alloc::rc::Rc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -77,6 +85,7 @@ use core::{
     fmt, mem,
     ptr::{NonNull, null},
 };
+use pointers::Pointer;
 
 /// A trait to return internal mutable AvlNode for specified list.
 ///
@@ -93,7 +102,7 @@ use core::{
 /// # Example (struct field as key)
 ///
 /// ```
-/// use embed_collections::avl::{AvlItem, AvlNode};
+/// use embed_avl::{AvlItem, AvlNode};
 /// use core::cell::UnsafeCell;
 ///
 /// pub struct IntAvlNode {
@@ -116,7 +125,7 @@ use core::{
 /// # Example (impl Ord for struct)
 ///
 /// ```
-/// use embed_collections::avl::{AvlItem, AvlNode};
+/// use embed_avl::{AvlItem, AvlNode};
 /// use core::cell::{Cell, UnsafeCell};
 /// use core::cmp::Ordering;
 ///
@@ -510,7 +519,7 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// use embed_collections::avl::{AvlTree, AvlItem, AvlNode};
+    /// use embed_avl::{AvlTree, AvlItem, AvlNode};
     /// use core::cell::UnsafeCell;
     /// extern crate alloc;
     /// use alloc::sync::Arc;
