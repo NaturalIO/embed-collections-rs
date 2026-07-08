@@ -1,3 +1,8 @@
+#![allow(rustdoc::redundant_explicit_links)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! An intrusive singly linked list implementation.
 //!
 //! This module provides `SLinkedList`, a singly linked list optimized for FIFO (First-In, First-Out)
@@ -11,7 +16,7 @@
 //! # Example
 //!
 //! ```rust
-//! use embed_collections::{slist::{SLinkedList, SListItem, SListNode}, Pointer};
+//! use embed_slist::{SLinkedList, SListItem, SListNode};
 //! use core::cell::UnsafeCell;
 //! use std::sync::Arc;
 //! use core::ptr::NonNull;
@@ -81,11 +86,15 @@
 //! }
 //! ```
 
-use crate::Pointer;
+extern crate alloc;
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ptr::{self, null};
+use pointers::Pointer;
 
 /// A trait to return internal mutable SListNode for specified list.
 ///
@@ -390,6 +399,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::boxed::Box;
     use std::cell::UnsafeCell;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
