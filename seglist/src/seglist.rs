@@ -18,7 +18,7 @@
 //! # Example
 //!
 //! ```rust
-//! use embed_collections::seg_list::SegList;
+//! use embed_seglist::SegList;
 //!
 //! // Create a new SegList
 //! let mut list: SegList<i32> = SegList::new();
@@ -57,12 +57,12 @@
 //! assert_eq!(drained, vec![10, 20, 30]);
 //! ```
 
-use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{alloc, dealloc, handle_alloc_error};
 use core::alloc::Layout;
 use core::fmt;
 use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ptr::{NonNull, null_mut};
+use embed_collections::CACHE_LINE_SIZE;
 
 /// Segmented list with cache-friendly segment sizes.
 ///
@@ -81,7 +81,7 @@ use core::ptr::{NonNull, null_mut};
 /// T is allow to larger than `2 * CACHE_LINE_SIZE`, in this case SegList will ensure at least 2
 /// items in one segment. But it's not efficient when T larger than 128B, you should consider put T into Box.
 ///
-/// Refer to [module level](crate::seg_list) doc for examples.
+/// Refer to [module level](crate) doc for examples.
 pub struct SegList<T> {
     /// Pointer to the last segment (tail.get_header().next points to first element), to reduce the main struct size
     tail: NonNull<SegHeader<T>>,
@@ -840,7 +840,7 @@ impl<T> Drop for SegListIntoIter<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::{CounterI32, alive_count, reset_alive_count};
+    use test_common::{CounterI32, alive_count, reset_alive_count};
 
     #[test]
     fn test_multiple_segments() {

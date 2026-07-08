@@ -1,7 +1,7 @@
 //! Various: A small-list optimization container for efficient parameter passing.
 //!
 //! `Various<T>` optimizing for the common case of a single element (use Option initially).
-//! It's storage can be seamless grow when more elements pushed, using [SegList](crate::seg_list),
+//! It's storage can be seamless grow when more elements pushed, using [SegList](crate::seglist),
 //! more efficient for CPU cache-line (compared to LinkedList), and produce less memory fragment (compared to `Vec`).
 //!
 //! # NOTE:
@@ -11,7 +11,7 @@
 //! # Example
 //!
 //! ```rust
-//! use embed_collections::various::Various;
+//! use embed_seglist::various::Various;
 //!
 //! // Create an empty Various
 //! let mut values = Various::new();
@@ -49,7 +49,7 @@
 //! assert_eq!(process_items(&items), 10);
 //! ```
 
-use crate::seg_list::SegList;
+use crate::seglist::SegList;
 use core::fmt;
 use core::iter::{ExactSizeIterator, Iterator};
 
@@ -276,7 +276,7 @@ pub struct VariousIter<'a, T> {
 
 enum VariousIterInner<'a, T> {
     One(core::option::Iter<'a, T>),
-    More(crate::seg_list::SegListIter<'a, T>),
+    More(crate::seglist::SegListIter<'a, T>),
 }
 
 impl<'a, T> Iterator for VariousIter<'a, T> {
@@ -308,7 +308,7 @@ pub struct VariousIterMut<'a, T> {
 
 enum VariousIterMutInner<'a, T> {
     One(core::option::IterMut<'a, T>),
-    More(crate::seg_list::SegListIterMut<'a, T>),
+    More(crate::seglist::SegListIterMut<'a, T>),
 }
 
 impl<'a, T> Iterator for VariousIterMut<'a, T> {
@@ -340,7 +340,7 @@ pub struct VariousIntoIter<T> {
 
 enum VariousIntoIterInner<T> {
     One(core::option::IntoIter<T>),
-    More(crate::seg_list::SegListIntoIter<T>),
+    More(crate::seglist::SegListIntoIter<T>),
 }
 
 impl<T> Iterator for VariousIntoIter<T> {
