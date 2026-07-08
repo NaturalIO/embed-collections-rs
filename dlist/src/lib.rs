@@ -1,3 +1,8 @@
+#![allow(rustdoc::redundant_explicit_links)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, allow(unused_attributes))]
+#![cfg_attr(not(feature = "std"), no_std)]
+
 //! An intrusive doubly linked list implementation.
 //!
 //! This module provides `DLinkedList`, a doubly linked list where elements
@@ -13,7 +18,7 @@
 //! # Example
 //!
 //! ```rust
-//! use embed_collections::{dlist::{DLinkedList, DListItem, DListNode}, Pointer};
+//! use embed_dlist::{DLinkedList, DListItem, DListNode};
 //! use core::cell::UnsafeCell;
 //! use std::sync::Arc;
 //! use core::ptr::NonNull;
@@ -83,12 +88,16 @@
 //! }
 //! ```
 
-use crate::Pointer;
+extern crate alloc;
+#[cfg(any(feature = "std", test))]
+extern crate std;
+
 use core::marker::PhantomData;
 use core::{
     fmt, mem,
     ptr::{self, null},
 };
+use pointers::Pointer;
 
 /// A trait to return internal mutable DListNode for specified list.
 ///
@@ -504,7 +513,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::boxed::Box;
     use std::cell::UnsafeCell;
+    use std::println;
     use std::ptr::NonNull;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
