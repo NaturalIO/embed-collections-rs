@@ -426,7 +426,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// #Example
     ///
     /// ```
-    /// use embed_collections::BTreeMap;
+    /// use embed_btree::BTreeMap;
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");
     /// assert_eq!(map.remove(&1), Some("a"));
@@ -462,7 +462,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// #Example
     ///
     /// ```
-    /// use embed_collections::BTreeMap;
+    /// use embed_btree::BTreeMap;
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");
     /// assert_eq!(map.remove_entry(&1), Some((1, "a")));
@@ -1113,7 +1113,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     }
 
     /// Dump the entire tree structure for debugging
-    #[cfg(all(test, feature = "std"))]
+    #[cfg(test)]
     pub fn dump(&self)
     where
         K: Debug,
@@ -1129,7 +1129,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         print_log!("=====================");
     }
 
-    #[cfg(all(test, feature = "std"))]
+    #[cfg(test)]
     fn dump_node(&self, node: &Node<K, V>, depth: usize)
     where
         K: Debug,
@@ -1137,11 +1137,11 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     {
         match node {
             Node::Leaf(leaf) => {
-                print!("{:indent$}", "", indent = depth * 2);
+                std::print!("{:indent$}", "", indent = depth * 2);
                 print_log!("{}", leaf);
             }
             Node::Inter(inter) => {
-                print!("{:indent$}", "", indent = depth * 2);
+                std::print!("{:indent$}", "", indent = depth * 2);
                 print_log!("{}", inter);
                 // Dump children
                 let count = inter.key_count() as u32;

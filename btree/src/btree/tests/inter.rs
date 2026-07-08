@@ -1,7 +1,8 @@
 use super::super::{inter::*, node::*};
-use super::{CounterI32, alive_count, reset_alive_count};
 use core::mem::align_of;
 use rstest::rstest;
+use std::println;
+use test_common::{CounterI32, alive_count, reset_alive_count};
 
 #[test]
 fn test_inter_align() {

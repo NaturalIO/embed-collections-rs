@@ -12,7 +12,7 @@ use core::marker::PhantomData;
 /// # Example
 ///
 /// ```
-/// use embed_collections::BTreeMap;
+/// use embed_btree::BTreeMap;
 ///
 /// let mut map = BTreeMap::new();
 /// map.insert(1, "a");
@@ -61,7 +61,7 @@ impl<'a, K: Ord + Clone + Sized + 'a, V: Sized + 'a> Iterator for Cursor<'a, K, 
     /// # Example
     ///
     /// ```
-    /// use embed_collections::btree::BTreeMap;
+    /// use embed_btree::BTreeMap;
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");
     /// map.insert(3, "b");
@@ -135,7 +135,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Cursor<'a, K, V> {
     /// # Example
     ///
     /// ```
-    /// use embed_collections::btree::BTreeMap;
+    /// use embed_btree::BTreeMap;
     ///
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");
@@ -212,7 +212,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Cursor<'a, K, V> {
     /// # Example
     ///
     /// ```
-    /// use embed_collections::BTreeMap;
+    /// use embed_btree::BTreeMap;
     ///
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");
@@ -244,7 +244,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Cursor<'a, K, V> {
     /// # Example
     ///
     /// ```
-    /// use embed_collections::BTreeMap;
+    /// use embed_btree::BTreeMap;
     ///
     /// let mut map = BTreeMap::new();
     /// map.insert(1, "a");

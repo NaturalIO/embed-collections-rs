@@ -1,6 +1,7 @@
 use super::*;
 use captains_log::logfn;
 use rstest::rstest;
+use std::println;
 
 /// Test borrowing from left sibling in a height=2 tree (root is InterNode, children are LeafNode)
 /// Manually constructs a tree where middle leaf is full and left leaf has space, insert to

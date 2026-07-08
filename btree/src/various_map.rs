@@ -828,6 +828,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
+    use std::string::String;
+    use std::vec;
+    use std::vec::Vec;
 
     #[test]
     fn test_new() {

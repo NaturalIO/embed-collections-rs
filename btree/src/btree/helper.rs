@@ -495,8 +495,8 @@ impl<K: Ord, V> TreeInfo<K, V> {
     }
 
     #[cfg(test)]
-    pub fn to_vec(&self) -> Vec<(InterNode<K, V>, u32)> {
-        let mut v = Vec::new();
+    pub fn to_vec(&self) -> alloc::vec::Vec<(InterNode<K, V>, u32)> {
+        let mut v = alloc::vec::Vec::new();
         for (parent, idx) in self._iter() {
             v.push((parent.clone(), idx));
         }

@@ -1,3 +1,5 @@
+extern crate std;
+
 mod api;
 mod delete;
 mod entry_move;
@@ -11,7 +13,7 @@ mod leaf_delete;
 mod split;
 
 use super::{helper::*, inter::*, leaf::*, node::*, *};
-pub(crate) use crate::test::*;
+use test_common::*;
 
 pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized> {
     leaf_count: usize,

@@ -1,7 +1,9 @@
 use super::super::*;
-use crate::test::{CounterI32, alive_count, reset_alive_count, setup_log};
+use super::*;
 use captains_log::{log_println, logfn};
 use rstest::rstest;
+use std::println;
+use std::vec::Vec;
 
 /// sequenctial delete all elements
 ///
