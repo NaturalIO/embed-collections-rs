@@ -8,7 +8,7 @@
 //!
 //! # Example
 //! ```rust
-//! use embed_collections::const_vec::ConstVec;
+//! use embed_constvec::ConstVec;
 //!
 //! let mut vec: ConstVec<i32, 3> = ConstVec::new();
 //!
@@ -44,7 +44,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let vec: ConstVec<i32, 5> = ConstVec::new();
     /// assert!(vec.is_empty());
@@ -63,7 +63,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// assert_eq!(vec.len(), 0);
@@ -80,7 +80,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// assert!(vec.is_empty());
@@ -97,7 +97,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let vec: ConstVec<i32, 5> = ConstVec::new();
     /// assert_eq!(vec.capacity(), 5);
@@ -111,7 +111,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 2> = ConstVec::new();
     /// assert!(!vec.is_full());
@@ -132,7 +132,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 2> = ConstVec::new();
     ///
@@ -160,7 +160,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(1).unwrap();
@@ -188,7 +188,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(10).unwrap();
@@ -214,7 +214,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(10).unwrap();
@@ -248,7 +248,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 4> = ConstVec::new();
     /// vec.push(1).expect("push failed");
@@ -316,7 +316,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(1).expect("push failed");
@@ -338,7 +338,7 @@ impl<T, const N: usize> ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(1).expect("push failed");
@@ -457,7 +457,7 @@ impl<T, const N: usize> core::ops::Index<usize> for ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(10).expect("push failed");
@@ -480,7 +480,7 @@ impl<T, const N: usize> core::ops::IndexMut<usize> for ConstVec<T, N> {
     ///
     /// # Example
     /// ```rust
-    /// use embed_collections::const_vec::ConstVec;
+    /// use embed_constvec::ConstVec;
     ///
     /// let mut vec: ConstVec<i32, 5> = ConstVec::new();
     /// vec.push(10).expect("push failed");
@@ -509,6 +509,7 @@ impl<T, const N: usize> Drop for ConstVec<T, N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_common::{CounterI32, alive_count, reset_alive_count};
 
     #[test]
     fn test_new() {
@@ -642,8 +643,6 @@ mod tests {
 
     #[test]
     fn test_drop() {
-        use crate::test::{CounterI32, alive_count, reset_alive_count};
-
         reset_alive_count();
         {
             let mut vec: ConstVec<CounterI32, 3> = ConstVec::new();
