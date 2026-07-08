@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [1.0.0] - 2026-07-09
+
+### Changed
+
+Split code into multiple crates (no more feature flags):
+- pointers
+- embed-avl
+- embed-btree
+- embed-constvec
+- embed-seglist
+- embed-slist
+- embed-dlist
+
+### Removed
+
+- slist_owned: the module is removed
+
 ## [0.13.0] - 2026-07-05
 
 ### Added
