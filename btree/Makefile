@@ -20,11 +20,11 @@ build: init
 
 .PHONY: test
 test: init
-	RUST_BACKTRACE=1 cargo test ${ARGS} --all-features -- --nocapture --test-threads=1
+	RUST_BACKTRACE=1 cargo test ${ARGS} -- --nocapture --test-threads=1
 
 .PHONY: test-release
 test-release: init
-	RUST_BACKTRACE=1 cargo test ${ARGS} --release --all-features --  --nocapture --test-threads=1
+	RUST_BACKTRACE=1 cargo test ${ARGS} --release --  --nocapture --test-threads=1
 
 .PHONY: test-leak
 test-leak:

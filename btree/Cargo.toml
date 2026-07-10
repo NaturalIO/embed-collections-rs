@@ -23,7 +23,7 @@ fastrand = "2.3"
 [features]
 default = []
 std = []
-trace_log = ["dep:log"]
+trace_log = ["dep:log", "embed-collections-test/trace_log"]
 
 [package.metadata.docs.rs]
 all-features = true
