@@ -58,10 +58,10 @@ fn test_borrow_from_left_insert_first_height_2(setup_log: ()) {
 
     // Create root internal node with height=1
     let mut root = builder.new_inter(1);
-    root.set_left_ptr(left_leaf.get_ptr());
+    root.set_left_ptr(left_leaf.get_ptr_mut());
     // make sure insert key will go into middle_leaf
-    root.insert_no_split(insert_key, middle_leaf.get_ptr());
-    root.insert_no_split(right_first_key, right_leaf.get_ptr());
+    root.insert_no_split(insert_key, middle_leaf.get_ptr_mut());
+    root.insert_no_split(right_first_key, right_leaf.get_ptr_mut());
     assert!(insert_key < middle_first_key);
     assert!(insert_key > left_leaf.get_keys()[left_leaf.key_count() as usize - 1]);
     assert!(middle_first_key < right_first_key);
@@ -138,11 +138,11 @@ fn test_borrow_from_left_insert_mid_height_2(setup_log: ()) {
 
     // Create root internal node with height=1
     let mut root = builder.new_inter(1);
-    root.set_left_ptr(left_leaf.get_ptr());
+    root.set_left_ptr(left_leaf.get_ptr_mut());
     let middle_first_key = middle_leaf.get_keys()[0];
     let right_first_key = right_leaf.get_keys()[0];
-    root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
-    root.insert_no_split(right_first_key, right_leaf.get_ptr());
+    root.insert_no_split(middle_first_key, middle_leaf.get_ptr_mut());
+    root.insert_no_split(right_first_key, right_leaf.get_ptr_mut());
     assert!(left_leaf.get_keys()[0] < middle_first_key);
     assert!(middle_first_key < right_first_key);
 
@@ -231,11 +231,11 @@ fn test_borrow_from_right_height_2_not_last(setup_log: ()) {
 
     // Create root internal node with height=1
     let mut root = builder.new_inter(1);
-    root.set_left_ptr(left_leaf.get_ptr());
+    root.set_left_ptr(left_leaf.get_ptr_mut());
     let middle_first_key = middle_leaf.get_keys()[0];
     let right_first_key = right_leaf.get_keys()[0];
-    root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
-    root.insert_no_split(right_first_key, right_leaf.get_ptr());
+    root.insert_no_split(middle_first_key, middle_leaf.get_ptr_mut());
+    root.insert_no_split(right_first_key, right_leaf.get_ptr_mut());
 
     let middle_last_key = middle_leaf.get_keys()[middle_leaf.key_count() as usize - 1];
 
@@ -319,11 +319,11 @@ fn test_borrow_from_right_height_2_last(setup_log: ()) {
     }
     // Create root internal node with height=1
     let mut root = builder.new_inter(1);
-    root.set_left_ptr(left_leaf.get_ptr());
+    root.set_left_ptr(left_leaf.get_ptr_mut());
     let middle_first_key = middle_leaf.get_keys()[0];
     let right_first_key = right_leaf.get_keys()[0];
-    root.insert_no_split(middle_first_key, middle_leaf.get_ptr());
-    root.insert_no_split(right_first_key, right_leaf.get_ptr());
+    root.insert_no_split(middle_first_key, middle_leaf.get_ptr_mut());
+    root.insert_no_split(right_first_key, right_leaf.get_ptr_mut());
 
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
@@ -418,20 +418,20 @@ fn test_borrow_from_left_insert_first_height_3(setup_log: ()) {
 
     // Create left internal node (height=1)
     let mut internal_left = builder.new_inter(1);
-    internal_left.set_left_ptr(leaf_0.get_ptr());
+    internal_left.set_left_ptr(leaf_0.get_ptr_mut());
     let leaf1_first_key = leaf_1.get_keys()[0];
-    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr());
+    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr_mut());
 
     // Create right internal node (height=1)
     let mut internal_right = builder.new_inter(1);
-    internal_right.set_left_ptr(leaf_2.get_ptr());
+    internal_right.set_left_ptr(leaf_2.get_ptr_mut());
     let leaf3_first_key = leaf_3.get_keys()[0];
-    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr());
+    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr_mut());
 
     // Create root internal node (height=2)
     let mut root = builder.new_inter(2);
-    root.set_left_ptr(internal_left.get_ptr());
-    root.insert_no_split(insert_key, internal_right.get_ptr());
+    root.set_left_ptr(internal_left.get_ptr_mut());
+    root.insert_no_split(insert_key, internal_right.get_ptr_mut());
 
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), (4 * leaf_cap - 1) as usize);
@@ -513,20 +513,20 @@ fn test_borrow_from_left_insert_mid_height_3(setup_log: ()) {
 
     // Create left internal node (height=1)
     let mut internal_left = builder.new_inter(1);
-    internal_left.set_left_ptr(leaf_0.get_ptr());
+    internal_left.set_left_ptr(leaf_0.get_ptr_mut());
     let leaf1_first_key = leaf_1.get_keys()[0];
-    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr());
+    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr_mut());
 
     // Create right internal node (height=1)
     let mut internal_right = builder.new_inter(1);
-    internal_right.set_left_ptr(leaf_2.get_ptr());
+    internal_right.set_left_ptr(leaf_2.get_ptr_mut());
     let leaf3_first_key = leaf_3.get_keys()[0];
-    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr());
+    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr_mut());
 
     // Create root internal node (height=2)
     let mut root = builder.new_inter(2);
-    root.set_left_ptr(internal_left.get_ptr());
-    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr());
+    root.set_left_ptr(internal_left.get_ptr_mut());
+    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr_mut());
 
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), (4 * leaf_cap - 1) as usize);
@@ -605,20 +605,20 @@ fn test_borrow_from_right_insert_not_last_height_3(setup_log: ()) {
 
     // Create left internal node (height=1)
     let mut internal_left = builder.new_inter(1);
-    internal_left.set_left_ptr(leaf_0.get_ptr());
+    internal_left.set_left_ptr(leaf_0.get_ptr_mut());
     let leaf1_first_key = leaf_1.get_keys()[0];
-    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr());
+    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr_mut());
 
     // Create right internal node (height=1)
     let mut internal_right = builder.new_inter(1);
-    internal_right.set_left_ptr(leaf_2.get_ptr());
+    internal_right.set_left_ptr(leaf_2.get_ptr_mut());
     let leaf3_first_key = leaf_3.get_keys()[0];
-    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr());
+    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr_mut());
 
     // Create root internal node (height=2)
     let mut root = builder.new_inter(2);
-    root.set_left_ptr(internal_left.get_ptr());
-    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr());
+    root.set_left_ptr(internal_left.get_ptr_mut());
+    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr_mut());
     println!("old_leaf_2_first {old_leaf_2_first}");
 
     let mut map = builder.build(root.into());
@@ -699,20 +699,20 @@ fn test_borrow_from_right_insert_last_height_3(setup_log: ()) {
 
     // Create left internal node (height=1)
     let mut internal_left = builder.new_inter(1);
-    internal_left.set_left_ptr(leaf_0.get_ptr());
+    internal_left.set_left_ptr(leaf_0.get_ptr_mut());
     let leaf1_first_key = leaf_1.get_keys()[0];
-    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr());
+    internal_left.insert_no_split(leaf1_first_key, leaf_1.get_ptr_mut());
 
     // Create right internal node (height=1)
     let mut internal_right = builder.new_inter(1);
-    internal_right.set_left_ptr(leaf_2.get_ptr());
+    internal_right.set_left_ptr(leaf_2.get_ptr_mut());
     let leaf3_first_key = leaf_3.get_keys()[0];
-    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr());
+    internal_right.insert_no_split(leaf3_first_key, leaf_3.get_ptr_mut());
 
     // Create root internal node (height=2)
     let mut root = builder.new_inter(2);
-    root.set_left_ptr(internal_left.get_ptr());
-    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr());
+    root.set_left_ptr(internal_left.get_ptr_mut());
+    root.insert_no_split(old_leaf_2_first, internal_right.get_ptr_mut());
     println!("old_leaf_2_first {old_leaf_2_first}");
 
     let mut map = builder.build(root.into());

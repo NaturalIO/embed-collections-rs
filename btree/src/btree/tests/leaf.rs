@@ -110,7 +110,7 @@ fn test_leaf_node_split_insert_at_split_idx_left() {
             "cap {cap} insert_idx {insert_idx} insert ({new_key}, {new_value}) split_idx {split_idx}"
         );
 
-        let (new_leaf, _ptr_v) =
+        let (mut new_leaf, _ptr_v) =
             leaf.insert_with_split(insert_idx, new_key as i32, new_value as i32);
 
         // Verify the split
@@ -148,12 +148,12 @@ fn test_leaf_node_split_insert_at_split_idx_left() {
         // Verify sibling pointers
         assert_eq!(
             (*leaf.brothers()).next,
-            new_leaf.get_ptr(),
+            new_leaf.get_ptr_mut(),
             "Left node's next should point to right node"
         );
         assert_eq!(
             (*new_leaf.brothers()).prev,
-            leaf.get_ptr(),
+            leaf.get_ptr_mut(),
             "Right node's prev should point to left node"
         );
         assert!((*leaf.brothers()).prev.is_null(), "Left node's prev should be null");

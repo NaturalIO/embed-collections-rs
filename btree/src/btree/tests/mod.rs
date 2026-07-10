@@ -55,10 +55,10 @@ impl<K: Ord + Sized + Clone, V: Sized> TreeBuilder<K, V> {
     pub fn new_leaf(&mut self) -> LeafNode<K, V> {
         self.leaf_count += 1;
         unsafe {
-            let new_leaf = LeafNode::alloc();
-            if let Some(prev) = self.prev.as_ref() {
-                (*prev.brothers()).next = new_leaf.get_ptr();
-                (*new_leaf.brothers()).prev = prev.get_ptr();
+            let mut new_leaf = LeafNode::alloc();
+            if let Some(prev) = self.prev.as_mut() {
+                (*prev.brothers()).next = new_leaf.get_ptr_mut();
+                (*new_leaf.brothers()).prev = prev.get_ptr_mut();
             }
             self.prev.replace(new_leaf.clone());
             new_leaf
