@@ -213,7 +213,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     #[inline]
     pub fn get_mut(&mut self) -> &mut V {
         unsafe {
-            let val_ptr = self.leaf.value_ptr(self.idx);
+            let val_ptr = self.leaf.value_ptr_mut(self.idx);
             (*val_ptr).assume_init_mut()
         }
     }
@@ -221,9 +221,9 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
     /// Convert the OccupiedEntry into a mutable reference bounded by
     /// the tree's lifetime
     #[inline]
-    pub fn into_mut(self) -> &'a mut V {
+    pub fn into_mut(mut self) -> &'a mut V {
         unsafe {
-            let val_ptr = self.leaf.value_ptr(self.idx);
+            let val_ptr = self.leaf.value_ptr_mut(self.idx);
             (*val_ptr).assume_init_mut()
         }
     }
@@ -313,7 +313,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
             return Err(());
         }
         unsafe {
-            let k_ref = (*self.leaf.key_ptr(self.idx)).assume_init_mut();
+            let k_ref = (*self.leaf.key_ptr_mut(self.idx)).assume_init_mut();
             if self.idx == 0 && self.tree._get_info().is_some() {
                 // We need to keep the PathCache intact, use peek rather than move_to_ancenstor
                 // it's allowed to move the entry or remove afterwards

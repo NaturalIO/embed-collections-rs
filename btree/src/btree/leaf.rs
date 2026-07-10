@@ -126,18 +126,18 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn dealloc<const DROP_ITEM: bool>(self) {
+    pub fn dealloc<const DROP_ITEM: bool>(mut self) {
         let count = self.key_count();
         unsafe {
             if DROP_ITEM {
                 if needs_drop::<K>() {
                     for i in 0..count {
-                        (*self.key_ptr(i)).assume_init_drop();
+                        (*self.key_ptr_mut(i)).assume_init_drop();
                     }
                 }
                 if needs_drop::<V>() {
                     for i in 0..count {
-                        (*self.value_ptr(i)).assume_init_drop();
+                        (*self.value_ptr_mut(i)).assume_init_drop();
                     }
                 }
             }
@@ -198,14 +198,26 @@ impl<K, V> LeafNode<K, V> {
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
+    pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
         unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx) }
+    }
+
+    /// Get pointer to key at index
+    #[inline(always)]
+    pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
-    pub unsafe fn value_ptr(&self, idx: u32) -> *mut MaybeUninit<V> {
+    pub unsafe fn value_ptr(&self, idx: u32) -> *const MaybeUninit<V> {
         unsafe { self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx) }
+    }
+
+    /// Get pointer to value at index
+    #[inline(always)]
+    pub unsafe fn value_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<V> {
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<V>>(AREA_SIZE + LEAF_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to LeafPtrs
@@ -306,7 +318,7 @@ impl<K, V> LeafNode<K, V> {
     pub fn remove_value_no_borrow(&mut self, idx: u32) -> V {
         let left = self.key_count() - 1;
         unsafe {
-            let key_p = self.item_ptr::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx);
+            let key_p = self.item_ptr_mut::<MaybeUninit<K>>(LEAF_HEAD_SIZE, idx);
             if needs_drop::<K>() {
                 (*key_p).assume_init_drop();
             }
@@ -324,7 +336,7 @@ impl<K, V> LeafNode<K, V> {
     fn _remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
         debug_assert!(idx < left + 1);
         unsafe {
-            let item_p = self.item_ptr::<T>(header_offset, idx);
+            let item_p = self.item_ptr_mut::<T>(header_offset, idx);
             let item = item_p.read();
             left -= idx;
             if left > 0 {
@@ -351,7 +363,7 @@ impl<K, V> LeafNode<K, V> {
     #[inline(always)]
     pub fn replace(&mut self, idx: u32, value: V) -> V {
         unsafe {
-            let val_ptr = self.value_ptr(idx);
+            let val_ptr = self.value_ptr_mut(idx);
             let old = (*val_ptr).assume_init_read();
             (*val_ptr).write(value);
             old
@@ -366,8 +378,8 @@ impl<K, V> LeafNode<K, V> {
         debug_assert!(idx != 0);
         debug_assert!(idx < self.key_count());
         unsafe {
-            let first_key_p = self.key_ptr(0);
-            let first_val_p = self.value_ptr(0);
+            let first_key_p = self.key_ptr_mut(0);
+            let first_val_p = self.value_ptr_mut(0);
             let move_key = (*first_key_p).assume_init_read();
             let move_value = (*first_val_p).assume_init_read();
             left_node.insert_no_split_with_idx(left_node.key_count(), move_key, move_value);
@@ -376,8 +388,8 @@ impl<K, V> LeafNode<K, V> {
                 ptr::copy(first_key_p.add(1), first_key_p, idx as usize);
                 ptr::copy(first_val_p.add(1), first_val_p, idx as usize);
             }
-            (*self.key_ptr(idx)).write(key);
-            let value_p = self.value_ptr(idx);
+            (*self.key_ptr_mut(idx)).write(key);
+            let value_p = self.value_ptr_mut(idx);
             (*value_p).write(value);
             value_p as *mut V
         }
@@ -387,8 +399,8 @@ impl<K, V> LeafNode<K, V> {
     pub fn borrow_right(&mut self, right_node: &mut Self) {
         let idx = self.key_count() - 1;
         unsafe {
-            let move_key = (*self.key_ptr(idx)).assume_init_read();
-            let move_value = (*self.value_ptr(idx)).assume_init_read();
+            let move_key = (*self.key_ptr_mut(idx)).assume_init_read();
+            let move_value = (*self.value_ptr_mut(idx)).assume_init_read();
             right_node.insert_no_split_with_idx(0, move_key, move_value);
             self.get_header_mut().count = idx;
         }
@@ -402,12 +414,12 @@ impl<K, V> LeafNode<K, V> {
 
         unsafe {
             // copy keys using bulk copy
-            let first_key = self.key_ptr(0);
-            let dst_key = left_node.key_ptr(left_count);
+            let first_key = self.key_ptr_mut(0);
+            let dst_key = left_node.key_ptr_mut(left_count);
             ptr::copy_nonoverlapping(first_key, dst_key, copy_count as usize);
             // copy values using bulk copy
-            let first_val = self.value_ptr(0);
-            let dst_val = left_node.value_ptr(left_count);
+            let first_val = self.value_ptr_mut(0);
+            let dst_val = left_node.value_ptr_mut(left_count);
             ptr::copy_nonoverlapping(first_val, dst_val, copy_count as usize);
             left_node.get_header_mut().count += copy_count;
         }
@@ -438,34 +450,34 @@ impl<K, V> LeafNode<K, V> {
                 // Append to tail of right_node
 
                 // Move keys using bulk copy
-                let src_key = self.key_ptr(start_idx);
-                let dst_key = right_node.key_ptr(right_count);
+                let src_key = self.key_ptr_mut(start_idx);
+                let dst_key = right_node.key_ptr_mut(right_count);
                 ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
                 // Move values using bulk copy
-                let src_val = self.value_ptr(start_idx);
-                let dst_val = right_node.value_ptr(right_count);
+                let src_val = self.value_ptr_mut(start_idx);
+                let dst_val = right_node.value_ptr_mut(right_count);
                 ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             } else {
                 // Prepend to head of right_node
                 // Shift existing elements in right_node to make space
                 if right_count > 0 {
-                    let src_key = right_node.key_ptr(0);
-                    let dst_key = right_node.key_ptr(copy_count);
+                    let src_key = right_node.key_ptr_mut(0);
+                    let dst_key = right_node.key_ptr_mut(copy_count);
                     ptr::copy(src_key, dst_key, right_count as usize);
 
-                    let src_val = right_node.value_ptr(0);
-                    let dst_val = right_node.value_ptr(copy_count);
+                    let src_val = right_node.value_ptr_mut(0);
+                    let dst_val = right_node.value_ptr_mut(copy_count);
                     ptr::copy(src_val, dst_val, right_count as usize);
                 }
 
                 // Move new elements to the front
-                let src_key = self.key_ptr(start_idx);
-                let dst_key = right_node.key_ptr(0);
+                let src_key = self.key_ptr_mut(start_idx);
+                let dst_key = right_node.key_ptr_mut(0);
                 ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
-                let src_val = self.value_ptr(start_idx);
-                let dst_val = right_node.value_ptr(0);
+                let src_val = self.value_ptr_mut(start_idx);
+                let dst_val = right_node.value_ptr_mut(0);
                 ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             }
             right_node.get_header_mut().count += copy_count;
@@ -477,12 +489,12 @@ impl<K, V> LeafNode<K, V> {
         let mut new_leaf = unsafe { LeafNode::<K, V>::alloc() };
         let count = self.key_count();
         unsafe {
-            if let Some(right) = self.get_right_node() {
-                (*right.brothers()).prev = new_leaf.get_ptr();
-                (*new_leaf.brothers()).next = right.get_ptr();
+            if let Some(mut right) = self.get_right_node() {
+                (*right.brothers()).prev = new_leaf.get_ptr_mut();
+                (*new_leaf.brothers()).next = right.get_ptr_mut();
             }
-            (*new_leaf.brothers()).prev = self.get_ptr();
-            (*self.brothers()).next = new_leaf.get_ptr();
+            (*new_leaf.brothers()).prev = self.get_ptr_mut();
+            (*self.brothers()).next = new_leaf.get_ptr_mut();
         }
         if idx < count {
             let split_idx = count >> 1;

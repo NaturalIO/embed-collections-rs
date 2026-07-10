@@ -138,7 +138,15 @@ impl<K: Ord, V> TreeInfo<K, V> {
     }
 
     #[inline]
-    unsafe fn item_ptr(&self, idx: u8) -> *mut (InterNode<K, V>, u32) {
+    unsafe fn item_ptr(&self, idx: u8) -> *const (InterNode<K, V>, u32) {
+        unsafe {
+            (self.ptr.as_ptr() as *const u8)
+                .add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE) as *const _
+        }
+    }
+
+    #[inline]
+    unsafe fn item_ptr_mut(&mut self, idx: u8) -> *mut (InterNode<K, V>, u32) {
         unsafe {
             (self.ptr.as_ptr() as *mut u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE)
                 as *mut _
@@ -181,7 +189,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
         let wi = header.cache_idx;
         debug_assert!(wi < header.cap);
         header.cache_idx = wi + 1;
-        unsafe { self.item_ptr(wi).write((inter, idx)) };
+        unsafe { self.item_ptr_mut(wi).write((inter, idx)) };
     }
 
     /// Pop the top entry from the cache stack.
