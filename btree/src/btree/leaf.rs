@@ -578,6 +578,7 @@ impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
     /// Validate leaf node structure
     /// Returns the number of keys in this node
     pub fn validate(&self, min_key: Option<&K>, max_key: Option<&K>) -> usize {
+        assert_eq!(self.height(), 0, "{self:?} validate fail, height");
         let count = self.key_count() as usize;
 
         // Validate count is within bounds

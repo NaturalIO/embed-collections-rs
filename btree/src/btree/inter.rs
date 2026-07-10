@@ -725,6 +725,7 @@ impl<K, V> PartialEq for InterNode<K, V> {
 impl<K: Ord + fmt::Debug, V: fmt::Debug> InterNode<K, V> {
     /// Validate internal node structure
     pub fn validate(&self) {
+        assert!(self.height() > 0, "{self:?} validate fail, height");
         let count = self.key_count() as usize;
         if count == 0 {
             return;
