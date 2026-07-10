@@ -13,7 +13,7 @@ fn test_occupied_move_forward_height_2() {
         builder.insert_leaf(&mut leaf0, i * 2, i * 10);
     }
     builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
-    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
     assert_eq!(map.leaf_count(), 2);
@@ -67,7 +67,7 @@ fn test_occupied_move_backward_height_2() {
         builder.insert_leaf(&mut leaf0, i * 2, i * 10);
     }
     builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
-    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
     assert_eq!(map.leaf_count(), 2);
@@ -177,7 +177,7 @@ fn test_vacent_move_forward_height_2() {
         builder.insert_leaf(&mut leaf0, i * 2, i * 10);
     }
     builder.insert_leaf(&mut leaf1, leaf_cap * 2, leaf_cap * 10);
-    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr(), leaf1.get_ptr());
+    let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
     assert_eq!(map.leaf_count(), 2);
@@ -237,7 +237,7 @@ fn test_vacent_move_backward_height_2() {
     builder.insert_leaf(&mut leaf1, leaf_cap * 2 + 1, leaf_cap * 10);
 
     // make sure leaf_cap * 2 falls into leaf1, although it does not exist
-    let root = builder.new_root(1, leaf_cap * 2, leaf0.get_ptr(), leaf1.get_ptr());
+    let root = builder.new_root(1, leaf_cap * 2, leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
     assert_eq!(map.leaf_count(), 2);
@@ -483,8 +483,8 @@ fn test_alter_key_update_sep_height_2() {
         builder.insert_leaf(&mut leaf1, CounterI32::from(30), CounterI32::from(300));
 
         let mut root = builder.new_inter(1);
-        root.set_left_ptr(leaf0.get_ptr());
-        root.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
+        root.set_left_ptr(leaf0.get_ptr_mut());
+        root.insert_no_split(CounterI32::from(20), leaf1.get_ptr_mut());
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 3);
@@ -519,9 +519,9 @@ fn test_alter_key_after_move_update_sep_height_2() {
         builder.insert_leaf(&mut leaf2, CounterI32::from(30), CounterI32::from(300));
 
         let mut root = builder.new_inter(1);
-        root.set_left_ptr(leaf0.get_ptr());
-        root.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
-        root.insert_no_split(CounterI32::from(30), leaf2.get_ptr());
+        root.set_left_ptr(leaf0.get_ptr_mut());
+        root.insert_no_split(CounterI32::from(20), leaf1.get_ptr_mut());
+        root.insert_no_split(CounterI32::from(30), leaf2.get_ptr_mut());
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 3);
@@ -570,17 +570,17 @@ fn test_alter_key_update_sep_height_3() {
         builder.insert_leaf(&mut leaf3, CounterI32::from(40), CounterI32::from(400));
 
         let mut inter_l = builder.new_inter(1);
-        inter_l.set_left_ptr(leaf0.get_ptr());
-        inter_l.insert_no_split(CounterI32::from(20), leaf1.get_ptr());
+        inter_l.set_left_ptr(leaf0.get_ptr_mut());
+        inter_l.insert_no_split(CounterI32::from(20), leaf1.get_ptr_mut());
 
         let mut inter_r = builder.new_inter(1);
-        inter_r.set_left_ptr(leaf2.get_ptr());
-        inter_r.insert_no_split(CounterI32::from(40), leaf3.get_ptr());
+        inter_r.set_left_ptr(leaf2.get_ptr_mut());
+        inter_r.insert_no_split(CounterI32::from(40), leaf3.get_ptr_mut());
 
         // root sep_mid is first key of inter_r (leaf2 first key = 30)
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(inter_l.get_ptr());
-        root.insert_no_split(CounterI32::from(30), inter_r.get_ptr());
+        root.set_left_ptr(inter_l.get_ptr_mut());
+        root.insert_no_split(CounterI32::from(30), inter_r.get_ptr_mut());
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 4);

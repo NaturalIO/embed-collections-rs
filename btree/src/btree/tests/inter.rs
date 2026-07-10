@@ -206,7 +206,7 @@ fn test_inter_split_insert_at_promote() {
             split_idx, insert_key_value, insert_child
         );
 
-        let (new_node, promote_key) = node.insert_split(insert_key, insert_child);
+        let (mut new_node, promote_key) = node.insert_split(insert_key, insert_child);
 
         println!(
             "After split: left count = {}, right count = {}, promote_key = {}",
@@ -214,7 +214,7 @@ fn test_inter_split_insert_at_promote() {
             new_node.key_count(),
             promote_key,
         );
-        println!("left ptr = {:?}, right ptr = {:?}", node.get_ptr(), new_node.get_ptr());
+        println!("left ptr = {:?}, right ptr = {:?}", node.get_ptr_mut(), new_node.get_ptr_mut());
 
         // Verify counts
         let left_count = node.key_count() as u32;
@@ -475,8 +475,8 @@ fn test_inter_merge_basic() {
 
         // Create grandparent node with separator key
         let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
-        grand.set_left_ptr(left.get_ptr());
-        grand.insert_no_split(25_i32.into(), right.get_ptr()); // separator key = 25
+        grand.set_left_ptr(left.get_ptr_mut());
+        grand.insert_no_split(25_i32.into(), right.get_ptr_mut()); // separator key = 25
         assert_eq!(grand.key_count(), 1);
 
         // Record alive count before merge
@@ -543,14 +543,14 @@ fn test_inter_merge_right_empty() {
         assert_eq!(left.key_count(), 3);
 
         // Create right node with NO keys (only left child)
-        let right = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*right.child_ptr(0)) = 0x2000 as *mut NodeHeader;
+        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        (*right.child_ptr_mut(0)) = 0x2000 as *mut NodeHeader;
         assert_eq!(right.key_count(), 0);
 
         // Create grandparent with separator key
         let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
-        grand.set_left_ptr(left.get_ptr());
-        grand.insert_no_split(25_i32.into(), right.get_ptr());
+        grand.set_left_ptr(left.get_ptr_mut());
+        grand.insert_no_split(25_i32.into(), right.get_ptr_mut());
         assert_eq!(grand.key_count(), 1);
 
         // Perform merge
@@ -586,7 +586,7 @@ fn test_inter_merge_left_empty() {
     unsafe {
         // Create left node with NO keys
         let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
-        (*left.child_ptr(0)) = 0x1000 as *mut NodeHeader;
+        (*left.child_ptr_mut(0)) = 0x1000 as *mut NodeHeader;
         assert_eq!(left.key_count(), 0);
 
         // Create right node with keys
@@ -602,8 +602,8 @@ fn test_inter_merge_left_empty() {
 
         // Create grandparent with separator key
         let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
-        grand.set_left_ptr(left.get_ptr());
-        grand.insert_no_split(25_i32.into(), right.get_ptr());
+        grand.set_left_ptr(left.get_ptr_mut());
+        grand.insert_no_split(25_i32.into(), right.get_ptr_mut());
         assert_eq!(grand.key_count(), 1);
 
         // Perform merge
@@ -732,8 +732,8 @@ fn test_insert_rotate_left_basic() {
 
         // Create parent node with separator key 100
         let mut parent = InterNode::<i32, i32>::alloc(2);
-        parent.set_left_ptr(left.get_ptr());
-        parent.insert_no_split(100_i32, right.get_ptr());
+        parent.set_left_ptr(left.get_ptr_mut());
+        parent.insert_no_split(100_i32, right.get_ptr_mut());
 
         // Search for key=115, should return idx=1
         let key: i32 = 115_i32;
@@ -796,8 +796,8 @@ fn test_insert_rotate_left_middle() {
 
         // Create parent node with separator key 200
         let mut parent = InterNode::<i32, i32>::alloc(2);
-        parent.set_left_ptr(left.get_ptr());
-        parent.insert_no_split(200_i32, right.get_ptr());
+        parent.set_left_ptr(left.get_ptr_mut());
+        parent.insert_no_split(200_i32, right.get_ptr_mut());
 
         // Search for key=225, should return idx=2
         let key: i32 = 225_i32;
@@ -858,8 +858,8 @@ fn test_insert_rotate_left_last() {
 
         // Create parent node with separator key 300
         let mut parent = InterNode::<i32, i32>::alloc(2);
-        parent.set_left_ptr(left.get_ptr());
-        parent.insert_no_split(300_i32, right.get_ptr());
+        parent.set_left_ptr(left.get_ptr_mut());
+        parent.insert_no_split(300_i32, right.get_ptr_mut());
 
         // Search for key=330, should return idx=2 (key_count)
         let key: i32 = 330_i32;

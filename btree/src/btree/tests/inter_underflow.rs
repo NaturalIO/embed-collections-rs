@@ -65,20 +65,20 @@ fn test_inter_underflow_merge_right_height_3_2(setup_log: ()) {
 
         // Create internal_a (height=1) with key_count=1 (target node)
         let mut internal_a = builder.new_inter(1);
-        internal_a.set_left_ptr(leaf_1.get_ptr());
-        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
+        internal_a.set_left_ptr(leaf_1.get_ptr_mut());
+        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (left sibling with space)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_3.get_ptr());
-        internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr());
+        internal_b.set_left_ptr(leaf_3.get_ptr_mut());
+        internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create root (height=2) with key_count=1
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(internal_a.get_ptr());
-        root.insert_no_split(leaf_3_first, internal_b.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
+        root.insert_no_split(leaf_3_first, internal_b.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 1);
 
         // Record alive count before underflow handling
@@ -194,20 +194,20 @@ fn test_inter_underflow_merge_left_height_3_2(setup_log: ()) {
 
         // Create internal_a (height=1) with key_count=1 (right sibling with space)
         let mut internal_a = builder.new_inter(1);
-        internal_a.set_left_ptr(leaf_1.get_ptr());
-        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
+        internal_a.set_left_ptr(leaf_1.get_ptr_mut());
+        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (target node)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_3.get_ptr());
-        internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr());
+        internal_b.set_left_ptr(leaf_3.get_ptr_mut());
+        internal_b.insert_no_split(leaf_4.get_keys()[0].clone(), leaf_4.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create root (height=2) with key_count=1
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(internal_a.get_ptr());
-        root.insert_no_split(leaf_3_first, internal_b.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
+        root.insert_no_split(leaf_3_first, internal_b.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 1);
 
         let mut map = builder.build(root.into());
@@ -330,27 +330,27 @@ fn test_inter_underflow_merge_right_height_3(setup_log: ()) {
 
         // Create internal_a (height=1) with key_count=1 (target node)
         let mut internal_a = builder.new_inter(1);
-        internal_a.set_left_ptr(leaf_1.get_ptr());
-        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
+        internal_a.set_left_ptr(leaf_1.get_ptr_mut());
+        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (left sibling with space)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_3.get_ptr());
-        internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr());
+        internal_b.set_left_ptr(leaf_3.get_ptr_mut());
+        internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create internal_c (height=1) with key_count=1
         let mut internal_c = builder.new_inter(1);
-        internal_c.set_left_ptr(leaf_5.get_ptr());
-        internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr());
+        internal_c.set_left_ptr(leaf_5.get_ptr_mut());
+        internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr_mut());
         debug_assert_eq!(internal_c.key_count(), 1);
 
         // Create root (height=2) with key_count=2
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(internal_a.get_ptr());
-        root.insert_no_split(leaf_3_first, internal_b.get_ptr());
-        root.insert_no_split(leaf_5_first, internal_c.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
+        root.insert_no_split(leaf_3_first, internal_b.get_ptr_mut());
+        root.insert_no_split(leaf_5_first, internal_c.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 2);
 
         let mut map = builder.build(root.into());
@@ -479,27 +479,27 @@ fn test_inter_underflow_merge_left_height_3(setup_log: ()) {
 
         // Create internal_a (height=1) with key_count=1
         let mut internal_a = builder.new_inter(1);
-        internal_a.set_left_ptr(leaf_1.get_ptr());
-        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr());
+        internal_a.set_left_ptr(leaf_1.get_ptr_mut());
+        internal_a.insert_no_split(leaf_2_first, leaf_2.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 1);
 
         // Create internal_b (height=1) with key_count=1 (target node)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_3.get_ptr());
-        internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr());
+        internal_b.set_left_ptr(leaf_3.get_ptr_mut());
+        internal_b.insert_no_split(leaf_4_first, leaf_4.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 1);
 
         // Create internal_c (height=1) with key_count=1 (right sibling with space)
         let mut internal_c = builder.new_inter(1);
-        internal_c.set_left_ptr(leaf_5.get_ptr());
-        internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr());
+        internal_c.set_left_ptr(leaf_5.get_ptr_mut());
+        internal_c.insert_no_split(leaf_6_first, leaf_6.get_ptr_mut());
         debug_assert_eq!(internal_c.key_count(), 1);
 
         // Create root (height=2) with key_count=2
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(internal_a.get_ptr());
-        root.insert_no_split(leaf_3_first, internal_b.get_ptr());
-        root.insert_no_split(leaf_5_first, internal_c.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
+        root.insert_no_split(leaf_3_first, internal_b.get_ptr_mut());
+        root.insert_no_split(leaf_5_first, internal_c.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 2);
 
         let mut map = builder.build(root.into());
@@ -600,17 +600,17 @@ fn test_inter_underflow_root_becomes_leaf(setup_log: ()) {
 
         // Create internal_b (height=1) with key_count=0 (only left child)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_1.get_ptr());
+        internal_b.set_left_ptr(leaf_1.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 0);
 
         // Create internal_a (height=2) with key_count=0 (only left child)
         let mut internal_a = builder.new_inter(2);
-        internal_a.set_left_ptr(internal_b.get_ptr());
+        internal_a.set_left_ptr(internal_b.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 0);
 
         // Create root (height=3) with key_count=0 (only left child)
         let mut root = builder.new_inter(3);
-        root.set_left_ptr(internal_a.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 0);
 
         let mut map = builder.build(root.into());
@@ -697,24 +697,24 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3(setup_log: ()) {
 
         // Create internal_a (height=1) with 0 keys, only left child (target node)
         let mut internal_a = builder.new_inter(1);
-        internal_a.set_left_ptr(leaf_1.get_ptr());
+        internal_a.set_left_ptr(leaf_1.get_ptr_mut());
         debug_assert_eq!(internal_a.key_count(), 0);
 
         // Create internal_b (height=1) with 0 keys, only left child (left sibling)
         let mut internal_b = builder.new_inter(1);
-        internal_b.set_left_ptr(leaf_2.get_ptr());
+        internal_b.set_left_ptr(leaf_2.get_ptr_mut());
         debug_assert_eq!(internal_b.key_count(), 0);
 
         // Create internal_c (height=1) with 0 keys, only left child
         let mut internal_c = builder.new_inter(1);
-        internal_c.set_left_ptr(leaf_3.get_ptr());
+        internal_c.set_left_ptr(leaf_3.get_ptr_mut());
         debug_assert_eq!(internal_c.key_count(), 0);
 
         // Create root (height=2) with 2 keys
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(internal_a.get_ptr());
-        root.insert_no_split(leaf_2_first, internal_b.get_ptr());
-        root.insert_no_split(leaf_3_first, internal_c.get_ptr());
+        root.set_left_ptr(internal_a.get_ptr_mut());
+        root.insert_no_split(leaf_2_first, internal_b.get_ptr_mut());
+        root.insert_no_split(leaf_3_first, internal_c.get_ptr_mut());
         debug_assert_eq!(root.key_count(), 2);
 
         let mut map = builder.build(root.into());

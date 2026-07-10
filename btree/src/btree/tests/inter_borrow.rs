@@ -35,9 +35,9 @@ fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
 
         // Create left_inter with space
         let mut left_inter = builder.new_inter(1);
-        left_inter.set_left_ptr(leaf_0.get_ptr());
+        left_inter.set_left_ptr(leaf_0.get_ptr_mut());
         let leaf_1_first = leaf_1.get_keys()[0].clone();
-        left_inter.insert_no_split(leaf_1_first, leaf_1.get_ptr());
+        left_inter.insert_no_split(leaf_1_first, leaf_1.get_ptr_mut());
 
         // Create leaves for right_inter
         let mut leaf_2 = builder.new_leaf();
@@ -55,9 +55,9 @@ fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
 
         // Create right_inter full of keys
         let mut right_inter = builder.new_inter(1);
-        right_inter.set_left_ptr(leaf_2.get_ptr());
+        right_inter.set_left_ptr(leaf_2.get_ptr_mut());
         let leaf_3_split = leaf_3.get_keys()[0].clone();
-        right_inter.insert_no_split(leaf_3_split, leaf_3.get_ptr());
+        right_inter.insert_no_split(leaf_3_split, leaf_3.get_ptr_mut());
         let base = (leaf_cap * 4) as i32;
 
         // Fill right_inter to capacity
@@ -68,17 +68,17 @@ fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
             builder.insert_leaf(&mut dummy, CounterI32::new(key * 2), CounterI32::new(key * 10));
             dummy_leaves.push(dummy);
         }
-        for dummy in dummy_leaves.iter() {
-            right_inter.insert_no_split(dummy.get_keys()[0].clone(), dummy.get_ptr());
+        for dummy in dummy_leaves.iter_mut() {
+            right_inter.insert_no_split(dummy.get_keys()[0].clone(), dummy.get_ptr_mut());
         }
         // NOTE: dummy_leaves link is not setup
 
         // Create root
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(left_inter.get_ptr());
+        root.set_left_ptr(left_inter.get_ptr_mut());
         // sep_key is just before leaf_2's first key
         let sep_key = CounterI32::new(*leaf_2.get_keys()[0] - 1);
-        root.insert_no_split(sep_key.clone(), right_inter.get_ptr());
+        root.insert_no_split(sep_key.clone(), right_inter.get_ptr_mut());
 
         let total_elements = (leaf_cap * 4 + (inter_cap - 1)) as usize;
 
@@ -161,9 +161,9 @@ fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
 
         // Create left_inter with space
         let mut left_inter = builder.new_inter(1);
-        left_inter.set_left_ptr(leaf_0.get_ptr());
+        left_inter.set_left_ptr(leaf_0.get_ptr_mut());
         let leaf_1_first = leaf_1.get_keys()[0].clone();
-        left_inter.insert_no_split(leaf_1_first, leaf_1.get_ptr());
+        left_inter.insert_no_split(leaf_1_first, leaf_1.get_ptr_mut());
 
         // Create leaves for right_inter
         let mut leaf_2 = builder.new_leaf();
@@ -182,11 +182,11 @@ fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
 
         // Create right_inter full of keys
         let mut right_inter = builder.new_inter(1);
-        right_inter.set_left_ptr(leaf_2.get_ptr());
+        right_inter.set_left_ptr(leaf_2.get_ptr_mut());
         let leaf_3_split = leaf_3.get_keys()[0].clone();
-        right_inter.insert_no_split(leaf_3_split, leaf_3.get_ptr());
+        right_inter.insert_no_split(leaf_3_split, leaf_3.get_ptr_mut());
         let leaf_4_split = leaf_4.get_keys()[0].clone();
-        right_inter.insert_no_split(leaf_4_split, leaf_4.get_ptr());
+        right_inter.insert_no_split(leaf_4_split, leaf_4.get_ptr_mut());
         let base = (leaf_cap * 5) as i32;
 
         // Fill right_inter to capacity
@@ -197,15 +197,15 @@ fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
             builder.insert_leaf(&mut dummy, CounterI32::new(key * 2), CounterI32::new(key * 10));
             dummy_leaves.push(dummy);
         }
-        for dummy in dummy_leaves.iter() {
-            right_inter.insert_no_split(dummy.get_keys()[0].clone(), dummy.get_ptr());
+        for dummy in dummy_leaves.iter_mut() {
+            right_inter.insert_no_split(dummy.get_keys()[0].clone(), dummy.get_ptr_mut());
         }
 
         // Create root
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(left_inter.get_ptr());
+        root.set_left_ptr(left_inter.get_ptr_mut());
         let sep_key = leaf_2.get_keys()[0].clone();
-        root.insert_no_split(sep_key, right_inter.get_ptr());
+        root.insert_no_split(sep_key, right_inter.get_ptr_mut());
 
         let mut map = builder.build(root.into());
         assert_eq!(map.height(), 3);
@@ -271,9 +271,9 @@ fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
             let mut d = builder.new_leaf();
             builder.insert_leaf(&mut d, CounterI32::new(i * 2), CounterI32::new(i * 10));
             if i == 0 {
-                parent_inter.set_left_ptr(d.get_ptr());
+                parent_inter.set_left_ptr(d.get_ptr_mut());
             } else {
-                parent_inter.insert_no_split(CounterI32::new(i * 2), d.get_ptr());
+                parent_inter.insert_no_split(CounterI32::new(i * 2), d.get_ptr_mut());
             }
             dummy_leaves.push(d);
         }
@@ -288,14 +288,14 @@ fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
             builder.insert_leaf(&mut leaf_0, CounterI32::new(i * 2), CounterI32::new(i * 10));
         }
 
-        parent_inter.insert_no_split(leaf_0.get_keys()[0].clone(), leaf_0.get_ptr());
+        parent_inter.insert_no_split(leaf_0.get_keys()[0].clone(), leaf_0.get_ptr_mut());
 
         base += leaf_cap as i32;
         for i in base..(base + leaf_cap as i32) {
             builder.insert_leaf(&mut leaf_1, CounterI32::new(i * 2), CounterI32::new(i * 10));
         }
         base += leaf_cap as i32;
-        parent_inter.insert_no_split(leaf_1.get_keys()[0].clone(), leaf_1.get_ptr());
+        parent_inter.insert_no_split(leaf_1.get_keys()[0].clone(), leaf_1.get_ptr_mut());
 
         // === Build right_inter with space ===
         let mut leaf_2 = builder.new_leaf();
@@ -311,14 +311,14 @@ fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
         }
         // right_inter: [leaf_2 | sep | leaf_3] has space for more keys
         let mut right_inter = builder.new_inter(1);
-        right_inter.set_left_ptr(leaf_2.get_ptr());
-        right_inter.insert_no_split(leaf_3.get_keys()[0].clone(), leaf_3.get_ptr());
+        right_inter.set_left_ptr(leaf_2.get_ptr_mut());
+        right_inter.insert_no_split(leaf_3.get_keys()[0].clone(), leaf_3.get_ptr_mut());
         // right_inter has only 1 key, space for more
 
         // Create root
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(parent_inter.get_ptr());
-        root.insert_no_split(leaf_2.get_keys()[0].clone(), right_inter.get_ptr());
+        root.set_left_ptr(parent_inter.get_ptr_mut());
+        root.insert_no_split(leaf_2.get_keys()[0].clone(), right_inter.get_ptr_mut());
 
         let total_elements = (leaf_cap * 3 + (inter_cap - 1) + min_count) as usize;
 
@@ -405,8 +405,8 @@ fn test_inter_borrow_case4_rotate_right(setup_log: ()) {
         }
 
         let mut parent_inter = builder.new_inter(1);
-        parent_inter.set_left_ptr(leaf_0.get_ptr());
-        parent_inter.insert_no_split(leaf_1.get_keys()[0].clone(), leaf_1.get_ptr());
+        parent_inter.set_left_ptr(leaf_0.get_ptr_mut());
+        parent_inter.insert_no_split(leaf_1.get_keys()[0].clone(), leaf_1.get_ptr_mut());
 
         let mut base = (leaf_cap * 2) as i32;
         // Fill parent_inter to capacity (leave 0 space - it's full)
@@ -414,7 +414,7 @@ fn test_inter_borrow_case4_rotate_right(setup_log: ()) {
         for i in base..(base + inter_cap as i32 - 1) {
             let mut d = builder.new_leaf();
             builder.insert_leaf(&mut d, CounterI32::new(i * 2), CounterI32::new(i * 10));
-            parent_inter.insert_no_split(CounterI32::new(i * 2), d.get_ptr());
+            parent_inter.insert_no_split(CounterI32::new(i * 2), d.get_ptr_mut());
             dummy_leaves.push(d);
         }
         base += inter_cap as i32 - 1;
@@ -433,14 +433,14 @@ fn test_inter_borrow_case4_rotate_right(setup_log: ()) {
 
         // right_inter: [leaf_2 | sep | leaf_3] has space for more keys
         let mut right_inter = builder.new_inter(1);
-        right_inter.set_left_ptr(leaf_2.get_ptr());
-        right_inter.insert_no_split(leaf_3.get_keys()[0].clone(), leaf_3.get_ptr());
+        right_inter.set_left_ptr(leaf_2.get_ptr_mut());
+        right_inter.insert_no_split(leaf_3.get_keys()[0].clone(), leaf_3.get_ptr_mut());
         // right_inter has only 1 key, space for more
 
         // Create root
         let mut root = builder.new_inter(2);
-        root.set_left_ptr(parent_inter.get_ptr());
-        root.insert_no_split(leaf_2.get_keys()[0].clone(), right_inter.get_ptr());
+        root.set_left_ptr(parent_inter.get_ptr_mut());
+        root.insert_no_split(leaf_2.get_keys()[0].clone(), right_inter.get_ptr_mut());
 
         let total_elements = (leaf_cap * 2 + (inter_cap - 1) + min_count * 2) as usize;
 
