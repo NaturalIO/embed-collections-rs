@@ -12,7 +12,7 @@ pub(super) struct IterForward<K, V> {
 
 impl<K, V> IterForward<K, V> {
     #[inline]
-    pub fn next(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    pub fn next(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         if self.idx >= self.front_leaf.key_count() {
             if let Some(next) = self.front_leaf.get_right_node() {
                 debug_assert!(next.key_count() > 0);
@@ -24,7 +24,7 @@ impl<K, V> IterForward<K, V> {
         }
         let current_idx = self.idx;
         self.idx = current_idx + 1;
-        Some((&self.front_leaf, current_idx))
+        Some((&mut self.front_leaf, current_idx))
     }
 
     #[inline]
@@ -44,7 +44,7 @@ pub(super) struct IterBackward<K, V> {
 
 impl<K, V> IterBackward<K, V> {
     #[inline]
-    pub fn prev(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    pub fn prev(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         if self.back_idx == 0 {
             if let Some(prev) = self.back_leaf.get_left_node() {
                 self.back_idx = prev.key_count();
@@ -55,7 +55,7 @@ impl<K, V> IterBackward<K, V> {
             }
         }
         self.back_idx -= 1;
-        Some((&self.back_leaf, self.back_idx))
+        Some((&mut self.back_leaf, self.back_idx))
     }
 
     #[inline]
@@ -90,7 +90,7 @@ impl<K, V> IterBase<K, V> {
     /// Advance the forward iterator and return the current leaf and index
     /// Returns None if we've moved past the end
     #[inline]
-    fn advance_forward(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         if self.remaining == 0 {
             return None;
         }
@@ -101,7 +101,7 @@ impl<K, V> IterBase<K, V> {
     /// Advance the backward iterator and return the current leaf and index
     /// Returns None if we've moved past the beginning
     #[inline]
-    fn advance_backward(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         if self.remaining == 0 {
             return None;
         }
@@ -200,7 +200,7 @@ impl<'a, K: 'a, V: 'a> Iterator for IterMut<'a, K, V> {
         let (leaf, idx) = base.advance_forward()?;
         unsafe {
             let key = (*leaf.key_ptr(idx)).assume_init_ref();
-            let value = (*leaf.value_ptr(idx)).assume_init_mut();
+            let value = (*leaf.value_ptr_mut(idx)).assume_init_mut();
             Some((key, value))
         }
     }
@@ -226,7 +226,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for IterMut<'a, K, V> {
         let (leaf, idx) = base.advance_backward()?;
         unsafe {
             let key = (*leaf.key_ptr(idx)).assume_init_ref();
-            let value = (*leaf.value_ptr(idx)).assume_init_mut();
+            let value = (*leaf.value_ptr_mut(idx)).assume_init_mut();
             Some((key, value))
         }
     }
@@ -377,20 +377,20 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
     /// Advance forward and return the current leaf and index
     /// Returns None when range is exhausted, caller should set RangeBase to None
     #[inline]
-    fn advance_forward(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         loop {
             let idx = self.front_idx;
             if self.front_leaf == self.back_leaf {
                 if idx < self.back_idx {
                     self.front_idx = idx + 1;
-                    return Some((&self.front_leaf, idx));
+                    return Some((&mut self.front_leaf, idx));
                 } else {
                     return None;
                 }
             } else {
                 if idx < self.front_leaf.key_count() {
                     self.front_idx = idx + 1;
-                    return Some((&self.front_leaf, idx));
+                    return Some((&mut self.front_leaf, idx));
                 } else {
                     self.front_leaf = self.front_leaf.get_right_node().unwrap();
                     self.front_idx = 0;
@@ -404,7 +404,7 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
     /// Advance backward and return the current leaf and index
     /// Returns None when range is exhausted, caller should set RangeBase to None
     #[inline]
-    fn advance_backward(&mut self) -> Option<(&LeafNode<K, V>, u32)> {
+    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
         loop {
             if self.back_leaf == self.front_leaf {
                 if self.back_idx == 0 {
@@ -412,7 +412,7 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
                 }
                 self.back_idx -= 1;
                 if self.back_idx >= self.front_idx {
-                    return Some((&self.back_leaf, self.back_idx));
+                    return Some((&mut self.back_leaf, self.back_idx));
                 } else {
                     return None;
                 }
@@ -424,7 +424,7 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
                     // moves, cannot use IterForward & IterBackward here.
                 } else {
                     self.back_idx -= 1;
-                    return Some((&self.back_leaf, self.back_idx));
+                    return Some((&mut self.back_leaf, self.back_idx));
                 }
             }
         }
@@ -502,7 +502,7 @@ impl<'a, K: 'a, V: 'a> Iterator for RangeMut<'a, K, V> {
         if let Some((leaf, idx)) = base.advance_forward() {
             unsafe {
                 let key = (*leaf.key_ptr(idx)).assume_init_ref();
-                let value = (*leaf.value_ptr(idx)).assume_init_mut();
+                let value = (*leaf.value_ptr_mut(idx)).assume_init_mut();
                 Some((key, value))
             }
         } else {
@@ -519,7 +519,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
         if let Some((leaf, idx)) = base.advance_backward() {
             unsafe {
                 let key = (*leaf.key_ptr(idx)).assume_init_ref();
-                let value = (*leaf.value_ptr(idx)).assume_init_mut();
+                let value = (*leaf.value_ptr_mut(idx)).assume_init_mut();
                 Some((key, value))
             }
         } else {
@@ -657,28 +657,28 @@ impl<K: Ord + Clone + Sized, V: Sized> Drop for IntoIterBase<K, V> {
     fn drop(&mut self) {
         let is_forward = self.is_forward;
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
-        if let Some(leaf) = self.leaf.take() {
+        if let Some(mut leaf) = self.leaf.take() {
             if needs_drop::<K>() {
                 if is_forward {
                     trace_log!("into_iter drop forward {leaf:?} [{}..]", self.idx);
                     for idx in self.idx..leaf.key_count() {
-                        unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
+                        unsafe { (*leaf.key_ptr_mut(idx)).assume_init_drop() };
                     }
                 } else {
                     trace_log!("into_iter drop backward {leaf:?} [..{}]", self.idx);
                     for idx in 0..self.idx {
-                        unsafe { (*leaf.key_ptr(idx)).assume_init_drop() };
+                        unsafe { (*leaf.key_ptr_mut(idx)).assume_init_drop() };
                     }
                 }
             }
             if needs_drop::<V>() {
                 if is_forward {
                     for idx in self.idx..leaf.key_count() {
-                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
+                        unsafe { (*leaf.value_ptr_mut(idx)).assume_init_drop() };
                     }
                 } else {
                     for idx in 0..self.idx {
-                        unsafe { (*leaf.value_ptr(idx)).assume_init_drop() };
+                        unsafe { (*leaf.value_ptr_mut(idx)).assume_init_drop() };
                     }
                 }
             }

@@ -370,8 +370,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        if let Some((leaf, idx)) = self.find::<Q>(key) {
-            let value = unsafe { leaf.value_ptr(idx) };
+        if let Some((mut leaf, idx)) = self.find::<Q>(key) {
+            let value = unsafe { leaf.value_ptr_mut(idx) };
             debug_assert!(!value.is_null());
             Some(unsafe { (*value).assume_init_mut() })
         } else {
@@ -610,7 +610,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else {
             cache.peek_ancenstor(|_node, idx| -> bool { idx > 0 })
         };
-        if let Some((parent, parent_idx)) = ret {
+        if let Some((mut parent, parent_idx)) = ret {
             trace_log!("update_ancestor_sep_key move={MOVE} at {parent:?}:{}", parent_idx - 1);
             parent.change_key(parent_idx - 1, sep_key);
             #[cfg(all(test, feature = "trace_log"))]
@@ -673,13 +673,14 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         {
             self.triggers |= TestFlag::LeafSplit as u32;
         }
-        let (new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
+        let (mut new_leaf, ptr_v) = leaf.insert_with_split(idx, key, value);
         let split_key = unsafe { (*new_leaf.key_ptr(0)).assume_init_ref().clone() };
 
         let o_info = self._get_info();
         if let Some(info) = o_info.as_mut() {
             info.inc_leaf_count();
-            match self.propagate_split(info, split_key, leaf.get_ptr(), new_leaf.get_ptr()) {
+            match self.propagate_split(info, split_key, leaf.get_ptr_mut(), new_leaf.get_ptr_mut())
+            {
                 Ok(_flags) => {
                     #[cfg(all(test, feature = "trace_log"))]
                     {
@@ -693,8 +694,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             ptr_v
         } else {
             o_info.replace(TreeInfo::new(2, 1));
-            let new_root =
-                InterNode::<K, V>::new_root(1, split_key, leaf.get_ptr(), new_leaf.get_ptr());
+            let new_root = InterNode::<K, V>::new_root(
+                1,
+                split_key,
+                leaf.get_ptr_mut(),
+                new_leaf.get_ptr_mut(),
+            );
             let _old_root = self.root.replace(new_root.to_root_ptr());
             debug_assert_eq!(_old_root.unwrap(), leaf.to_root_ptr());
             ptr_v
@@ -707,6 +712,8 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
     /// left_ptr: existing child
     /// right_ptr: new_child split from left_ptr
     /// promote_key: sep_key to split left_ptr & right_ptr
+    ///
+    /// XXX due to borrow issue, we use &self here
     #[inline(always)]
     fn propagate_split(
         &self, info: &mut TreeInfo<K, V>, mut promote_key: K, mut left_ptr: *mut NodeHeader,
@@ -741,7 +748,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                                 // special case: split from first child of parent
                                 let demote_key = grand.change_key(grand_idx - 1, promote_key);
                                 debug_assert_eq!(parent.get_child_ptr(0), left_ptr);
-                                unsafe { (*parent.child_ptr(0)) = right_ptr };
+                                unsafe { (*parent.child_ptr_mut(0)) = right_ptr };
                                 left_parent.append(demote_key, left_ptr);
                                 #[cfg(all(test, feature = "trace_log"))]
                                 {
@@ -796,12 +803,12 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 height += 1;
 
                 // Cannot borrow from siblings, need to split internal node
-                let (right, _promote_key) = parent.insert_split(promote_key, right_ptr);
+                let (mut right, _promote_key) = parent.insert_split(promote_key, right_ptr);
                 info.inc_inter_count();
 
                 promote_key = _promote_key;
-                right_ptr = right.get_ptr();
-                left_ptr = parent.get_ptr();
+                right_ptr = right.get_ptr_mut();
+                left_ptr = parent.get_ptr_mut();
                 #[cfg(all(test, feature = "trace_log"))]
                 {
                     flags |= TestFlag::InterSplit as u32;
@@ -953,7 +960,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // delete the last child of this node
             node.remove_last_child();
             if let Some(key) = right_sep
-                && let Some((grand_parent, grand_idx)) = self.get_info_mut().peek_ancenstor(
+                && let Some((mut grand_parent, grand_idx)) = self.get_info_mut().peek_ancenstor(
                     |_node: &InterNode<K, V>, idx: u32| -> bool { _node.key_count() > idx },
                 )
             {

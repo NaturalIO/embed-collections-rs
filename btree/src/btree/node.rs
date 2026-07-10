@@ -38,7 +38,7 @@ impl NodeHeader {
 
     #[inline]
     pub unsafe fn get_field<T>(p: NonNull<Self>, offset: usize) -> *mut T {
-        unsafe { (p.as_ptr() as *const u8).add(offset) as *mut T }
+        unsafe { (p.as_ptr() as *mut u8).add(offset) as *mut T }
     }
 
     /// Check if this is a leaf node (height == 0)
@@ -78,7 +78,12 @@ impl NodeBase {
     }
 
     #[inline(always)]
-    pub fn get_ptr(&self) -> *mut NodeHeader {
+    pub fn get_ptr(&self) -> *const NodeHeader {
+        self.header.as_ptr()
+    }
+
+    #[inline(always)]
+    pub fn get_ptr_mut(&mut self) -> *mut NodeHeader {
         self.header.as_ptr()
     }
 
@@ -96,7 +101,21 @@ impl NodeBase {
     ///
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
-    pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *mut T {
+    pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *const T {
+        let mut v_size = size_of::<T>();
+        if v_size == 0 {
+            v_size = 1;
+        }
+        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
+    }
+
+    /// Get pointer to key at index with given header offset
+    ///
+    /// # Safety
+    ///
+    /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
+    #[inline(always)]
+    pub unsafe fn item_ptr_mut<T>(&mut self, start_offset: usize, idx: u32) -> *mut T {
         let mut v_size = size_of::<T>();
         if v_size == 0 {
             v_size = 1;
@@ -178,12 +197,12 @@ impl NodeBase {
     ) -> *mut V {
         let count = self.key_count();
         unsafe {
-            let key_p = self.item_ptr::<K>(key_header_offset, idx);
+            let key_p = self.item_ptr_mut::<K>(key_header_offset, idx);
             if idx < count {
                 ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
             }
             key_p.write(key);
-            let value_p = self.item_ptr::<V>(value_header_offset, idx);
+            let value_p = self.item_ptr_mut::<V>(value_header_offset, idx);
             if idx < count {
                 ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
             }

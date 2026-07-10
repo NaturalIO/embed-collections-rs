@@ -94,12 +94,12 @@ impl<K, V> InterNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn dealloc<const DROP_ITEM: bool>(self) {
+    pub fn dealloc<const DROP_ITEM: bool>(mut self) {
         unsafe {
             if DROP_ITEM && needs_drop::<K>() {
                 let count = self.key_count();
                 for i in 0..count {
-                    (*self.key_ptr(i)).assume_init_drop();
+                    (*self.key_ptr_mut(i)).assume_init_drop();
                 }
             }
             dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
@@ -130,7 +130,7 @@ impl<K, V> InterNode<K, V> {
     #[inline(always)]
     pub fn set_left_ptr(&mut self, child_ptr: *mut NodeHeader) {
         unsafe {
-            let p = self.child_ptr(0);
+            let p = self.child_ptr_mut(0);
             p.write(child_ptr)
         }
     }
@@ -142,14 +142,26 @@ impl<K, V> InterNode<K, V> {
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr(&self, idx: u32) -> *mut MaybeUninit<K> {
+    pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
         unsafe { self.base.item_ptr::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx) }
+    }
+
+    /// Get pointer to key at index
+    #[inline(always)]
+    pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
-    pub unsafe fn child_ptr(&self, idx: u32) -> *mut *mut NodeHeader {
+    pub unsafe fn child_ptr(&self, idx: u32) -> *const *mut NodeHeader {
         unsafe { self.base.item_ptr::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
+    }
+
+    /// Get pointer to child at index
+    #[inline(always)]
+    pub unsafe fn child_ptr_mut(&mut self, idx: u32) -> *mut *mut NodeHeader {
+        unsafe { self.base.item_ptr_mut::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
     }
 
     #[inline(always)]
@@ -405,23 +417,23 @@ impl<K: Ord, V> InterNode<K, V> {
         unsafe {
             if count > 0 {
                 // Shift existing keys to the right by one position
-                let src_key = self.key_ptr(0);
-                let dst_key = self.key_ptr(1);
+                let src_key = self.key_ptr_mut(0);
+                let dst_key = self.key_ptr_mut(1);
                 ptr::copy(src_key, dst_key, count as usize);
 
                 // Shift existing children to the right by one position
                 // Note: we copy count + 1 children to include the leftmost child pointer
-                let src_child = self.child_ptr(0);
-                let dst_child = self.child_ptr(1);
+                let src_child = self.child_ptr_mut(0);
+                let dst_child = self.child_ptr_mut(1);
                 ptr::copy(src_child, dst_child, (count + 1) as usize);
             } else {
                 // When node is empty, the current left_ptr becomes child[1]
-                *self.child_ptr(1) = *self.child_ptr(0);
+                *self.child_ptr_mut(1) = *self.child_ptr_mut(0);
             }
             // Insert the new key at position 0
-            (*self.key_ptr(0)).write(key);
+            (*self.key_ptr_mut(0)).write(key);
             // Insert the new leftmost child pointer
-            (*self.child_ptr(0)) = left_ptr;
+            (*self.child_ptr_mut(0)) = left_ptr;
             // Update the count
             self.get_header_mut().count += 1;
         }
@@ -439,13 +451,13 @@ impl<K: Ord, V> InterNode<K, V> {
         unsafe {
             // Append to tail of right_node
             // Move keys using bulk copy
-            let src_key = self.key_ptr(start_idx) as *mut K;
-            let dst_key = right_node.key_ptr(right_count) as *mut K;
+            let src_key = self.key_ptr_mut(start_idx) as *mut K;
+            let dst_key = right_node.key_ptr_mut(right_count) as *mut K;
             ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
             // Move children using bulk copy (need to avoid touching left_ptr)
-            let src_child = self.child_ptr(start_idx + 1);
-            let dst_child = right_node.child_ptr(right_count + 1);
+            let src_child = self.child_ptr_mut(start_idx + 1);
+            let dst_child = right_node.child_ptr_mut(right_count + 1);
             ptr::copy_nonoverlapping(src_child, dst_child, copy_count as usize);
             // Update counts of right node
             right_node.get_header_mut().count += copy_count;
@@ -454,7 +466,7 @@ impl<K: Ord, V> InterNode<K, V> {
 
     /// Merge right node into self, delete `right`, pull down separator key from grandparent
     /// not including the left(0) child of right
-    pub fn merge(&mut self, right: Self, grand: &mut Self, right_idx: u32) {
+    pub fn merge(&mut self, mut right: Self, grand: &mut Self, right_idx: u32) {
         let key = grand.remove_mid_child(right_idx);
         let right_count = right.key_count();
         let mut self_count = self.key_count();
@@ -466,12 +478,12 @@ impl<K: Ord, V> InterNode<K, V> {
             unsafe {
                 self_count += 1;
                 // Copy keys from right to self
-                let src_key = right.key_ptr(0) as *mut K;
-                let dst_key = self.key_ptr(self_count) as *mut K;
+                let src_key = right.key_ptr_mut(0) as *mut K;
+                let dst_key = self.key_ptr_mut(self_count) as *mut K;
                 ptr::copy_nonoverlapping(src_key, dst_key, right_count as usize);
                 // Copy children (starting from index 1) from right to self
-                let src_child = right.child_ptr(1);
-                let dst_child = self.child_ptr(self_count + 1);
+                let src_child = right.child_ptr_mut(1);
+                let dst_child = self.child_ptr_mut(self_count + 1);
                 ptr::copy_nonoverlapping(src_child, dst_child, right_count as usize);
                 // Update count
                 self.get_header_mut().count += right_count;
@@ -506,7 +518,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 return (new_node, key);
             }
             let promote_key = (*self.key_ptr(split_idx)).assume_init_read();
-            new_node.set_left_ptr(*self.child_ptr(split_idx + 1));
+            new_node.set_left_ptr(*self.child_ptr_mut(split_idx + 1));
 
             // Determine which side the insertion should go
             if idx < split_idx {
@@ -560,10 +572,10 @@ impl<K: Ord, V> InterNode<K, V> {
 
     /// old key is auto drop, replace with new key
     #[inline(always)]
-    pub fn change_key(&self, idx: u32, key: K) -> K {
+    pub fn change_key(&mut self, idx: u32, key: K) -> K {
         debug_assert!(self.key_count() > idx);
         unsafe {
-            let k_ptr = self.key_ptr(idx);
+            let k_ptr = self.key_ptr_mut(idx);
             let old_key = (*k_ptr).assume_init_read();
             (*k_ptr).write(key);
             old_key
@@ -590,8 +602,8 @@ impl<K: Ord, V> InterNode<K, V> {
         let key_count = self.key_count();
         debug_assert!(key_count > 0);
         unsafe {
-            let first_key_ptr = self.key_ptr(0);
-            let first_child_ptr = self.child_ptr(0);
+            let first_key_ptr = self.key_ptr_mut(0);
+            let first_child_ptr = self.child_ptr_mut(0);
             let first_key = (*first_key_ptr).assume_init_read();
             // key[idx] is removed, move key[idx+1..] forward, (key_count - 1) keys's left
             ptr::copy(first_key_ptr.add(1), first_key_ptr, (key_count - 1) as usize);
@@ -608,19 +620,19 @@ impl<K: Ord, V> InterNode<K, V> {
         debug_assert!(child_idx > 0);
         debug_assert!(child_idx <= key_count);
         unsafe {
-            let key = (*self.key_ptr(child_idx - 1)).assume_init_read();
+            let key = (*self.key_ptr_mut(child_idx - 1)).assume_init_read();
             if child_idx < key_count {
                 ptr::copy(
-                    self.key_ptr(child_idx),
-                    self.key_ptr(child_idx - 1),
+                    self.key_ptr_mut(child_idx),
+                    self.key_ptr_mut(child_idx - 1),
                     (key_count - child_idx) as usize,
                 );
             }
             // NOTE: if you want to update right sep key, do it later
             // child_ptr(idx) is removed, move child[idx+1..] forward
             ptr::copy(
-                self.child_ptr(child_idx + 1),
-                self.child_ptr(child_idx),
+                self.child_ptr_mut(child_idx + 1),
+                self.child_ptr_mut(child_idx),
                 (key_count - child_idx) as usize,
             );
             self.get_header_mut().count = key_count - 1;
@@ -637,8 +649,8 @@ impl<K: Ord, V> InterNode<K, V> {
         debug_assert!(insert_child_idx <= self.key_count());
         debug_assert!(insert_child_idx > 0);
         unsafe {
-            let first_key_ptr = self.key_ptr(0);
-            let first_child_ptr = self.child_ptr(0);
+            let first_key_ptr = self.key_ptr_mut(0);
+            let first_child_ptr = self.child_ptr_mut(0);
             let first_key = (*first_key_ptr).assume_init_read();
             let first_child = *first_child_ptr;
             // key[idx] is removed, move key[idx+1..] forward, (key_count - 1) keys's left
@@ -647,8 +659,8 @@ impl<K: Ord, V> InterNode<K, V> {
             }
             // child_ptr(idx) is remove, key_count of ptrs left,
             ptr::copy(first_child_ptr.add(1), first_child_ptr, insert_child_idx as usize);
-            (*self.key_ptr(insert_child_idx - 1)).write(key);
-            (*self.child_ptr(insert_child_idx)) = child_ptr;
+            (*self.key_ptr_mut(insert_child_idx - 1)).write(key);
+            (*self.child_ptr_mut(insert_child_idx)) = child_ptr;
             let demote_key = parent.change_key(my_idx - 1, first_key);
             left.append(demote_key, first_child);
         }
