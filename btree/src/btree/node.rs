@@ -68,16 +68,6 @@ impl NodeBase {
     }
 
     #[inline(always)]
-    pub fn get_header(&self) -> &NodeHeader {
-        unsafe { self.header.as_ref() }
-    }
-
-    #[inline(always)]
-    pub fn get_header_mut(&mut self) -> &mut NodeHeader {
-        unsafe { self.header.as_mut() }
-    }
-
-    #[inline(always)]
     pub fn get_ptr(&self) -> *const NodeHeader {
         self.header.as_ptr()
     }
@@ -87,12 +77,29 @@ impl NodeBase {
         self.header.as_ptr()
     }
 
+    #[inline(always)]
+    pub fn set_count(&mut self, count: u32) {
+        // we should always modify with raw pointer, not with &mut
+        unsafe { (*self.header.as_ptr()).count = count };
+    }
+
+    #[inline(always)]
+    pub fn inc_count(&mut self, count: u32) {
+        // we should always modify with raw pointer, not with &mut
+        unsafe { (*self.header.as_ptr()).count += count };
+    }
+
+    #[inline(always)]
+    pub fn dec_count(&mut self, count: u32) {
+        // we should always modify with raw pointer, not with &mut
+        unsafe { (*self.header.as_ptr()).count -= count };
+    }
+
     #[cfg(test)]
     #[inline(always)]
     pub fn get_array<T>(&self, header_size: usize, delta: usize) -> &[T] {
-        let header = self.get_header();
         let items_ptr = unsafe { NodeHeader::get_field::<T>(self.header, header_size) };
-        unsafe { core::slice::from_raw_parts::<T>(items_ptr, header.count as usize + delta) }
+        unsafe { core::slice::from_raw_parts::<T>(items_ptr, self.key_count() as usize + delta) }
     }
 
     /// Get pointer to key at index with given header offset
@@ -126,13 +133,13 @@ impl NodeBase {
     /// Get count of items in the node
     #[inline(always)]
     pub fn key_count(&self) -> u32 {
-        self.get_header().count
+        unsafe { (*self.header.as_ptr()).count }
     }
 
     /// Get height of the node
     #[inline(always)]
     pub fn height(&self) -> u32 {
-        self.get_header().height
+        unsafe { (*self.header.as_ptr()).height }
     }
 
     /// search the position to insert (need to move old items from idx to the right)
@@ -207,7 +214,7 @@ impl NodeBase {
                 ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
             }
             value_p.write(value);
-            self.get_header_mut().count = count + 1;
+            self.set_count(count + 1);
             value_p
         }
     }

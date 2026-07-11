@@ -113,9 +113,11 @@ impl<K, V> LeafNode<K, V> {
     #[inline(always)]
     pub unsafe fn alloc() -> Self {
         let mut base = NodeBase::_alloc(Self::LAYOUT.1);
-        let header = base.get_header_mut();
-        header.height = 0; // Leaf nodes have height 0
-        header.count = 0;
+        let header = base.get_ptr_mut();
+        unsafe {
+            (*header).height = 0; // Leaf nodes have height 0
+            (*header).count = 0;
+        }
         let this = Self { base, _phan: Default::default() };
         unsafe {
             let ptrs = this.brothers();
@@ -310,7 +312,7 @@ impl<K, V> LeafNode<K, V> {
         let left = self.key_count() - 1;
         let key = self._remove_slot::<K>(LEAF_HEAD_SIZE, idx, left);
         let value = self._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
-        self.get_header_mut().count = left;
+        self.set_count(left);
         (key, value)
     }
 
@@ -327,7 +329,7 @@ impl<K, V> LeafNode<K, V> {
             }
         }
         let value = self._remove_slot::<V>(AREA_SIZE + LEAF_HEAD_SIZE, idx, left);
-        self.get_header_mut().count = left;
+        self.set_count(left);
         value
     }
 
@@ -402,7 +404,7 @@ impl<K, V> LeafNode<K, V> {
             let move_key = (*self.key_ptr_mut(idx)).assume_init_read();
             let move_value = (*self.value_ptr_mut(idx)).assume_init_read();
             right_node.insert_no_split_with_idx(0, move_key, move_value);
-            self.get_header_mut().count = idx;
+            self.set_count(idx);
         }
     }
 
@@ -421,7 +423,7 @@ impl<K, V> LeafNode<K, V> {
             let first_val = self.value_ptr_mut(0);
             let dst_val = left_node.value_ptr_mut(left_count);
             ptr::copy_nonoverlapping(first_val, dst_val, copy_count as usize);
-            left_node.get_header_mut().count += copy_count;
+            left_node.inc_count(copy_count);
         }
     }
 
@@ -429,7 +431,7 @@ impl<K, V> LeafNode<K, V> {
     #[inline(always)]
     pub fn move_right(&mut self, right_node: &mut Self, start_idx: u32, move_count: u32) {
         self.copy_right::<true>(right_node, start_idx, move_count);
-        self.get_header_mut().count -= move_count;
+        self.dec_count(move_count);
     }
 
     /// If append == true, copy the items to the tail of right_node,
@@ -480,7 +482,7 @@ impl<K, V> LeafNode<K, V> {
                 let dst_val = right_node.value_ptr_mut(0);
                 ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
             }
-            right_node.get_header_mut().count += copy_count;
+            right_node.inc_count(copy_count);
         }
     }
 
@@ -521,7 +523,7 @@ impl<K, V> LeafNode<K, V> {
                         total_copy - first_copy,
                     );
                 }
-                self.get_header_mut().count = split_idx;
+                self.set_count(split_idx);
                 (new_leaf, ptr_v)
             }
         } else {

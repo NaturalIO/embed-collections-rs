@@ -87,9 +87,11 @@ impl<K, V> InterNode<K, V> {
     #[inline(always)]
     pub unsafe fn alloc(height: u32) -> Self {
         let mut base = NodeBase::_alloc(Self::LAYOUT.1);
-        let header = base.get_header_mut();
-        header.height = height; // Internal nodes have height > 0
-        header.count = 0;
+        let header = base.get_ptr_mut();
+        unsafe {
+            (*header).height = height; // Internal nodes have height > 0
+            (*header).count = 0;
+        }
         Self { base, _phan: Default::default() }
     }
 
@@ -435,7 +437,7 @@ impl<K: Ord, V> InterNode<K, V> {
             // Insert the new leftmost child pointer
             (*self.child_ptr_mut(0)) = left_ptr;
             // Update the count
-            self.get_header_mut().count += 1;
+            self.inc_count(1);
         }
     }
 
@@ -460,7 +462,7 @@ impl<K: Ord, V> InterNode<K, V> {
             let dst_child = right_node.child_ptr_mut(right_count + 1);
             ptr::copy_nonoverlapping(src_child, dst_child, copy_count as usize);
             // Update counts of right node
-            right_node.get_header_mut().count += copy_count;
+            right_node.inc_count(copy_count);
         }
     }
 
@@ -486,7 +488,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 let dst_child = self.child_ptr_mut(self_count + 1);
                 ptr::copy_nonoverlapping(src_child, dst_child, right_count as usize);
                 // Update count
-                self.get_header_mut().count += right_count;
+                self.inc_count(right_count);
             }
         }
         right.dealloc::<false>();
@@ -514,7 +516,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 // key don't need to insert, just promote. key < split_key, so child_ptr is left_ptr
                 new_node.set_left_ptr(child_ptr);
                 self.copy_right(&mut new_node, split_idx, cap - split_idx);
-                self.get_header_mut().count = split_idx;
+                self.set_count(split_idx);
                 return (new_node, key);
             }
             let promote_key = (*self.key_ptr(split_idx)).assume_init_read();
@@ -529,7 +531,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 if right_count > 0 {
                     self.copy_right(&mut new_node, split_idx + 1, right_count);
                 }
-                self.get_header_mut().count = split_idx;
+                self.set_count(split_idx);
                 // Safety: update the count before inserting new key
                 // insert to the left node
                 self.insert_no_split_with_idx(idx, key, child_ptr);
@@ -545,7 +547,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 if idx < cap {
                     self.copy_right(&mut new_node, idx, cap - idx);
                 }
-                self.get_header_mut().count = split_idx;
+                self.set_count(split_idx);
             }
             (new_node, promote_key)
         }
@@ -587,7 +589,7 @@ impl<K: Ord, V> InterNode<K, V> {
     pub fn remove_last_child(&mut self) -> (K, *mut NodeHeader) {
         let idx = self.key_count();
         debug_assert!(idx > 0);
-        self.get_header_mut().count = idx - 1;
+        self.set_count(idx - 1);
         unsafe {
             let key = (*self.key_ptr(idx - 1)).assume_init_read();
             let child = *self.child_ptr(idx);
@@ -609,7 +611,7 @@ impl<K: Ord, V> InterNode<K, V> {
             ptr::copy(first_key_ptr.add(1), first_key_ptr, (key_count - 1) as usize);
             // child_ptr(idx) is remove, key_count of ptrs left,
             ptr::copy(first_child_ptr.add(1), first_child_ptr, key_count as usize);
-            self.get_header_mut().count = key_count - 1;
+            self.set_count(key_count - 1);
             first_key
         }
     }
@@ -635,7 +637,7 @@ impl<K: Ord, V> InterNode<K, V> {
                 self.child_ptr_mut(child_idx),
                 (key_count - child_idx) as usize,
             );
-            self.get_header_mut().count = key_count - 1;
+            self.set_count(key_count - 1);
             key
         }
     }
