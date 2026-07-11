@@ -206,11 +206,13 @@ impl NodeBase {
         unsafe {
             let key_p = self.item_ptr_mut::<K>(key_header_offset, idx);
             if idx < count {
+                // for idx = 0, it will not trigger
                 ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
             }
             key_p.write(key);
             let value_p = self.item_ptr_mut::<V>(value_header_offset, idx);
             if idx < count {
+                // for idx = 0, it will not trigger
                 ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
             }
             value_p.write(value);

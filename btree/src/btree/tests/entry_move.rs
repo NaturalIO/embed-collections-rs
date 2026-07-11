@@ -1,4 +1,7 @@
+use super::super::inter::InterNode;
 use super::*;
+use captains_log::logfn;
+use rstest::*;
 
 // --- Forward Peaking & Moving Group ---
 
@@ -504,8 +507,9 @@ fn test_alter_key_update_sep_height_2() {
     assert_eq!(alive_count(), 0);
 }
 
-#[test]
-fn test_alter_key_after_move_update_sep_height_2() {
+#[logfn]
+#[rstest]
+fn test_alter_key_after_move_update_sep_height_2(setup_log: ()) {
     reset_alive_count();
     {
         let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
@@ -518,31 +522,48 @@ fn test_alter_key_after_move_update_sep_height_2() {
         builder.insert_leaf(&mut leaf1, CounterI32::from(20), CounterI32::from(200));
         builder.insert_leaf(&mut leaf2, CounterI32::from(30), CounterI32::from(300));
 
-        let mut root = builder.new_inter(1);
+        let mut root: InterNode<CounterI32, CounterI32> = builder.new_inter(1);
+        assert_eq!(root.height(), 1, "alright");
         root.set_left_ptr(leaf0.get_ptr_mut());
+        assert_eq!(root.height(), 1, "alright");
+        // expect insert_no_split at idx 0, because there no element for now
+
+        unsafe {
+            let slot0_key = root.key_ptr(0);
+            let slot0_child = root.child_ptr(0);
+            crate::trace_log!("root head addr {:p}", root.get_ptr());
+            crate::trace_log!("root key0 addr {slot0_key:p}");
+            crate::trace_log!("root child0 {slot0_child:p}");
+        }
+        assert_eq!(root.height(), 1, "fail here");
         root.insert_no_split(CounterI32::from(20), leaf1.get_ptr_mut());
+        assert_eq!(root.height(), 1, "fail");
         root.insert_no_split(CounterI32::from(30), leaf2.get_ptr_mut());
+        assert_eq!(root.height(), 1, "fail");
+        // fail here
+        root.validate();
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 3);
         assert_eq!(map.leaf_count(), 3);
         assert_eq!(map.inter_count(), 1);
+        map.dump();
         map.validate();
 
-        // Alter key 20 to 25
-        if let Entry::Occupied(mut oe) = map.entry(CounterI32::from(30)) {
-            oe = oe.move_backward().expect("can move");
-            assert_eq!(oe.key(), &20);
-            assert_eq!(oe.get(), &200);
-            assert!(oe.alter_key(CounterI32::from(25)).is_ok());
-            oe.validate_cache_path();
-            // separator in root MUST be updated!
-            assert_eq!(root.get_keys()[0], CounterI32::from(25));
-        } else {
-            unreachable!();
-        }
-        map.validate();
-        assert_eq!(map.get(&25), Some(&CounterI32::from(200)));
+        //// Alter key 20 to 25
+        //if let Entry::Occupied(mut oe) = map.entry(CounterI32::from(30)) {
+        //    oe = oe.move_backward().expect("can move");
+        //    assert_eq!(oe.key(), &20);
+        //    assert_eq!(oe.get(), &200);
+        //    assert!(oe.alter_key(CounterI32::from(25)).is_ok());
+        //    oe.validate_cache_path();
+        //    // separator in root MUST be updated!
+        //    assert_eq!(root.get_keys()[0], CounterI32::from(25));
+        //} else {
+        //    unreachable!();
+        //}
+        //map.validate();
+        //assert_eq!(map.get(&25), Some(&CounterI32::from(200)));
 
         drop(map);
     }

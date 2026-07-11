@@ -386,7 +386,8 @@ impl<K: Ord, V> InterNode<K, V> {
 
     #[cfg(test)]
     pub fn insert_no_split(&mut self, key: K, ptr: *mut NodeHeader) {
-        let idx = self.search_key(&key);
+        let idx = if self.key_count() > 0 { self.search_key(&key) } else { 0 };
+        crate::trace_log!("{self:?} insert into {idx}");
         debug_assert!(!self.is_full());
         self.insert_no_split_with_idx(idx, key, ptr);
     }
