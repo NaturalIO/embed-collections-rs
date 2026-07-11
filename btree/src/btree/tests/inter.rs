@@ -266,7 +266,7 @@ fn test_inter_split_insert_right_begin() {
                 (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
             );
         }
-        node.get_header_mut().count = cap;
+        node.set_count(cap);
 
         let split_idx = cap >> 1;
         let insert_key: CounterI32 = ((split_idx * 10 + 5) as i32).into(); // Key after split_idx
@@ -330,7 +330,7 @@ fn test_inter_split_insert_right_mid() {
                 (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
             );
         }
-        node.get_header_mut().count = cap;
+        node.set_count(cap);
 
         let split_idx = cap >> 1;
         let insert_key: CounterI32 = ((split_idx * 11 + 5) as i32).into(); // Key after split_idx + 1
@@ -398,7 +398,7 @@ fn test_inter_split_insert_at_end() {
                 (0x1000 + (i + 1) * 0x100) as *mut NodeHeader,
             );
         }
-        node.get_header_mut().count = cap;
+        node.set_count(cap);
 
         let insert_key: CounterI32 = (((cap + 1) as i32) * 10).into(); // Key after split_idx + 1
         let insert_key_value = insert_key.value;
