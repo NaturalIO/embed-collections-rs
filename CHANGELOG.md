@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-dlist 0.2.0] - 2026-8-27
+
+### Changed
+
+- dlist: change remove_node signature to make miri happy
+
 ## [1.0.0] - 2026-07-09
 
 ### Changed
@@ -27,6 +33,8 @@ Split code into multiple crates (no more feature flags):
 - embed-seglist
 - embed-slist
 - embed-dlist
+
+publish  0.1.0 for all sub-crates
 
 ### Removed
 
