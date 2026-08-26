@@ -235,29 +235,84 @@ where
         self.length == 0
     }
 
-    /// Remove a node from the middle of the list
+    #[inline(always)]
+    fn _remove_node(&mut self, item: *const P::Target) {
+        unsafe {
+            let node = (*item).get_node();
+            if let Some(prev) = node.get_prev() {
+                prev.next = node.next;
+            } else {
+                self.head = node.next;
+            }
+            if let Some(next) = node.get_next() {
+                next.prev = node.prev;
+            } else {
+                self.tail = node.prev;
+            }
+            node.next = null();
+            node.prev = null();
+        }
+        self.length -= 1;
+    }
+
+    /// Remove a node by raw pointer from the middle of the list, and recover P from `item`
     ///
     /// NOTE： Due to we need to support Arc, item should be immutable reference.
     ///
     /// # Safety
     ///
-    /// The item must be already in the list, otherwise will lead to UB.
+    /// `item` should point the a valid item, which must be already in the list, otherwise will lead to UB.
+    ///
+    /// # Example
+    ///
+    /// ```
+    ///
+    /// use embed_dlist::{DLinkedList, DListItem, DListNode};
+    /// use core::cell::UnsafeCell;
+    /// extern crate alloc;
+    /// use alloc::boxed::Box;
+    ///
+    /// #[derive(Debug)]
+    /// pub struct TestNode {
+    ///     pub value: i64,
+    ///     pub node: UnsafeCell<DListNode<Self, ()>>,
+    /// }
+    ///
+    /// unsafe impl Send for TestNode {}
+    ///
+    /// unsafe impl DListItem<()> for TestNode {
+    ///     fn get_node(&self) -> &mut DListNode<Self, ()> {
+    ///         unsafe { &mut *self.node.get() }
+    ///     }
+    /// }
+    ///
+    /// fn new_node(v: i64) -> TestNode {
+    ///     TestNode { value: v, node: UnsafeCell::new(DListNode::default()) }
+    /// }
+    ///
+    /// let mut l = DLinkedList::<Box<TestNode>, ()>::new();
+    ///
+    /// let node1 = Box::new(new_node(1));
+    /// l.push_back(node1);
+    /// let node2 = Box::new(new_node(2));
+    ///
+    /// // NOTE: use `node_p = node2.as_ptr()`  will trigger miri stack borrow rule.
+    /// // we use into_raw and then from_raw
+    /// let node2_p = Box::into_raw(node2);
+    /// l.push_back(unsafe{Box::from_raw(node2_p)});
+    ///
+    /// let node3 = Box::new(new_node(3));
+    /// l.push_back(node3);
+    /// assert_eq!(l.len(), 3);
+    ///
+    /// let node2 = unsafe { l.remove_node(node2_p) };
+    /// assert_eq!(l.len(), 2);
+    /// assert_eq!(node2.value, 2);
+    /// ```
     #[inline(always)]
-    pub unsafe fn remove_node(&mut self, item: &P::Target) {
-        let node = item.get_node();
-        if let Some(prev) = node.get_prev() {
-            prev.next = node.next;
-        } else {
-            self.head = node.next;
-        }
-        if let Some(next) = node.get_next() {
-            next.prev = node.prev;
-        } else {
-            self.tail = node.prev;
-        }
-        node.next = null();
-        node.prev = null();
-        self.length -= 1;
+    pub unsafe fn remove_node(&mut self, item: *const P::Target) -> P {
+        self._remove_node(item);
+        unsafe { P::from_raw(item) }
     }
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
@@ -276,8 +331,9 @@ where
                 return;
             }
         }
-        unsafe { self.remove_node(item) };
-        self.push_front_ptr(item as *const P::Target);
+        let p = item as *const P::Target;
+        self._remove_node(p);
+        self.push_front_ptr(p);
     }
 
     /// Pushes an element to the front of the list.
@@ -331,11 +387,8 @@ where
             None
         } else {
             let head_ptr = self.head;
-            unsafe {
-                let item = &(*head_ptr);
-                self.remove_node(item);
-                Some(P::from_raw(head_ptr))
-            }
+            self._remove_node(head_ptr);
+            unsafe { Some(P::from_raw(head_ptr)) }
         }
     }
 
@@ -346,11 +399,8 @@ where
             None
         } else {
             let tail_ptr = self.tail;
-            unsafe {
-                let item = &(*tail_ptr);
-                self.remove_node(item);
-                Some(P::from_raw(tail_ptr))
-            }
+            self._remove_node(tail_ptr);
+            unsafe { Some(P::from_raw(tail_ptr)) }
         }
     }
 
@@ -1009,5 +1059,37 @@ mod tests {
         l.push_back(Box::new(new_node(3)));
         assert_eq!(l.len(), 1);
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_remove_middle() {
+        // Reset the counter before the test
+        ACTIVE_NODE_COUNT.store(0, Ordering::SeqCst);
+        {
+            let mut l = DLinkedList::<Box<TestNode>, TestTag>::new();
+
+            let node1 = Box::new(new_node(1));
+            l.push_back(node1);
+
+            let node2 = Box::new(new_node(2));
+
+            // NOTE: use `node_p = node2.as_ptr()`  will trigger miri stack borrow rule.
+            // we use into_raw and then from_raw
+            let node2_p = Box::into_raw(node2);
+            l.push_back(unsafe { Box::from_raw(node2_p) });
+
+            let node3 = Box::new(new_node(3));
+            l.push_back(node3);
+
+            assert_eq!(l.len(), 3);
+            assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
+
+            let node2 = unsafe { l.remove_node(node2_p) };
+            assert_eq!(l.len(), 2);
+            assert_eq!(node2.value, 2);
+        } // `l` goes out of scope here, triggering DLinkedList's Drop, which drains and drops nodes.
+
+        // All nodes should have been dropped
+        assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
     }
 }
