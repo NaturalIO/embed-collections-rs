@@ -49,7 +49,7 @@ all-features = true
 # enable features in the documentation
 rustdoc-args = ["--cfg", "docsrs"]
 
-[lints.clippy]
+[workspace.lints.clippy]
 new_ret_no_self = "allow"
 needless_range_loop = "allow"
 type_complexity = "allow"
@@ -60,3 +60,4 @@ new_without_default = "allow"
 result_unit_err = "allow"
 collapsible_else_if = "allow"
 collapsible_match = "allow"
+question_mark = "allow"
