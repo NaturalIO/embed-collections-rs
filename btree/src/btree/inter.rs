@@ -8,12 +8,6 @@ use core::mem::{MaybeUninit, align_of, needs_drop, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr::{self, NonNull};
 
-/// Header size at start of key area for internal nodes
-const INTER_KEY_HEAD_SIZE: usize = 8;
-
-/// Header size at start of value area for internal nodes
-const INTER_PTR_HEAD_SIZE: usize = 0;
-
 /// Internal node wrapper - wraps Node and provides internal node-specific operations
 pub(super) struct InterNode<K, V> {
     base: NodeBase,
@@ -52,39 +46,62 @@ impl<K, V> From<NonNull<NodeHeader>> for InterNode<K, V> {
     }
 }
 
+struct InterLayout {
+    key_cap: u32,
+    layout: Layout,
+    key_offset: usize,
+    ptrs_offset: usize,
+}
+
 impl<K, V> InterNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: (u32, Layout) = Self::cal_layout();
+    const LAYOUT: InterLayout = Self::cal_layout();
 
-    pub(super) const UNDERFLOW_CAP: u32 = Self::LAYOUT.0 / 3;
+    pub(super) const UNDERFLOW_CAP: u32 = Self::LAYOUT.key_cap / 3;
 
     /// return inter_key_cap, leaf_key_cap.
     /// where:
     /// - inter_key_cap + 1 inter_value_cap;
     /// assert K, V can fit into the cacheline after divided by header.
-    const fn cal_layout() -> (u32, Layout) {
+    const fn cal_layout() -> InterLayout {
+        // calculate node align
         let mut align = align_of::<K>();
-        assert!(align <= 8);
-        let key_size = size_of::<K>();
         if align < PTR_ALIGN {
             align = PTR_ALIGN;
         }
-        assert!(size_of::<NodeHeader>() == INTER_KEY_HEAD_SIZE);
+        let key_size = size_of::<K>();
         assert!(key_size <= CACHE_LINE_SIZE - 16);
-        let mut inter_key_cap = (AREA_SIZE - INTER_KEY_HEAD_SIZE) / key_size;
-        let inter_value_cap = (AREA_SIZE - INTER_PTR_HEAD_SIZE) / PTR_SIZE;
-        if inter_key_cap > inter_value_cap - 1 {
-            inter_key_cap = inter_value_cap - 1;
-        }
+        assert!(key_size > 0, "BTree key must not be a zero-sized type");
+
+        let key_offset = align_up::<K>(NODE_HEADER_SIZE);
+        let avail = NODE_SIZE - key_offset;
+        let mut cap = avail / (key_size + PTR_SIZE);
+        let ptrs_offset = loop {
+            assert!(cap > 0);
+            let _key_end = key_offset + cap * key_size;
+            let _ptrs_offset = align_up::<*mut NodeHeader>(_key_end);
+            if _ptrs_offset + (cap + 1) * PTR_SIZE <= NODE_SIZE {
+                break _ptrs_offset;
+            }
+            cap -= 1;
+        };
         match Layout::from_size_align(NODE_SIZE, align) {
-            Ok(l) => (inter_key_cap as u32, l),
+            Ok(layout) => InterLayout { key_offset, ptrs_offset, key_cap: cap as u32, layout },
             Err(_) => panic!("invalid layout"),
         }
     }
 
+    const fn key_offset() -> usize {
+        Self::LAYOUT.key_offset
+    }
+
+    const fn ptrs_offset() -> usize {
+        Self::LAYOUT.ptrs_offset
+    }
+
     #[inline(always)]
     pub unsafe fn alloc(height: u32) -> Self {
-        let mut base = NodeBase::_alloc(Self::LAYOUT.1);
+        let mut base = NodeBase::_alloc(Self::LAYOUT.layout);
         let header = base.get_ptr_mut();
         unsafe {
             (*header).height = height; // Internal nodes have height > 0
@@ -102,18 +119,21 @@ impl<K, V> InterNode<K, V> {
                     (*self.key_ptr_mut(i)).assume_init_drop();
                 }
             }
-            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
+            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.layout);
         }
     }
 
     #[cfg(test)]
     pub(super) fn get_keys(&self) -> &[K] {
-        self.base.get_array::<K>(INTER_KEY_HEAD_SIZE, 0)
+        self.base.get_array::<K>(Self::key_offset(), 0)
     }
 
+    /// return the capacity of keys array
+    ///
+    /// NOTE: the capacity of ptr array = cap + 1
     #[inline]
     pub const fn cap() -> u32 {
-        Self::LAYOUT.0
+        Self::LAYOUT.key_cap as u32
     }
 
     #[inline(always)]
@@ -143,25 +163,25 @@ impl<K, V> InterNode<K, V> {
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
-        unsafe { self.base.item_ptr::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx) }
+        unsafe { self.base.item_ptr::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
-        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(INTER_KEY_HEAD_SIZE, idx) }
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
     pub unsafe fn child_ptr(&self, idx: u32) -> *const *mut NodeHeader {
-        unsafe { self.base.item_ptr::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
+        unsafe { self.base.item_ptr::<*mut NodeHeader>(Self::ptrs_offset(), idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
     pub unsafe fn child_ptr_mut(&mut self, idx: u32) -> *mut *mut NodeHeader {
-        unsafe { self.base.item_ptr_mut::<*mut NodeHeader>(AREA_SIZE + INTER_PTR_HEAD_SIZE, idx) }
+        unsafe { self.base.item_ptr_mut::<*mut NodeHeader>(Self::ptrs_offset(), idx) }
     }
 
     #[inline(always)]
@@ -231,7 +251,7 @@ impl<K: Ord, V> InterNode<K, V> {
         Q: Ord + ?Sized,
     {
         let key_count = self.key_count();
-        let (idx, is_equal) = self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key);
+        let (idx, is_equal) = self.base._search::<K, Q>(Self::key_offset(), key_count, key);
         if is_equal { idx + 1 } else { idx }
     }
 
@@ -246,7 +266,7 @@ impl<K: Ord, V> InterNode<K, V> {
         let key_count = self.key_count();
         let (idx, is_equal) = if !*is_seq {
             // random is more likely
-            self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key)
+            self.base._search::<K, Q>(Self::key_offset(), key_count, key)
         } else {
             if key_count > 0 {
                 let key_ref: &Q =
@@ -255,7 +275,7 @@ impl<K: Ord, V> InterNode<K, V> {
                     return key_count;
                 } else {
                     *is_seq = false;
-                    self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, key_count, key)
+                    self.base._search::<K, Q>(Self::key_offset(), key_count, key)
                 }
             } else {
                 return 0;
@@ -272,8 +292,7 @@ impl<K: Ord, V> InterNode<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let (idx, _is_equal) =
-            self.base._search::<K, Q>(INTER_KEY_HEAD_SIZE, self.key_count(), key);
+        let (idx, _is_equal) = self.base._search::<K, Q>(Self::key_offset(), self.key_count(), key);
         idx
     }
 
@@ -398,8 +417,8 @@ impl<K: Ord, V> InterNode<K, V> {
         debug_assert!(self.key_count() < Self::cap());
         let _ = unsafe {
             self.base._insert::<K, *mut NodeHeader>(
-                INTER_KEY_HEAD_SIZE,
-                AREA_SIZE + PTR_SIZE, // the left ptr should not be touch
+                Self::key_offset(),
+                Self::ptrs_offset() + PTR_SIZE, // the left ptr should not be touch
                 idx,
                 key,
                 ptr,

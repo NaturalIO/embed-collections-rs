@@ -1,3 +1,10 @@
+/*
+LeafNode layout:
+
+    NODE_SIZE(8B NodeHeader | alignment | Keys | alignment | values | alignment | 16B LeafPtrs )
+
+*/
+
 use super::node::*;
 use crate::{CACHE_LINE_SIZE, trace_log};
 use alloc::alloc::{Layout, dealloc};
@@ -89,21 +96,22 @@ impl<K, V> LeafNode<K, V> {
         if align < PTR_ALIGN {
             align = PTR_ALIGN;
         }
-        assert!(size_of::<K>() > 0, "BTree key must not be a zero-sized type");
-        let key_offset = align_up::<K>(NODE_HEADER_SIZE);
-        let avail = NODE_SIZE - LEAF_PTR_SIZE - key_offset;
         let key_size = size_of::<K>();
         let value_size = size_of::<V>();
-        // should be align to align_of
         assert!(key_size <= CACHE_LINE_SIZE - 16);
         assert!(value_size <= CACHE_LINE_SIZE - 16);
+        assert!(key_size > 0, "BTree key must not be a zero-sized type");
+
+        let key_offset = align_up::<K>(NODE_HEADER_SIZE);
+        let end = NODE_SIZE - LEAF_PTR_SIZE;
+        let avail = end - key_offset;
         let mut cap = avail / (key_size + value_size);
         let value_offset = loop {
             assert!(cap > 0);
             let _key_end = key_offset + cap * key_size;
             let _val_offset = align_up::<V>(_key_end);
             let _val_end = _val_offset + cap * value_size;
-            if _val_end <= NODE_SIZE - LEAF_PTR_SIZE {
+            if _val_end <= end {
                 break _val_offset;
             }
             cap -= 1;

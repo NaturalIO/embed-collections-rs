@@ -1,3 +1,10 @@
+/*
+InterNode Layout:
+
+    NODE_SIZE( 8B NodeHeader | alignment | Keys | alignment | values)
+
+*/
+
 use super::{inter::*, leaf::*};
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, alloc, handle_alloc_error};
@@ -17,12 +24,6 @@ pub(super) const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
 pub(super) const PTR_SIZE: usize = size_of::<*mut NodeHeader>();
 pub(super) const PTR_ALIGN: usize = align_of::<*mut NodeHeader>();
 pub(super) const NODE_HEADER_SIZE: usize = size_of::<NodeHeader>();
-
-/*
-The Layout:
-- InterNode: CACHELINE( 8B NodeHeader | Keys | alignment ),  CACHELINE(Values)
-- LeafNode: CACHELINE(8B NodeHeader | 8B padding | Keys | alignment), CACHELINE( 16B LeafPtrs, values )
-*/
 
 /// Node header (8 bytes at start of key area)
 /// height: 0 = leaf node, >0 = internal node (height of subtree)
