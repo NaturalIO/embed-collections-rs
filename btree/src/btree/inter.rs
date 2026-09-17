@@ -46,16 +46,17 @@ impl<K, V> From<NonNull<NodeHeader>> for InterNode<K, V> {
     }
 }
 
-struct InterLayout {
-    key_cap: u32,
-    layout: Layout,
-    key_offset: usize,
-    ptrs_offset: usize,
+// pub for test
+pub(super) struct InterLayout {
+    pub key_cap: u32,
+    pub layout: Layout,
+    pub key_offset: usize,
+    pub ptrs_offset: usize,
 }
 
 impl<K, V> InterNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: InterLayout = Self::cal_layout();
+    pub(super) const LAYOUT: InterLayout = Self::cal_layout();
 
     pub(super) const UNDERFLOW_CAP: u32 = Self::LAYOUT.key_cap / 3;
 

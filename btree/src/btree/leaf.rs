@@ -72,16 +72,17 @@ impl<K, V> From<NonNull<NodeHeader>> for LeafNode<K, V> {
     }
 }
 
-struct LeafLayout {
-    cap: usize,
-    layout: Layout,
-    key_offset: usize,
-    value_offset: usize,
+// pub for test
+pub(super) struct LeafLayout {
+    pub cap: usize,
+    pub layout: Layout,
+    pub key_offset: usize,
+    pub value_offset: usize,
 }
 
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: LeafLayout = Self::cal_layout();
+    pub(super) const LAYOUT: LeafLayout = Self::cal_layout();
 
     /// where:
     /// - leaf_key_cap = leaf_value_cap;
@@ -366,7 +367,7 @@ impl<K, V> LeafNode<K, V> {
             let item_p = self.item_ptr_mut::<T>(header_offset, idx);
             let item = item_p.read();
             left -= idx;
-            if left > 0 {
+            if left > 0 && size_of::<T>() > 0 {
                 ptr::copy(item_p.add(1), item_p, left as usize);
             }
             item
@@ -413,7 +414,9 @@ impl<K, V> LeafNode<K, V> {
             idx -= 1;
             if idx > 0 {
                 ptr::copy(first_key_p.add(1), first_key_p, idx as usize);
-                ptr::copy(first_val_p.add(1), first_val_p, idx as usize);
+                if size_of::<V>() > 0 {
+                    ptr::copy(first_val_p.add(1), first_val_p, idx as usize);
+                }
             }
             (*self.key_ptr_mut(idx)).write(key);
             let value_p = self.value_ptr_mut(idx);
@@ -444,10 +447,12 @@ impl<K, V> LeafNode<K, V> {
             let first_key = self.key_ptr_mut(0);
             let dst_key = left_node.key_ptr_mut(left_count);
             ptr::copy_nonoverlapping(first_key, dst_key, copy_count as usize);
-            // copy values using bulk copy
-            let first_val = self.value_ptr_mut(0);
-            let dst_val = left_node.value_ptr_mut(left_count);
-            ptr::copy_nonoverlapping(first_val, dst_val, copy_count as usize);
+            if size_of::<V>() > 0 {
+                // copy values using bulk copy
+                let first_val = self.value_ptr_mut(0);
+                let dst_val = left_node.value_ptr_mut(left_count);
+                ptr::copy_nonoverlapping(first_val, dst_val, copy_count as usize);
+            }
             left_node.inc_count(copy_count);
         }
     }
@@ -481,10 +486,12 @@ impl<K, V> LeafNode<K, V> {
                 let dst_key = right_node.key_ptr_mut(right_count);
                 ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
-                // Move values using bulk copy
-                let src_val = self.value_ptr_mut(start_idx);
-                let dst_val = right_node.value_ptr_mut(right_count);
-                ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
+                if size_of::<V>() > 0 {
+                    // Move values using bulk copy
+                    let src_val = self.value_ptr_mut(start_idx);
+                    let dst_val = right_node.value_ptr_mut(right_count);
+                    ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
+                }
             } else {
                 // Prepend to head of right_node
                 // Shift existing elements in right_node to make space
@@ -493,9 +500,11 @@ impl<K, V> LeafNode<K, V> {
                     let dst_key = right_node.key_ptr_mut(copy_count);
                     ptr::copy(src_key, dst_key, right_count as usize);
 
-                    let src_val = right_node.value_ptr_mut(0);
-                    let dst_val = right_node.value_ptr_mut(copy_count);
-                    ptr::copy(src_val, dst_val, right_count as usize);
+                    if size_of::<V>() > 0 {
+                        let src_val = right_node.value_ptr_mut(0);
+                        let dst_val = right_node.value_ptr_mut(copy_count);
+                        ptr::copy(src_val, dst_val, right_count as usize);
+                    }
                 }
 
                 // Move new elements to the front
@@ -503,9 +512,11 @@ impl<K, V> LeafNode<K, V> {
                 let dst_key = right_node.key_ptr_mut(0);
                 ptr::copy_nonoverlapping(src_key, dst_key, copy_count as usize);
 
-                let src_val = self.value_ptr_mut(start_idx);
-                let dst_val = right_node.value_ptr_mut(0);
-                ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
+                if size_of::<V>() > 0 {
+                    let src_val = self.value_ptr_mut(start_idx);
+                    let dst_val = right_node.value_ptr_mut(0);
+                    ptr::copy_nonoverlapping(src_val, dst_val, copy_count as usize);
+                }
             }
             right_node.inc_count(copy_count);
         }

@@ -111,10 +111,7 @@ impl NodeBase {
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *const T {
-        let mut v_size = size_of::<T>();
-        if v_size == 0 {
-            v_size = 1;
-        }
+        let v_size = size_of::<T>();
         unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
     }
 
@@ -125,10 +122,7 @@ impl NodeBase {
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr_mut<T>(&mut self, start_offset: usize, idx: u32) -> *mut T {
-        let mut v_size = size_of::<T>();
-        if v_size == 0 {
-            v_size = 1;
-        }
+        let v_size = size_of::<T>();
         unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
     }
 
@@ -212,7 +206,9 @@ impl NodeBase {
             }
             key_p.write(key);
             let value_p = self.item_ptr_mut::<V>(value_header_offset, idx);
-            if idx < count {
+            // if V is ZST, value_p will overlap with key space,
+            // don't worry, ptr write with ZST will do nothing
+            if idx < count && size_of::<V>() > 0 {
                 ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
             }
             value_p.write(value);

@@ -65,6 +65,17 @@ fn test_unblanced_cap() {
 fn test_zero_size() {
     let (inter_cap, leaf_cap) = BTreeMap::<u8, ()>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
+
+    let inter_layout = InterNode::<u8, ()>::LAYOUT;
+    println!(
+        "inter_layout for u8, (), key_offset: {}, ptr_offset: {}",
+        inter_layout.key_offset, inter_layout.ptrs_offset
+    );
+    let leaf_layout = LeafNode::<u8, ()>::LAYOUT;
+    println!(
+        "leaf_layout for u8, (), key_offset: {}, value_offset: {} ",
+        leaf_layout.key_offset, leaf_layout.value_offset
+    );
     let mut map: BTreeMap<u8, ()> = BTreeMap::new();
     for i in 0u8..=u8::MAX {
         map.insert(i, ());
