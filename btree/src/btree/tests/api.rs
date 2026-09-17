@@ -47,6 +47,21 @@ fn test_simple() {
 }
 
 #[test]
+fn test_unblanced_cap() {
+    let (inter_cap, leaf_cap) = BTreeMap::<u32, u32>::cap();
+    println!("cap 32/32: inter {inter_cap} leaf {leaf_cap}");
+    let (inter_cap_1, leaf_cap_1) = BTreeMap::<u32, u64>::cap();
+    println!("cap 32/64: inter {inter_cap_1} leaf {leaf_cap_1}");
+    assert_eq!(inter_cap, inter_cap_1);
+    assert!(leaf_cap > leaf_cap_1);
+    let (inter_cap_2, leaf_cap_2) = BTreeMap::<u64, u64>::cap();
+    println!("cap 64/64: inter {inter_cap_2} leaf {leaf_cap_2}");
+    let (inter_cap_3, leaf_cap_3) = BTreeMap::<u64, ()>::cap();
+    println!("cap 64/() inter {inter_cap_3} leaf {leaf_cap_3}");
+    assert!(leaf_cap_3 > leaf_cap_2);
+}
+
+#[test]
 fn test_zero_size() {
     let (inter_cap, leaf_cap) = BTreeMap::<u8, ()>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
