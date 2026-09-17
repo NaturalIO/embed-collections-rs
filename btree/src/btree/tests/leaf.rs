@@ -326,12 +326,13 @@ fn test_btree_split_leaf_insert_in_middle() {
 
     // Fill with even numbers: 0, 2, 4, 6, ...
     for i in 0..cap {
-        assert_eq!(map.insert((i * 2) as i32, (i * 20) as i32), None);
+        let key = (i * 2) as i32;
+        assert_eq!(map.insert(key, (i * 20) as i32), None);
         map.validate();
     }
 
     // Insert an odd number in the middle (cap - 1 is odd and not in the sequence)
-    let insert_key = (cap - 1) as i32;
+    let insert_key = (cap - 1) as i32 * 2 - 1;
     assert_eq!(map.insert(insert_key, insert_key * 10), None);
     map.validate();
     assert_eq!(map.len(), cap + 1);

@@ -21,7 +21,7 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
     let leaf_cap = builder.leaf_cap();
-    let min_count = (leaf_cap + 1) / 2;
+    let min_count = leaf_cap / 2;
     {
         assert!(min_count > 2);
 
@@ -158,7 +158,7 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
 
     let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
     let leaf_cap = builder.leaf_cap();
-    let min_count = (leaf_cap + 1) / 2;
+    let min_count = leaf_cap / 2;
     assert!(min_count > 2);
     {
         // Create three leaf nodes
@@ -197,6 +197,11 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
         assert_eq!(map.len(), (leaf_cap + 2 * min_count) as usize);
         assert_eq!(map.height(), 2);
         map.validate();
+
+        {
+            let root = map.get_root_unwrap().into_inter();
+            assert_eq!(root.key_count(), 2);
+        }
 
         // Remove elements from middle leaf to trigger merge with right
         let delete_key = (leaf_cap) as i32 * 2;
@@ -742,7 +747,7 @@ fn test_leaf_del_merge_with_right_height_3(setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
     let leaf_cap = builder.leaf_cap();
-    let min_count = (leaf_cap + 1) / 2;
+    let min_count = leaf_cap / 2;
     assert!(min_count > 2);
     {
         // Create leaf nodes
@@ -1009,7 +1014,7 @@ fn test_leaf_del_remove_only_child_cascade(setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
     let leaf_cap = builder.leaf_cap();
-    let min_count = (leaf_cap + 1) / 2;
+    let min_count = leaf_cap / 2;
     assert!(min_count > 2);
     {
         // Create three leaves: left (full), mid (half-full), right (half-full)
