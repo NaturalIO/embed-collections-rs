@@ -100,17 +100,19 @@ crate: [embed-btree](https://docs.rs/embed-btree)
 We provide a `BTreeMap` for single-threaded long-term in-memory storage.
 It's a cache aware b+tree:
 
+- Being B+Tree, the leaves are linked, provide faster iteration and teardown.
 - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
   - Capacity in compile-time determined according to the size of Key, Value.
   - Reduce memory fragmentation by alignment.
 - **Optimised for numeric key**
   - Respecting numeric space for sequential insertion.
   - Reduce latency for sequential insertion.
-- Faster iteration and teardown
+- Bytes keys on the heap are supported, but we will not do prefix compress.
+- Support unbalanced size K / V, and 0-size V, will fill the space (to increase fanout) as much as it could.
 - **Limitation**:
   - K should have clone (for propagate into the InterNode during split)
   - K & V should <= CACHE_LINE_SIZE - 16
-    - It make sure InterNode can hold  at least two children.
+    - It make sure InterNode can hold at least two children.
     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
 - **Special API**:
   - Peak and move to previous/next `Entry` (for modification).

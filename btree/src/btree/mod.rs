@@ -12,8 +12,6 @@
 //! - Support string keys, but optimization is non-goal
 //!   - You may look for other structures with prefix compression: Art, Masstree.
 //! - Nodes are filled up in 4 cache lines (256 bytes on x86_64)
-//!   - keys stored in first 128B (with header)
-//!   - Values/pointers stored in last 128B
 //!   - the capacity is calculated according to the size of K, V
 //! - **Limitation**:
 //!   - K should have clone (for propagate into the InterNode during split)
