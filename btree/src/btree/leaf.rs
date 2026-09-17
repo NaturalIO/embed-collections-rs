@@ -65,42 +65,61 @@ impl<K, V> From<NonNull<NodeHeader>> for LeafNode<K, V> {
     }
 }
 
+struct LeafLayout {
+    cap: usize,
+    layout: Layout,
+    key_offset: usize,
+    value_offset: usize,
+}
+
 impl<K, V> LeafNode<K, V> {
     /// (inter_key_cap, leaf_key_cap)
-    const LAYOUT: (u32, Layout) = Self::cal_layout();
+    const LAYOUT: LeafLayout = Self::cal_layout();
 
     /// where:
     /// - leaf_key_cap = leaf_value_cap;
     ///
     /// assert K, V can fit into the cacheline after divided by header.
-    const fn cal_layout() -> (u32, Layout) {
+    const fn cal_layout() -> LeafLayout {
+        // calculate node align
         let mut align = align_of::<K>();
-        assert!(align <= 8);
-        assert!(align_of::<V>() <= 8);
         if align < align_of::<V>() {
             align = align_of::<V>();
         }
         if align < PTR_ALIGN {
             align = PTR_ALIGN;
         }
+        assert!(size_of::<K>() > 0, "BTree key must not be a zero-sized type");
+        let key_offset = align_up::<K>(NODE_HEADER_SIZE);
+        let avail = NODE_SIZE - LEAF_PTR_SIZE - key_offset;
         let key_size = size_of::<K>();
-        let mut value_size = size_of::<V>();
+        let value_size = size_of::<V>();
         // should be align to align_of
         assert!(key_size <= CACHE_LINE_SIZE - 16);
         assert!(value_size <= CACHE_LINE_SIZE - 16);
-        let mut leaf_key_cap = (AREA_SIZE - LEAF_PTR_SIZE) / key_size;
-        if value_size == 0 {
-            // make sure we don't divide by zero
-            value_size = 1;
-        }
-        let leaf_value_cap = (AREA_SIZE - LEAF_PTR_SIZE) / value_size;
-        if leaf_key_cap > leaf_value_cap {
-            leaf_key_cap = leaf_value_cap;
-        }
+        let mut cap = avail / (key_size + value_size);
+        let value_offset = loop {
+            assert!(cap > 0);
+            let _key_end = key_offset + cap * key_size;
+            let _val_offset = align_up::<V>(_key_end);
+            let _val_end = _val_offset + cap * value_size;
+            if _val_end <= NODE_SIZE - LEAF_PTR_SIZE {
+                break _val_offset;
+            }
+            cap -= 1;
+        };
         match Layout::from_size_align(NODE_SIZE, align) {
-            Ok(l) => (leaf_key_cap as u32, l),
+            Ok(layout) => LeafLayout { key_offset, value_offset, cap, layout },
             Err(_) => panic!("invalid layout"),
         }
+    }
+
+    const fn key_offset() -> usize {
+        Self::LAYOUT.key_offset
+    }
+
+    const fn value_offset() -> usize {
+        Self::LAYOUT.value_offset
     }
 
     #[inline(always)]
@@ -110,7 +129,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline(always)]
     pub unsafe fn alloc() -> Self {
-        let mut base = NodeBase::_alloc(Self::LAYOUT.1);
+        let mut base = NodeBase::_alloc(Self::LAYOUT.layout);
         let header = base.get_ptr_mut();
         unsafe {
             (*header).height = 0; // Leaf nodes have height 0
@@ -141,7 +160,7 @@ impl<K, V> LeafNode<K, V> {
                     }
                 }
             }
-            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.1);
+            dealloc(self.base.header.as_ptr() as *mut u8, Self::LAYOUT.layout);
         }
     }
 
@@ -174,12 +193,12 @@ impl<K, V> LeafNode<K, V> {
 
     #[cfg(test)]
     pub fn get_keys(&self) -> &[K] {
-        self.base.get_array::<K>(LEAF_PTR_SIZE, 0)
+        self.base.get_array::<K>(Self::key_offset(), 0)
     }
 
     #[cfg(test)]
     pub fn get_values(&self) -> &[V] {
-        self.base.get_array::<V>(AREA_SIZE, 0)
+        self.base.get_array::<V>(Self::value_offset(), 0)
     }
 
     #[inline]
@@ -199,25 +218,25 @@ impl<K, V> LeafNode<K, V> {
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
-        unsafe { self.base.item_ptr::<MaybeUninit<K>>(LEAF_PTR_SIZE, idx) }
+        unsafe { self.base.item_ptr::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to key at index
     #[inline(always)]
     pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
-        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(LEAF_PTR_SIZE, idx) }
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
     pub unsafe fn value_ptr(&self, idx: u32) -> *const MaybeUninit<V> {
-        unsafe { self.base.item_ptr::<MaybeUninit<V>>(AREA_SIZE, idx) }
+        unsafe { self.base.item_ptr::<MaybeUninit<V>>(Self::value_offset(), idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
     pub unsafe fn value_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<V> {
-        unsafe { self.base.item_ptr_mut::<MaybeUninit<V>>(AREA_SIZE, idx) }
+        unsafe { self.base.item_ptr_mut::<MaybeUninit<V>>(Self::value_offset(), idx) }
     }
 
     /// Get pointer to LeafPtrs
@@ -256,7 +275,7 @@ impl<K, V> LeafNode<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.base._search::<K, Q>(LEAF_PTR_SIZE, self.key_count(), key)
+        self.base._search::<K, Q>(Self::key_offset(), self.key_count(), key)
     }
 
     /// search the position to insert
@@ -278,7 +297,7 @@ impl<K, V> LeafNode<K, V> {
                 return (0, false);
             }
         }
-        self.base._search::<K, Q>(LEAF_PTR_SIZE, count, key)
+        self.base._search::<K, Q>(Self::key_offset(), count, key)
     }
 
     /// Insert key-value at index (assuming there is space)
@@ -287,7 +306,7 @@ impl<K, V> LeafNode<K, V> {
     pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
         debug_assert!(self.key_count() < Self::cap());
         unsafe {
-            self.base._insert::<K, V>(LEAF_PTR_SIZE, AREA_SIZE + LEAF_PTR_SIZE, idx, key, value)
+            self.base._insert::<K, V>(Self::key_offset(), Self::value_offset(), idx, key, value)
         }
     }
 
@@ -308,8 +327,8 @@ impl<K, V> LeafNode<K, V> {
     #[inline]
     pub fn remove_pair_no_borrow(&mut self, idx: u32) -> (K, V) {
         let left = self.key_count() - 1;
-        let key = self._remove_slot::<K>(LEAF_PTR_SIZE, idx, left);
-        let value = self._remove_slot::<V>(AREA_SIZE + LEAF_PTR_SIZE, idx, left);
+        let key = self._remove_slot::<K>(Self::key_offset(), idx, left);
+        let value = self._remove_slot::<V>(Self::value_offset(), idx, left);
         self.set_count(left);
         (key, value)
     }
@@ -318,7 +337,7 @@ impl<K, V> LeafNode<K, V> {
     pub fn remove_value_no_borrow(&mut self, idx: u32) -> V {
         let left = self.key_count() - 1;
         unsafe {
-            let key_p = self.item_ptr_mut::<MaybeUninit<K>>(LEAF_PTR_SIZE, idx);
+            let key_p = self.key_ptr_mut(idx);
             if needs_drop::<K>() {
                 (*key_p).assume_init_drop();
             }
@@ -326,7 +345,7 @@ impl<K, V> LeafNode<K, V> {
                 ptr::copy(key_p.add(1), key_p, (left - idx) as usize);
             }
         }
-        let value = self._remove_slot::<V>(AREA_SIZE + LEAF_PTR_SIZE, idx, left);
+        let value = self._remove_slot::<V>(Self::value_offset(), idx, left);
         self.set_count(left);
         value
     }
@@ -357,7 +376,7 @@ impl<K, V> LeafNode<K, V> {
 
     #[inline]
     pub const fn cap() -> u32 {
-        Self::LAYOUT.0
+        Self::LAYOUT.cap as u32
     }
 
     #[inline(always)]

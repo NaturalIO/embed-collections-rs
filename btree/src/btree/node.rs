@@ -16,6 +16,7 @@ pub(super) const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
 
 pub(super) const PTR_SIZE: usize = size_of::<*mut NodeHeader>();
 pub(super) const PTR_ALIGN: usize = align_of::<*mut NodeHeader>();
+pub(super) const NODE_HEADER_SIZE: usize = size_of::<NodeHeader>();
 
 /*
 The Layout:
@@ -363,4 +364,10 @@ pub(super) fn borrow_key_from_bound<Q: ?Sized>(bound: Bound<&Q>) -> Option<&Q> {
         Bound::Included(key) => Some(key),
         Bound::Excluded(key) => Some(key),
     }
+}
+
+#[inline]
+pub(crate) const fn align_up<T>(offset: usize) -> usize {
+    let align = align_of::<T>();
+    if align <= 1 { offset } else { (offset + align - 1) & !(align - 1) }
 }
