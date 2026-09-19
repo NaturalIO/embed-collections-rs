@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - btree: Fix entry peek_forward()/peek_backward() lifetime to defence UB (ent.insert will changed the peek value ref)
 
+### Added
+
+- btree: Impl PartialEq & Debug for VariousMap & BTreeMap
+
 ## [embed-btree 0.2.0] - 2026-09-17
 
 ### Changed
