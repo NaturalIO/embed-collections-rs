@@ -119,7 +119,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_backward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         match self {
             Entry::Occupied(ent) => ent.peek_backward(),
             Entry::Vacant(ent) => ent.peek_backward(),
@@ -128,7 +129,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Entry<'a, K, V> {
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_forward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         match self {
             Entry::Occupied(ent) => ent.peek_forward(),
             Entry::Vacant(ent) => ent.peek_forward(),
@@ -236,7 +238,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_backward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
         unsafe {
             if let Some((k, v)) = cursor.prev_pair() {
@@ -248,7 +251,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_forward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
         unsafe {
             if let Some((k, v)) = cursor.next_pair() {
@@ -384,7 +388,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
-    pub fn peek_backward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_backward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         if let Some(leaf) = self.leaf.as_ref() {
             // The key of previous pos is always smaller than self.key ;
             // the key at current idx (if exists) must larger than self.key.
@@ -400,7 +405,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> VacantEntry<'a, K, V> {
 
     /// Peak the next OccupiedEntry
     #[inline(always)]
-    pub fn peek_forward(&self) -> Option<(&'a K, &'a V)> {
+    #[allow(clippy::needless_lifetimes)]
+    pub fn peek_forward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         if let Some(leaf) = self.leaf.as_ref() {
             unsafe {
                 if let Some((k, v)) = leaf.get_raw_pair(self.idx) {
