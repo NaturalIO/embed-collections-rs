@@ -97,7 +97,7 @@ which lead to the first InterNode allocation.
 
 use core::borrow::Borrow;
 use core::cell::UnsafeCell;
-use core::fmt::Debug;
+use core::fmt::{self, Debug};
 use core::ops::{Bound, RangeBounds};
 use core::ptr::NonNull;
 mod cursor;
@@ -1534,5 +1534,39 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> IntoIterator for &'a mut BTreeMap<K, 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized + PartialEq> PartialEq for BTreeMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut this_iter = self.iter();
+        let mut other_iter = other.iter();
+        loop {
+            let this_item = this_iter.next();
+            let other_item = other_iter.next();
+            if this_item == other_item {
+                if this_item.is_some() {
+                    continue;
+                } else {
+                    return true;
+                }
+            } else {
+                return false;
+            }
+        }
+    }
+}
+
+impl<K: Ord + Clone + Sized + Debug, V: Sized + Debug> Debug for BTreeMap<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let _ = write!(f, "{{");
+        let mut iter = self.iter();
+        while let Some((k, v)) = iter.next() {
+            let _ = write!(f, "{k:?}:{v:?}");
+            if iter.len() > 0 {
+                let _ = write!(f, ",");
+            }
+        }
+        write!(f, "}}")
     }
 }
