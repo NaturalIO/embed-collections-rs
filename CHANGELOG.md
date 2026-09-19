@@ -15,7 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [embed-bree 0.2.0] - 2026-09-17
+## [embed-btree 0.3.0] - 2026-09-19
+
+### Fixed
+
+- btree: Fix entry peek_forward()/peek_backward() lifetime to defence UB (ent.insert will changed the peek value ref)
+
+## [embed-btree 0.2.0] - 2026-09-17
 
 ### Changed
 

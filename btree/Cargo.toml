@@ -1,6 +1,6 @@
 [package]
 name = "embed-btree"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Cpu-cache aware b+tree with extened cursor/entry API"
