@@ -7,6 +7,7 @@
 use alloc::collections::BTreeMap;
 use alloc::collections::btree_map;
 use core::borrow::Borrow;
+use core::fmt::{self, Debug};
 use core::mem::MaybeUninit;
 use core::option;
 
@@ -822,6 +823,40 @@ where
         V: Default,
     {
         self.or_insert_with(Default::default)
+    }
+}
+
+impl<K: Ord + Clone + Sized, V: Sized + PartialEq> PartialEq for VariousMap<K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut this_iter = self.iter();
+        let mut other_iter = other.iter();
+        loop {
+            let this_item = this_iter.next();
+            let other_item = other_iter.next();
+            if this_item == other_item {
+                if this_item.is_some() {
+                    continue;
+                } else {
+                    return true;
+                }
+            } else {
+                return false;
+            }
+        }
+    }
+}
+
+impl<K: Ord + Clone + Sized + Debug, V: Sized + Debug> Debug for VariousMap<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let _ = write!(f, "{{");
+        let mut iter = self.iter();
+        while let Some((k, v)) = iter.next() {
+            let _ = write!(f, "{k:?}:{v:?}");
+            if iter.len() > 0 {
+                let _ = write!(f, ",");
+            }
+        }
+        write!(f, "}}")
     }
 }
 
