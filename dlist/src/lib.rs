@@ -802,6 +802,46 @@ mod tests {
     }
 
     #[test]
+    fn test_pop_front_arc() {
+        let mut l = DLinkedList::<Arc<TestNode>, TestTag>::new();
+
+        let node1 = Arc::new(new_node(1));
+        l.push_front(node1);
+
+        let node2 = Arc::new(new_node(2));
+        l.push_front(node2);
+
+        let node3 = Arc::new(new_node(3));
+        l.push_front(node3);
+
+        let mut iter = l.iter();
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert!(iter.next().is_none());
+
+        let del_node = l.pop_front();
+        assert_eq!(2, l.len());
+        assert!(del_node.is_some());
+        // Note: The value returned by Arc::from_raw must still be used.
+        assert!(del_node.is_some());
+
+        // Check the order of remaining elements
+        let mut iter = l.iter();
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert!(iter.next().is_none());
+
+        {
+            assert_eq!(l.pop_front().unwrap().value, 2);
+            assert_eq!(l.pop_front().unwrap().value, 1);
+            assert!(l.pop_front().is_none());
+            assert!(l.pop_back().is_none());
+        }
+        assert_eq!(l.len(), 0);
+    }
+
+    #[test]
     fn test_iter_box() {
         let mut l = DLinkedList::<Box<TestNode>, TestTag>::new();
 
