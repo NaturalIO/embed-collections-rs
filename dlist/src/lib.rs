@@ -327,23 +327,24 @@ where
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
     ///
-    /// NOTE： Due to we need to support Arc, item should be immutable reference.
+    /// NOTE： Due to avoid miri stack borrow rule error, `item` is a raw pointer.
     ///
     /// # Safety
     ///
     /// The item must be in the list, otherwise will lead to UB.
     #[inline(always)]
-    pub unsafe fn peak(&mut self, item: &P::Target) {
+    pub unsafe fn peak(&mut self, item: *const P::Target) {
         assert!(!self.head.is_null());
-        if !self.head.is_null() {
-            let head_node = unsafe { (*self.head).get_node() } as *const DListNode<P::Target, Tag>;
-            if ptr::eq(head_node, item.get_node()) {
-                return;
+        unsafe {
+            if !self.head.is_null() {
+                let head_node = (*self.head).get_node() as *const DListNode<P::Target, Tag>;
+                if ptr::eq(head_node, (*item).get_node()) {
+                    return;
+                }
             }
+            self._remove_node(item);
+            self.push_front_ptr(item);
         }
-        let p = item as *const P::Target;
-        self._remove_node(p);
-        self.push_front_ptr(p);
     }
 
     /// Pushes an element to the front of the list.
@@ -1149,5 +1150,45 @@ mod tests {
 
         // All nodes should have been dropped
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_peak_arc() {
+        let mut l = DLinkedList::<Arc<TestNode>, TestTag>::new();
+
+        let node1 = Arc::new(new_node(1));
+        l.push_back(node1);
+
+        let node2 = Arc::new(new_node(2));
+        l.push_back(node2);
+
+        let node3 = Arc::new(new_node(3));
+        l.push_back(node3.clone());
+
+        let mut iter = l.iter();
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert!(iter.next().is_none());
+
+        let node3_p = Arc::as_ptr(&node3);
+
+        unsafe { l.peak(node3_p) };
+
+        // Check the order of remaining elements
+        let mut iter = l.iter();
+        assert_eq!(iter.next().unwrap().value, 3);
+        assert_eq!(iter.next().unwrap().value, 1);
+        assert_eq!(iter.next().unwrap().value, 2);
+        assert!(iter.next().is_none());
+
+        {
+            let mut drain = l.drain();
+            assert_eq!(drain.next().unwrap().value, 3);
+            assert_eq!(drain.next().unwrap().value, 1);
+            assert_eq!(drain.next().unwrap().value, 2);
+            assert!(drain.next().is_none());
+        }
+        assert_eq!(l.len(), 0);
     }
 }
