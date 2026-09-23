@@ -127,12 +127,12 @@ unsafe impl<T, Tag> Send for DListNode<T, Tag> {}
 impl<T: DListItem<Tag>, Tag> DListNode<T, Tag> {
     #[inline]
     fn get_prev<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
-        if self.prev.is_null() { None } else { unsafe { Some((*self.prev).get_node()) } }
+        unsafe { if !self.prev.is_null() { Some((*self.prev).get_node()) } else { None } }
     }
 
     #[inline]
     fn get_next<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
-        if self.next.is_null() { None } else { unsafe { Some((*self.next).get_node()) } }
+        unsafe { if !self.next.is_null() { Some((*self.next).get_node()) } else { None } }
     }
 }
 
@@ -383,37 +383,37 @@ where
 
     /// Removes and returns the element at the front of the list.
     pub fn pop_front(&mut self) -> Option<P> {
-        if self.head.is_null() {
-            None
-        } else {
+        if !self.head.is_null() {
             let head_ptr = self.head;
             self._remove_node(head_ptr);
             unsafe { Some(P::from_raw(head_ptr)) }
+        } else {
+            None
         }
     }
 
     /// Removes and returns the element at the back of the list.
     #[inline]
     pub fn pop_back(&mut self) -> Option<P> {
-        if self.tail.is_null() {
-            None
-        } else {
+        if !self.tail.is_null() {
             let tail_ptr = self.tail;
             self._remove_node(tail_ptr);
             unsafe { Some(P::from_raw(tail_ptr)) }
+        } else {
+            None
         }
     }
 
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
-        if self.head.is_null() { None } else { unsafe { Some(&(*self.head)) } }
+        unsafe { if !self.head.is_null() { Some(&(*self.head)) } else { None } }
     }
 
     /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
-        if self.tail.is_null() { None } else { unsafe { Some(&(*self.tail)) } }
+        unsafe { if !self.tail.is_null() { Some(&(*self.tail)) } else { None } }
     }
 
     /// Checks if the given node is the head of the list.
