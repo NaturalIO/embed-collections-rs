@@ -221,14 +221,14 @@ where
         let node = item.as_ref().get_node();
         node.next = null();
         let ptr = item.into_raw();
-        if self.tail.is_null() {
-            // List is empty
-            self.head = ptr;
-        } else {
+        if !self.tail.is_null() {
             // List is not empty, update current tail's next
             unsafe {
                 (*self.tail).get_node().next = ptr;
             }
+        } else {
+            // List is empty
+            self.head = ptr;
         }
         self.tail = ptr;
         self.length += 1;
@@ -250,9 +250,7 @@ where
 
     /// Removes the first element and returns it (FIFO: dequeue).
     pub fn pop_front(&mut self) -> Option<P> {
-        if self.head.is_null() {
-            None
-        } else {
+        if !self.head.is_null() {
             let head_ptr = self.head;
             let node = unsafe { (*head_ptr).get_node() };
             let next_ptr = node.next;
@@ -270,19 +268,21 @@ where
             self.length -= 1;
 
             Some(unsafe { P::from_raw(head_ptr) })
+        } else {
+            None
         }
     }
 
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
-        if self.head.is_null() { None } else { unsafe { Some(&(*self.head)) } }
+        if !self.head.is_null() { unsafe { Some(&(*self.head)) } } else { None }
     }
 
     /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
-        if self.tail.is_null() { None } else { unsafe { Some(&(*self.tail)) } }
+        if !self.tail.is_null() { unsafe { Some(&(*self.tail)) } } else { None }
     }
 
     /// Checks if the given node is the head of the list.
@@ -349,19 +349,20 @@ where
 {
     type Item = &'a P::Target;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if self.cur.is_null() {
-            if self.list.head.is_null() {
-                return None;
+        if !self.cur.is_null() {
+            let next = unsafe { (*self.cur).get_node().next };
+            if !next.is_null() {
+                self.cur = next;
             } else {
-                self.cur = self.list.head;
+                return None;
             }
         } else {
-            let next = unsafe { (*self.cur).get_node().next };
-            if next.is_null() {
-                return None;
+            if !self.list.head.is_null() {
+                self.cur = self.list.head;
             } else {
-                self.cur = next;
+                return None;
             }
         }
         unsafe { Some(&(*self.cur)) }
