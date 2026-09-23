@@ -236,32 +236,43 @@ where
     }
 
     #[inline(always)]
-    fn _remove_node(&mut self, item: *const P::Target) {
+    fn _remove_node(&mut self, item: *const P::Target) -> bool {
+        let mut removed = false;
         unsafe {
             let node = (*item).get_node();
             if let Some(prev) = node.get_prev() {
                 prev.next = node.next;
-            } else {
+                removed = true;
+            } else if self.head == item {
                 self.head = node.next;
+                removed = true;
             }
             if let Some(next) = node.get_next() {
                 next.prev = node.prev;
-            } else {
+                removed = true;
+            } else if self.tail == item {
                 self.tail = node.prev;
+                removed = true;
             }
-            node.next = null();
-            node.prev = null();
+            if removed {
+                node.next = null();
+                node.prev = null();
+                self.length -= 1;
+            }
+            removed
         }
-        self.length -= 1;
     }
 
     /// Remove a node by raw pointer from the middle of the list, and recover P from `item`
     ///
-    /// NOTE： Due to we need to support Arc, item should be immutable reference.
+    /// - Return Some if the item is in the list.
+    /// - Return None if the item is not in any list.
+    ///
+    /// NOTE： Due to avoid miri stack borrow rule error, `item` is a raw pointer.
     ///
     /// # Safety
     ///
-    /// `item` should point the a valid item, which must be already in the list, otherwise will lead to UB.
+    /// `item` should point the a valid item. Do not remove item from other list, otherwise will lead to UB.
     ///
     /// # Example
     ///
@@ -305,14 +316,13 @@ where
     /// l.push_back(node3);
     /// assert_eq!(l.len(), 3);
     ///
-    /// let node2 = unsafe { l.remove_node(node2_p) };
+    /// let node2 = unsafe { l.remove_node(node2_p).unwrap() };
     /// assert_eq!(l.len(), 2);
     /// assert_eq!(node2.value, 2);
     /// ```
     #[inline(always)]
-    pub unsafe fn remove_node(&mut self, item: *const P::Target) -> P {
-        self._remove_node(item);
-        unsafe { P::from_raw(item) }
+    pub unsafe fn remove_node(&mut self, item: *const P::Target) -> Option<P> {
+        if self._remove_node(item) { Some(unsafe { P::from_raw(item) }) } else { None }
     }
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
@@ -1124,9 +1134,17 @@ mod tests {
             assert_eq!(l.len(), 3);
             assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 3);
 
-            let node2 = unsafe { l.remove_node(node2_p) };
+            let node2 = unsafe { l.remove_node(node2_p).unwrap() };
             assert_eq!(l.len(), 2);
             assert_eq!(node2.value, 2);
+
+            let node4 = Box::new(new_node(4));
+
+            let node4_p = Box::into_raw(node4);
+            assert!(unsafe { l.remove_node(node4_p) }.is_none());
+            unsafe {
+                let _ = Box::from_raw(node4_p);
+            }
         } // `l` goes out of scope here, triggering DLinkedList's Drop, which drains and drops nodes.
 
         // All nodes should have been dropped
