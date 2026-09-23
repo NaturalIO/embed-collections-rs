@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-dlist 0.3.0] - 2026-09-24
+
+### Changed
+
+- dlist: change remove_node() to return Option (return None if item is not in a list)
+
+- dlist: Change peak() to accept raw pointer (to avoid miri stack borrowing rule)
+
+- dlist: Adjust branch order for cpu branch prediction
+
 ## [embed-btree 0.3.0] - 2026-09-19
 
 ### Fixed
