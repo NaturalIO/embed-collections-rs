@@ -1015,6 +1015,9 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                     root_height = self.get_root_unwrap().height();
                 }
                 let node_height = node.height();
+                // XXX with peek_ancestor we can determine whether the tree
+                // only a high link with only left child. Is it necessary?
+                // I guess remove_range delay the underflow might make it possible.
                 if node_height == root_height
                     || cache
                         .peek_ancestor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
@@ -1099,23 +1102,20 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             self.triggers |= TestFlag::RemoveOnlyChild as u32;
         }
         let info = self.get_info_mut();
-        if let Some((parent, idx)) = info.move_to_ancestor(
+        let r = info.move_to_ancestor(
             |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
             |_info, node| {
                 _info.dec_inter_count();
                 node.dealloc::<false>();
             },
-        ) {
-            node.dealloc::<true>();
-            info.dec_inter_count();
-            Some((parent, idx))
-        } else {
-            node.dealloc::<true>();
-            info.dec_inter_count();
+        );
+        node.dealloc::<true>();
+        info.dec_inter_count();
+        if r.is_none() {
             // we are empty, my ancestor are all empty and delete by move_to_ancestor
             self.root = None;
-            None
         }
+        r
     }
 
     /// Dump the entire tree structure for debugging
