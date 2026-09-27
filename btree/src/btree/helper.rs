@@ -7,7 +7,7 @@ use core::ptr::NonNull;
 
 pub(super) fn dummy_post_callback<K: Ord, V>(_info: &mut TreeInfo<K, V>, _node: InterNode<K, V>) {}
 
-macro_rules! _move_to_ancenstor {
+macro_rules! _move_to_ancestor {
     ($queue: expr, $pop: ident, $cond: expr, $post: expr) => {{
         let mut res = None;
         // For dropping scenario, cannot move further, reach the end at root
@@ -285,7 +285,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
             let cond = |_node: &InterNode<K, V>, idx: u32| -> bool { idx > 0 };
             // this is for entry API, we already know there is a previous node
             if let Some((grand_parent, grand_idx)) =
-                _move_to_ancenstor!(self, _pop, cond, post_callback)
+                _move_to_ancestor!(self, _pop, cond, post_callback)
             {
                 let (parent, idx) =
                     grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
@@ -328,7 +328,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
             header.cache_pos -= 1;
             post_callback(self, parent);
             // only move 1 since we change the branch, leave the rest to the loop
-            if let Some((grand_parent, grand_idx)) = _move_to_ancenstor!(
+            if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
                 self,
                 _pop,
                 |node: &InterNode<K, V>, idx: u32| -> bool { node.key_count() > idx },
@@ -359,7 +359,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
     /// iter backward through cache internal stack, without changing the cache,
     /// return None if reaches root
     #[inline(always)]
-    pub fn peek_ancenstor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
+    pub fn peek_ancestor<FC>(&mut self, cond: FC) -> Option<(InterNode<K, V>, u32)>
     where
         FC: Fn(&InterNode<K, V>, u32) -> bool,
     {
@@ -378,7 +378,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
     /// pop cache until `cond` condition is met.
     /// return None if reaches root
     #[inline(always)]
-    pub fn move_to_ancenstor<FC, FP>(
+    pub fn move_to_ancestor<FC, FP>(
         &mut self, cond: FC, post_callback: FP,
     ) -> Option<(InterNode<K, V>, u32)>
     where
@@ -386,7 +386,7 @@ impl<K: Ord, V> TreeInfo<K, V> {
         FP: Fn(&mut Self, InterNode<K, V>),
     {
         // Self::pop() will detect pos and fix position
-        _move_to_ancenstor!(self, pop, cond, post_callback)
+        _move_to_ancestor!(self, pop, cond, post_callback)
     }
 
     /// For moving the Entry position

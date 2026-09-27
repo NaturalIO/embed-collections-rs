@@ -604,9 +604,9 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         // split key
         let cache = self.get_info_mut();
         let ret = if MOVE {
-            cache.move_to_ancenstor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
+            cache.move_to_ancestor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
         } else {
-            cache.peek_ancenstor(|_node, idx| -> bool { idx > 0 })
+            cache.peek_ancestor(|_node, idx| -> bool { idx > 0 })
         };
         if let Some((mut parent, parent_idx)) = ret {
             trace_log!("update_ancestor_sep_key move={MOVE} at {parent:?}:{}", parent_idx - 1);
@@ -958,9 +958,10 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             // delete the last child of this node
             node.remove_last_child();
             if let Some(key) = right_sep
-                && let Some((mut grand_parent, grand_idx)) = self.get_info_mut().peek_ancenstor(
-                    |_node: &InterNode<K, V>, idx: u32| -> bool { _node.key_count() > idx },
-                )
+                && let Some((mut grand_parent, grand_idx)) =
+                    self.get_info_mut().peek_ancestor(|_node: &InterNode<K, V>, idx: u32| -> bool {
+                        _node.key_count() > idx
+                    })
             {
                 #[cfg(all(test, feature = "trace_log"))]
                 {
@@ -1016,7 +1017,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
                 let node_height = node.height();
                 if node_height == root_height
                     || cache
-                        .peek_ancenstor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
+                        .peek_ancestor(|_node: &InterNode<K, V>, _idx: u32| -> bool {
                             _node.key_count() > 0
                         })
                         .is_none()
@@ -1098,7 +1099,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
             self.triggers |= TestFlag::RemoveOnlyChild as u32;
         }
         let info = self.get_info_mut();
-        if let Some((parent, idx)) = info.move_to_ancenstor(
+        if let Some((parent, idx)) = info.move_to_ancestor(
             |node: &InterNode<K, V>, _idx: u32| -> bool { node.key_count() != 0 },
             |_info, node| {
                 _info.dec_inter_count();
@@ -1111,7 +1112,7 @@ impl<K: Ord + Sized + Clone, V: Sized> BTreeMap<K, V> {
         } else {
             node.dealloc::<true>();
             info.dec_inter_count();
-            // we are empty, my ancestor are all empty and delete by move_to_ancenstor
+            // we are empty, my ancestor are all empty and delete by move_to_ancestor
             self.root = None;
             None
         }

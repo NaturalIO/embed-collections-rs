@@ -319,7 +319,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> OccupiedEntry<'a, K, V> {
         unsafe {
             let k_ref = (*self.leaf.key_ptr_mut(self.idx)).assume_init_mut();
             if self.idx == 0 && self.tree._get_info().is_some() {
-                // We need to keep the PathCache intact, use peek rather than move_to_ancenstor
+                // We need to keep the PathCache intact, use peek rather than move_to_ancestor
                 // it's allowed to move the entry or remove afterwards
                 self.tree.update_ancestor_sep_key::<false>(k.clone());
             }
