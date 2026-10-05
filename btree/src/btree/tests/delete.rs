@@ -40,7 +40,7 @@ fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u32) {
     let alive_after_insert = alive_count();
     println!("alive_after_insert: {}", alive_after_insert);
     #[cfg(feature = "trace_log")]
-    map.print_trigger_flags();
+    map.inner.print_trigger_flags();
 
     // Delete most elements to trigger merge, use Borrow<i32> to query
     for i in 0..count {
@@ -55,7 +55,7 @@ fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u32) {
     println!("alive_after_remove: {}", alive_after_remove);
     assert_eq!(alive_after_remove, 0); // All dropped
     #[cfg(feature = "trace_log")]
-    map.print_trigger_flags();
+    map.inner.print_trigger_flags();
 
     drop(map);
     assert_eq!(alive_count(), 0);
@@ -167,7 +167,7 @@ fn test_mixed_random_batch_insert_delete(
         println!("fill_ratio: {:.2}", map.get_fill_ratio());
         println!("height: {}", map.height());
         #[cfg(feature = "trace_log")]
-        map.print_trigger_flags();
+        map.inner.print_trigger_flags();
 
         prev_batch = current_batch;
     }
@@ -191,7 +191,7 @@ fn test_mixed_random_batch_insert_delete(
         if height != map.height() {
             height = map.height();
             #[cfg(feature = "trace_log")]
-            map.print_trigger_flags();
+            map.inner.print_trigger_flags();
             println!("tree height dec to {}, len {}", height, map.len());
         }
     }

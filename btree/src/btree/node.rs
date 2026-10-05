@@ -219,7 +219,7 @@ impl NodeBase {
 }
 
 pub(crate) enum Node<K, V> {
-    Inter(InterNode<K, V>),
+    Inter(InterNode<K>),
     Leaf(LeafNode<K, V>),
 }
 
@@ -231,8 +231,8 @@ impl<K, V> From<LeafNode<K, V>> for Node<K, V> {
 }
 
 #[cfg(test)]
-impl<K, V> From<InterNode<K, V>> for Node<K, V> {
-    fn from(node: InterNode<K, V>) -> Self {
+impl<K, V> From<InterNode<K>> for Node<K, V> {
+    fn from(node: InterNode<K>) -> Self {
         Node::<K, V>::Inter(node)
     }
 }
@@ -262,7 +262,7 @@ impl<K: Ord, V> Node<K, V> {
         if Self::root_is_leaf(p) {
             Self::Leaf(LeafNode::<K, V>::from_root_ptr(p))
         } else {
-            Self::Inter(InterNode::<K, V>::from(p))
+            Self::Inter(InterNode::<K>::from(p))
         }
     }
 
@@ -296,7 +296,7 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[cfg(test)]
-    pub fn into_inter(self) -> InterNode<K, V> {
+    pub fn into_inter(self) -> InterNode<K> {
         if let Self::Inter(node) = self {
             node
         } else {
