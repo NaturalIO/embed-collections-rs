@@ -12,40 +12,42 @@ mod leaf_borrow;
 mod leaf_delete;
 mod split;
 
-use super::{helper::*, inter::*, leaf::*, node::*, *};
+use super::{helper::*, inter::*, leaf::*, node::*, stats::*, *};
 pub use embed_collections_test::*;
 
-pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized> {
+pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     leaf_count: usize,
     inter_count: u32,
+    stats: S,
     len: usize,
     prev: Option<LeafNode<K, V>>,
 }
 
-impl<K: Ord + Sized + Clone, V: Sized> Default for TreeBuilder<K, V> {
+impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> Default for TreeBuilder<K, V, S> {
     fn default() -> Self {
-        Self { leaf_count: 0, inter_count: 0, len: 0, prev: None }
+        Self { leaf_count: 0, inter_count: 0, len: 0, prev: None, stats: S::default() }
     }
 }
 
-impl<K: Ord + Sized + Clone, V: Sized> TreeBuilder<K, V> {
+impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> TreeBuilder<K, V, S> {
     pub fn leaf_cap(&self) -> u32 {
         LeafNode::<K, V>::cap()
     }
 
     pub fn inter_cap(&self) -> u32 {
-        InterNode::<K, V>::cap()
+        InterNode::<K>::cap()
     }
 
-    pub fn new_inter(&mut self, height: u32) -> InterNode<K, V> {
+    pub fn new_inter(&mut self, height: u32) -> InterNode<K> {
         self.inter_count += 1;
         unsafe { InterNode::alloc(height) }
     }
 
+    // XXX this helper only support building height > 1 tree
     pub fn new_root(
         &mut self, height: u32, promote_key: K, left_ptr: *mut NodeHeader,
         right_ptr: *mut NodeHeader,
-    ) -> InterNode<K, V> {
+    ) -> InterNode<K> {
         let mut root = self.new_inter(height);
         root.set_left_ptr(left_ptr);
         root.insert_no_split_with_idx(0, promote_key, right_ptr);
@@ -70,18 +72,17 @@ impl<K: Ord + Sized + Clone, V: Sized> TreeBuilder<K, V> {
         leaf.insert_no_split(key, value);
     }
 
-    pub fn build(self, root: Node<K, V>) -> BTreeMap<K, V> {
-        let cache = if self.inter_count > 0 {
-            Some(TreeInfo::new(self.leaf_count, self.inter_count))
-        } else {
-            None
-        };
-        BTreeMap {
-            len: self.len,
-            root: Some(root.to_root_ptr()),
-            _info: UnsafeCell::new(cache),
-            #[cfg(feature = "trace_log")]
-            triggers: 0,
+    pub fn build(self, root: Node<K, V>) -> BTree<K, V, S> {
+        self.stats.init_count(self.leaf_count, self.inter_count);
+        BTree {
+            inner: BTreeInner {
+                len: self.len,
+                root: Some(root.to_root_ptr()),
+                _phan: Default::default(),
+                #[cfg(feature = "trace_log")]
+                triggers: 0,
+            },
+            stats: self.stats,
         }
     }
 }

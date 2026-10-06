@@ -1,6 +1,7 @@
 use super::{BTree, entry::*, helper::PathBuffer, inter::*, leaf::*, tree::BTreeInner};
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
+use core::fmt::{self, Debug};
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 use core::ptr::null_mut;
@@ -10,7 +11,7 @@ use core::sync::atomic::{
 };
 
 #[allow(private_bounds)]
-pub(super) trait Stats<K: Ord + Clone + Sized>: Default + Send {
+pub(super) trait Stats<K: Ord + Clone + Sized>: Default + Send + Debug {
     #[allow(private_bounds)]
     type EntryInner<V>: EntryInner<K, V>;
 
@@ -56,6 +57,7 @@ pub(super) trait EntryInner<K: Ord + Clone + Sized, V: Sized> {
 
     fn get_cache<'a>(&'a self) -> &'a Self::PathBuffer;
 
+    #[cfg(test)]
     fn get_tree<'a>(&'a self) -> &'a BTreeInner<K, V>;
 
     fn get_tree_mut<'a>(&'a mut self) -> &'a mut BTreeInner<K, V>;
@@ -100,6 +102,13 @@ impl<K> Default for TreeInfo<K> {
 
 unsafe impl<K> Send for TreeInfo<K> {}
 unsafe impl<K> Sync for TreeInfo<K> {}
+
+// for log
+impl<K: Ord + Clone + Sized> Debug for TreeInfo<K> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "TreeInfo")
+    }
+}
 
 impl<K: Ord + Clone + Sized> Stats<K> for TreeInfo<K> {
     type EntryInner<V> = BTree<K, V, TreeInfo<K>>;

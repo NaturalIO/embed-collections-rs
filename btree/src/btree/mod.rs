@@ -214,13 +214,6 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
         1
     }
 
-    #[cfg(test)]
-    #[inline(always)]
-    fn clear_cache<'a>(&'a self) -> S::PathCacheRef<'a> {
-        self.stats.clear_cache();
-        self.stats.get_cache(0)
-    }
-
     #[inline(always)]
     fn find<Q>(&self, key: &Q) -> Option<(LeafNode<K, V>, u32)>
     where
@@ -871,6 +864,7 @@ impl<K: Ord + Clone + Sized, V: Sized> EntryInner<K, V> for BTree<K, V, TreeInfo
         &self.stats
     }
 
+    #[cfg(test)]
     #[inline(always)]
     fn get_tree<'a>(&'a self) -> &'a BTreeInner<K, V> {
         &self.inner

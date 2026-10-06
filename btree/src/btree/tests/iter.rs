@@ -9,9 +9,10 @@ use std::vec::Vec;
 
 #[logfn]
 #[rstest]
-fn test_iter_empty_tree(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
-    assert_eq!(map.leaf_count(), 0);
+#[case(TreeInfo::<i32>::default())]
+fn test_iter_empty_tree<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let map = BTree::<i32, i32, S>::new();
+    map.assert_leaf_count(0);
     let mut iter = map.iter();
     assert_eq!(iter.next(), None);
     assert_eq!(iter.next_back(), None);
@@ -27,29 +28,31 @@ fn test_iter_empty_tree(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_empty_tree(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
-    assert_eq!(map.leaf_count(), 0);
+#[case(TreeInfo::<i32>::default())]
+fn test_into_iter_empty_tree<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let map = BTree::<i32, i32, S>::new();
+    map.assert_leaf_count(0);
     let mut iter = map.into_iter();
     assert_eq!(iter.next(), None);
 
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let map = BTree::<i32, i32, S>::new();
     let mut iter = map.into_iter().rev();
     assert_eq!(iter.next(), None);
 
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let map = BTree::<i32, i32, S>::new();
     let mut iter = map.into_iter_rev();
     assert_eq!(iter.next(), None);
 }
 
 #[logfn]
 #[rstest]
-fn test_iter_empty_leaf(setup_log: ()) {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-    assert_eq!(map.leaf_count(), 0);
+#[case(TreeInfo::<i32>::default())]
+fn test_iter_empty_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
+    map.assert_leaf_count(0);
     map.insert(0, 0);
     assert_eq!(map.remove(&0), Some(0));
-    assert_eq!(map.leaf_count(), 1);
+    map.assert_leaf_count(1);
     assert_eq!(map.get(&0), None);
     assert_eq!(map.get_mut(&0), None);
 
@@ -68,21 +71,22 @@ fn test_iter_empty_leaf(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_empty_leaf(setup_log: ()) {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
-    assert_eq!(map.leaf_count(), 0);
+#[case(TreeInfo::<i32>::default())]
+fn test_into_iter_empty_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
+    map.assert_leaf_count(0);
     map.insert(0, 0);
     assert_eq!(map.remove(&0), Some(0));
-    assert_eq!(map.leaf_count(), 1);
+    map.assert_leaf_count(1);
 
     let mut iter = map.into_iter();
     assert_eq!(iter.next(), None);
 
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let map = BTree::<i32, i32, S>::new();
     let mut iter = map.into_iter().rev();
     assert_eq!(iter.next(), None);
 
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
+    let map = BTree::<i32, i32, S>::new();
     let mut iter = map.into_iter_rev();
     assert_eq!(iter.next(), None);
 }
@@ -471,8 +475,9 @@ fn test_range_basic(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_range_mut(setup_log: ()) {
-    let mut map = BTreeMap::<u32, u32>::new();
+#[case(TreeInfo::<u32>::default())]
+fn test_range_mut<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<u32, u32, S>::new();
 
     for i in 0..10 {
         map.insert(i, i * 10);
@@ -489,8 +494,9 @@ fn test_range_mut(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_range_boundaries(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_range_boundaries<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
 
     // Insert even numbers only: 0, 2, 4, 6, 8
     for i in [0, 2, 4, 6, 8] {
@@ -551,8 +557,9 @@ fn test_range_boundaries(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_range_double_ended_single_leaf(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_range_double_ended_single_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     for i in 0..10 {
         map.insert(i, i * 10);
     }
@@ -583,12 +590,13 @@ fn test_range_double_ended_single_leaf(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_range_double_ended_multi_leaf(setup_log: ()) {
+#[case(TreeInfo::<i32>::default())]
+fn test_range_double_ended_multi_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     // Test with at least 3 leaf nodes
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
     let n = leaf_cap * 3 + 10;
 
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     for i in 0..n {
         map.insert(i as i32, i as i32 * 10);
     }
@@ -655,8 +663,9 @@ fn test_range_double_ended_multi_leaf(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_into_iter<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
     map.insert(3, "c");
@@ -667,8 +676,9 @@ fn test_into_iter(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_large(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_into_iter_large<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let n = 1000;
 
     for i in 0..n {
@@ -682,8 +692,9 @@ fn test_into_iter_large(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_rev_large(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_into_iter_rev_large<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let n = 1000;
 
     for i in 0..n {
@@ -698,11 +709,12 @@ fn test_into_iter_rev_large(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_drop_halfway_forward(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_into_iter_drop_halfway_forward<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let n = 1000;
     {
-        let mut map = BTreeMap::new();
+        let mut map = BTree::<CounterI32, CounterI32, S>::new();
 
         for i in 0..n {
             map.insert(CounterI32::from(i), CounterI32::from(i * 2));
@@ -719,11 +731,12 @@ fn test_into_iter_drop_halfway_forward(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_into_iter_drop_halfway_reverse(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_into_iter_drop_halfway_reverse<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let n = 1000;
     {
-        let mut map = BTreeMap::new();
+        let mut map = BTree::<CounterI32, CounterI32, S>::new();
 
         for i in 0..n {
             map.insert(CounterI32::from(i), CounterI32::from(i * 2));
@@ -740,8 +753,9 @@ fn test_into_iter_drop_halfway_reverse(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_empty_tree(setup_log: ()) {
-    let map: BTreeMap<i32, i32> = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_empty_tree<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let map = BTree::<i32, i32, S>::new();
     assert!(map.first_cursor().next().is_none());
     assert!(map.first_cursor().peek_forward().is_none());
     assert!(map.first_cursor().peek_backward().is_none());
@@ -754,8 +768,9 @@ fn test_cursor_empty_tree(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_empty_leaf(setup_log: ()) {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_empty_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     map.insert(1, 1);
     assert!(map.remove(&1).is_some());
 
@@ -777,8 +792,9 @@ fn test_cursor_empty_leaf(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_first(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_first<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
     map.insert(3, "c");
@@ -804,8 +820,9 @@ fn test_cursor_first(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_last(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
     map.insert(3, "c");
@@ -822,8 +839,9 @@ fn test_cursor_last(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_non_existing_key(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_non_existing_key<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, &str, S>::new();
     map.insert(1, "a");
     map.insert(3, "b");
     map.insert(5, "c");
@@ -893,8 +911,9 @@ fn test_cursor_non_existing_key(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_mixed_navigation(setup_log: ()) {
-    let mut map = BTreeMap::new();
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_mixed_navigation<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     for i in 0..10 {
         map.insert(i, i * 10);
     }
@@ -909,12 +928,13 @@ fn test_cursor_mixed_navigation(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_cursor_multi_leaf(setup_log: ()) {
+#[case(TreeInfo::<i32>::default())]
+fn test_cursor_multi_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     // Test with at least 3 leaf nodes
     let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
     let n = leaf_cap * 3 + 10;
 
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     for i in 0..n {
         map.insert(i as i32 * 2, i as i32 * 10);
     }

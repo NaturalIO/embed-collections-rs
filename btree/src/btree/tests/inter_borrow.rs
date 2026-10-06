@@ -8,9 +8,12 @@ use std::vec::Vec;
 /// When the first child of parent splits, and left sibling has space
 #[logfn]
 #[rstest]
-fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_inter_borrow_case1_rotate_left_first_child<S: Stats<CounterI32>>(
+    #[case] _s: S, setup_log: (),
+) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let inter_cap = builder.inter_cap();
     println!("leaf_cap {leaf_cap} inter_cap {inter_cap}");
@@ -120,12 +123,12 @@ fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
         drop(dummy_leaves);
         #[cfg(feature = "trace_log")]
         assert_eq!(
-            map.triggers,
+            map.inner.triggers,
             TestFlag::InterMoveLeftFirst as u32
                 | TestFlag::InterMoveLeft as u32
                 | TestFlag::LeafSplit as u32
         );
-        assert_eq!(map.leaf_count(), 4 + inter_cap as usize);
+        map.assert_leaf_count(4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -134,9 +137,10 @@ fn test_inter_borrow_case1_rotate_left_first_child(setup_log: ()) {
 /// Test Case 2: idx == 2, borrow from left sibling
 #[logfn]
 #[rstest]
-fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_inter_borrow_case2_rotate_left<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let inter_cap = builder.inter_cap();
     println!("leaf_cap {leaf_cap} inter_cap {inter_cap}");
@@ -240,8 +244,8 @@ fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
         }
         drop(dummy_leaves);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, TestFlag::InterMoveLeft as u32 | TestFlag::LeafSplit as u32);
-        assert_eq!(map.leaf_count(), 4 + inter_cap as usize);
+        assert_eq!(map.inner.triggers, TestFlag::InterMoveLeft as u32 | TestFlag::LeafSplit as u32);
+        map.assert_leaf_count(4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -254,9 +258,12 @@ fn test_inter_borrow_case2_rotate_left(setup_log: ()) {
 /// - right_inter: has space (can receive rotated key)
 #[logfn]
 #[rstest]
-fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_inter_borrow_case3_rotate_right_last_child<S: Stats<CounterI32>>(
+    #[case] _s: S, setup_log: (),
+) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let inter_cap = builder.inter_cap();
     println!("leaf_cap {leaf_cap} inter_cap {inter_cap}");
@@ -361,12 +368,12 @@ fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
 
         #[cfg(feature = "trace_log")]
         assert_eq!(
-            map.triggers,
+            map.inner.triggers,
             TestFlag::InterMoveRightLast as u32
                 | TestFlag::InterMoveRight as u32
                 | TestFlag::LeafSplit as u32
         );
-        assert_eq!(map.leaf_count(), 4 + inter_cap as usize);
+        map.assert_leaf_count(4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");
@@ -379,9 +386,10 @@ fn test_inter_borrow_case3_rotate_right_last_child(setup_log: ()) {
 /// - right_inter: has space (can receive rotated key)
 #[logfn]
 #[rstest]
-fn test_inter_borrow_case4_rotate_right(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_inter_borrow_case4_rotate_right<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let inter_cap = builder.inter_cap();
     println!("leaf_cap {leaf_cap} inter_cap {inter_cap}");
@@ -478,8 +486,11 @@ fn test_inter_borrow_case4_rotate_right(setup_log: ()) {
         }
         drop(dummy_leaves);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, TestFlag::InterMoveRight as u32 | TestFlag::LeafSplit as u32);
-        assert_eq!(map.leaf_count(), 4 + inter_cap as usize);
+        assert_eq!(
+            map.inner.triggers,
+            TestFlag::InterMoveRight as u32 | TestFlag::LeafSplit as u32
+        );
+        map.assert_leaf_count(4 + inter_cap as usize);
         drop(map);
     }
     assert_eq!(alive_count(), 0, "alive_count should be 0 at end of test");

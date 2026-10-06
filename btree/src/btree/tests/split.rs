@@ -5,9 +5,11 @@ use rstest::*;
 use std::println;
 use std::vec;
 
-#[test]
-fn test_btree_large_tree_split_seq() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_large_tree_split_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let (inter_cap, leaf_cap) = BTreeMap::<i32, i32>::cap();
     assert!(100 > inter_cap);
     assert!(100 > leaf_cap);
@@ -24,9 +26,11 @@ fn test_btree_large_tree_split_seq() {
     }
 }
 
-#[test]
-fn test_btree_random_inserts() {
-    let mut map: BTreeMap<i32, &str> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_random_inserts<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, &str, S>::new();
     let values = vec![
         (5, "e"),
         (3, "c"),
@@ -54,7 +58,7 @@ fn test_node_capacity() {
     // Leaf: (128 - 16) / 8 = 14 keys/values, but limited by smaller of key/value space
     // Actually should be (128-16)/8 = 14 for both keys and values
     let leaf_cap = LeafNode::<i64, i64>::cap();
-    let inter_cap = InterNode::<i64, i64>::cap();
+    let inter_cap = InterNode::<i64>::cap();
 
     // Leaf can hold more because keys and values share the same space
     assert!(leaf_cap >= 2, "Leaf should hold at least 2 items");
@@ -64,24 +68,26 @@ fn test_node_capacity() {
 
 #[logfn]
 #[rstest]
-fn test_btree_split_leaf_root_with_treeinfo(setup_log: ()) {
-    let mut map: BTreeMap<u32, u32> = BTreeMap::new();
+#[case(TreeInfo::<u32>::default())]
+fn test_btree_split_leaf_root<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<u32, u32, S>::new();
     let leaf_cap = LeafNode::<u32, u32>::cap();
+    crate::trace_log!("cap {leaf_cap}");
     for k in 0..(leaf_cap + 1) {
         map.insert(k, k * 10);
     }
-    assert_eq!(map.leaf_count(), 2);
+    map.assert_leaf_count(2);
     map.validate();
     for k in 0..(leaf_cap + 1) {
         map.remove(&k);
     }
     map.validate();
-    assert_eq!(map.leaf_count(), 1);
+    map.assert_leaf_count(1);
     assert_eq!(map.len(), 0);
     // re-insert
     for k in 0..(leaf_cap + 1) {
         map.insert(k, k * 10);
     }
-    assert_eq!(map.leaf_count(), 2);
+    map.assert_leaf_count(2);
     map.validate();
 }

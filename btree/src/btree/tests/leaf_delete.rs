@@ -17,9 +17,10 @@ use std::println;
 /// - change_key skip as right node does not change
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_with_left_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = leaf_cap / 2;
     {
@@ -66,7 +67,7 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
 
         let mut map = builder.build(root.into());
         assert_eq!(map.len(), (2 * min_count + leaf_cap) as usize);
-        assert_eq!(map.inter_count(), 1);
+        map.assert_inter_count(1);
         map.validate();
 
         // Record the key that will remain in middle after removals
@@ -82,7 +83,7 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
         map.validate();
 
         // Verify the merged structure
-        let root = map.get_root_unwrap().into_inter();
+        let root = map.inner.get_root_unwrap().into_inter();
         assert_eq!(root.key_count(), 1); // Two leaves left after merge
         assert_eq!(map.len(), (2 * min_count - 1 + leaf_cap) as usize);
 
@@ -125,7 +126,7 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
         );
 
         assert_eq!(map.height(), 2);
-        assert_eq!(map.leaf_count(), 2);
+        map.assert_leaf_count(2);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -156,10 +157,11 @@ fn test_leaf_del_merge_with_left_height_2(setup_log: ()) {
 /// - Change sep key of right leaf after shifting left
 #[logfn]
 #[rstest]
-fn test_merge_left_with_right_height_2(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_merge_left_with_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
 
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = leaf_cap / 2;
     assert!(min_count > 2);
@@ -202,7 +204,7 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
         map.validate();
 
         {
-            let root = map.get_root_unwrap().into_inter();
+            let root = map.inner.get_root_unwrap().into_inter();
             assert_eq!(root.key_count(), 2);
         }
 
@@ -213,7 +215,7 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
         map.validate();
 
         // Verify structure - should have merged middle into right
-        let root = map.get_root_unwrap().into_inter();
+        let root = map.inner.get_root_unwrap().into_inter();
         assert_eq!(root.key_count(), 1);
         assert_eq!(map.len(), (leaf_cap + 2 * min_count - 1) as usize);
 
@@ -235,7 +237,7 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
             }
         }
         assert_eq!(map.height(), 2);
-        assert_eq!(map.leaf_count(), 2);
+        map.assert_leaf_count(2);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -266,9 +268,10 @@ fn test_merge_left_with_right_height_2(setup_log: ()) {
 /// - change_key for right leaf after shifting left
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_3_2_height_2(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_3_2_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = (leaf_cap + 1) / 2;
     assert!(min_count > 2);
@@ -342,7 +345,7 @@ fn test_leaf_del_merge_3_2_height_2(setup_log: ()) {
         assert_eq!(root.get_keys()[0], (leaf_cap as i32 + 1) * 2);
         assert!(root.get_keys()[0] != right_first_key);
         assert_eq!(map.height(), 2);
-        assert_eq!(map.leaf_count(), 2);
+        map.assert_leaf_count(2);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -376,9 +379,10 @@ fn test_leaf_del_merge_3_2_height_2(setup_log: ()) {
 /// - downgrade root to the only leaf
 #[logfn]
 #[rstest]
-fn test_leaf_del_leftmost_merge_right_height_2(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_leftmost_merge_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = (leaf_cap + 1) / 2;
     assert!(min_count > 2);
@@ -456,7 +460,7 @@ fn test_leaf_del_leftmost_merge_right_height_2(setup_log: ()) {
         assert_eq!(map.height(), 1);
         println!("before drop map, alive count: {}", alive_count());
 
-        assert_eq!(map.leaf_count(), 1);
+        map.assert_leaf_count(1);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -486,9 +490,12 @@ fn test_leaf_del_leftmost_merge_right_height_2(setup_log: ()) {
 /// - downgrade root to the only leaf
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_left_with_rightmost_height_2(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats<CounterI32>>(
+    #[case] _s: S, setup_log: (),
+) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = (leaf_cap + 1) / 2;
     assert!(min_count > 2);
@@ -564,7 +571,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2(setup_log: ()) {
         );
         assert_eq!(map.height(), 1);
 
-        assert_eq!(map.leaf_count(), 1);
+        map.assert_leaf_count(1);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -579,11 +586,11 @@ fn test_leaf_del_merge_left_with_rightmost_height_2(setup_log: ()) {
 /// Test: Merge in height=3 tree (root -> internal nodes -> leaves)
 ///
 /// Scenario: Four leaves organized under two internal nodes under root.
-/// Leaf_1 underflows and merges with leaf_0. Tests PathCache navigation
+/// Leaf_1 underflows and merges with leaf_0. Tests PathBuffer navigation
 /// through multiple levels of internal nodes.
 ///
 /// Key difference from height=2 tests:
-/// - Requires PathCache to navigate up through internal nodes
+/// - Requires PathBuffer to navigate up through internal nodes
 /// - Tests parent lookup across internal node boundaries
 /// - More complex tree structure
 ///
@@ -599,9 +606,10 @@ fn test_leaf_del_merge_left_with_rightmost_height_2(setup_log: ()) {
 /// - merge with left brother, right is not touch
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_with_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = (leaf_cap + 1) / 2;
     assert!(min_count > 2);
@@ -658,7 +666,7 @@ fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
         let mut map = builder.build(root.into());
         assert_eq!(map.len(), (4 * min_count) as usize);
         map.validate();
-        assert_eq!(map.inter_count(), 3);
+        map.assert_inter_count(3);
         assert_eq!(map.height(), 3);
         //map.dump();
 
@@ -683,7 +691,7 @@ fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
         assert_eq!(internal_left.key_count(), 0, "internal_left should have 1 child after merge");
 
         // Verify root keys unchanged (merge happened below root)
-        let root_node = map.get_root_unwrap().into_inter();
+        let root_node = map.inner.get_root_unwrap().into_inter();
         assert_eq!(root_node.key_count(), 1, "Root should still have 2 children");
 
         // Verify all remaining data
@@ -711,7 +719,7 @@ fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
             leaf_0_last_key,
             leaf_1_remaining_key
         );
-        assert_eq!(map.leaf_count(), 3);
+        map.assert_leaf_count(3);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -742,19 +750,20 @@ fn test_leaf_del_merge_with_left_height_3(setup_log: ()) {
 /// - leaf_3: not used in this test
 ///
 /// Delete from leaf_1 triggers underflow, must merge with leaf_2.
-/// This tests PathCache navigation across internal node boundaries
+/// This tests PathBuffer navigation across internal node boundaries
 /// when the right sibling is not in the same parent.
 ///
 /// Coverage:
 /// - Merge content to right brother in different subtree
-/// - PathCache navigation across internal node boundaries
+/// - PathBuffer navigation across internal node boundaries
 /// - Delete last child (leaf_1) from internal_left
 /// - Update root sep key of right after merge
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_with_right_height_3(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_with_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = leaf_cap / 2;
     assert!(min_count > 2);
@@ -856,7 +865,7 @@ fn test_leaf_del_merge_with_right_height_3(setup_log: ()) {
                 );
             }
         }
-        assert_eq!(map.leaf_count(), 3);
+        map.assert_leaf_count(3);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -895,9 +904,10 @@ fn test_leaf_del_merge_with_right_height_3(setup_log: ()) {
 /// - change leaf_3 sep key at root level
 #[logfn]
 #[rstest]
-fn test_leaf_del_merge_2_3_height_3(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_merge_2_3_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = (leaf_cap + 1) / 2;
     assert!(min_count > 2);
@@ -982,7 +992,7 @@ fn test_leaf_del_merge_2_3_height_3(setup_log: ()) {
                 );
             }
         }
-        assert_eq!(map.leaf_count(), 3);
+        map.assert_leaf_count(3);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,
@@ -1019,9 +1029,10 @@ fn test_leaf_del_merge_2_3_height_3(setup_log: ()) {
 /// - Cascade removal of single-child internal nodes up the tree
 #[logfn]
 #[rstest]
-fn test_leaf_del_remove_only_child_cascade(setup_log: ()) {
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_leaf_del_remove_only_child_cascade<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+    let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
     let min_count = leaf_cap / 2;
     assert!(min_count > 2);
@@ -1103,7 +1114,7 @@ fn test_leaf_del_remove_only_child_cascade(setup_log: ()) {
 
         // Verify that inter_min and inter_min1 were removed (remove_only_child cascade)
         // The root should now have only 2 children (inter_left and inter_right)
-        let root_node = map.get_root_unwrap().into_inter();
+        let root_node = map.inner.get_root_unwrap().into_inter();
         assert_eq!(
             root_node.key_count(),
             1,
@@ -1149,7 +1160,7 @@ fn test_leaf_del_remove_only_child_cascade(setup_log: ()) {
             );
         }
         // map.dump();
-        assert_eq!(map.leaf_count(), 2);
+        map.assert_leaf_count(2);
         #[cfg(feature = "trace_log")]
         assert_eq!(
             map.inner.triggers,

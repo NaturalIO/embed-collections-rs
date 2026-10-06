@@ -6,9 +6,9 @@ use std::println;
 
 #[test]
 fn test_inter_align() {
-    let cap = InterNode::<u8, usize>::cap();
+    let cap = InterNode::<u8>::cap();
     println!("align u8 {}, cap {}", align_of::<u8>(), cap);
-    let mut inter = unsafe { InterNode::<u8, usize>::alloc(1) };
+    let mut inter = unsafe { InterNode::<u8>::alloc(1) };
     inter.set_left_ptr(0 as *mut NodeHeader);
     for i in 1..(cap + 1) {
         inter.insert_no_split(i as u8, i as *mut NodeHeader);
@@ -28,7 +28,7 @@ fn test_inter_align() {
 fn test_inter_search_child_smart(#[case] key_count: u32) {
     let is_seqs = [false, true];
     unsafe {
-        let mut node = InterNode::<i32, i32>::alloc(1);
+        let mut node = InterNode::<i32>::alloc(1);
         node.set_left_ptr(0x1000 as *mut NodeHeader);
 
         // Insert odd keys: 1, 3, 5... (if key_count=3 -> keys are 1, 3, 5)
@@ -65,8 +65,8 @@ fn test_inter_search_child_smart(#[case] key_count: u32) {
 #[test]
 fn test_inter_insert_and_search() {
     unsafe {
-        let mut inter = InterNode::<usize, usize>::alloc(1);
-        let cap = InterNode::<usize, usize>::cap();
+        let mut inter = InterNode::<usize>::alloc(1);
+        let cap = InterNode::<usize>::cap();
         println!("InterNode<usize> cap {}", cap);
 
         inter.set_left_ptr(0 as *mut NodeHeader);
@@ -97,12 +97,12 @@ fn test_inter_insert_and_search() {
 #[test]
 fn test_inter_split_insert_left() {
     reset_alive_count();
-    let cap = InterNode::<CounterI32, CounterI32>::cap();
+    let cap = InterNode::<CounterI32>::cap();
     println!("InterNode<CounterI32> cap {}", cap);
     // TODO should test split_idx == count ?  cap = 2
     unsafe {
         // Test Case 2: Insert key before split_idx (should go to left node)
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -179,12 +179,12 @@ fn test_inter_split_insert_at_promote() {
     reset_alive_count();
     // Insert key at split_idx position (will be promoted, not inserted)
     unsafe {
-        let cap = InterNode::<CounterI32, CounterI32>::cap();
+        let cap = InterNode::<CounterI32>::cap();
 
         println!("=== Test Internal Node Split Basic ===");
         println!("cap = {}", cap);
 
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -253,11 +253,11 @@ fn test_inter_split_insert_at_promote() {
 #[test]
 fn test_inter_split_insert_right_begin() {
     reset_alive_count();
-    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
+    let cap = InterNode::<CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -317,11 +317,11 @@ fn test_inter_split_insert_right_begin() {
 #[test]
 fn test_inter_split_insert_right_mid() {
     reset_alive_count();
-    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
+    let cap = InterNode::<CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -385,11 +385,11 @@ fn test_inter_split_insert_right_mid() {
 #[test]
 fn test_inter_split_insert_at_end() {
     reset_alive_count();
-    let cap = InterNode::<CounterI32, CounterI32>::cap() as u32;
+    let cap = InterNode::<CounterI32>::cap() as u32;
     // Test Case 3: Insert key after split_idx (should go to right node)
     unsafe {
         println!("\n--- Test Case 3: Insert after split_idx (key goes to right node) ---");
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         // Fill the node to capacity with dummy pointers
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..cap {
@@ -448,11 +448,11 @@ fn test_inter_split_insert_at_end() {
 fn test_inter_merge_basic() {
     reset_alive_count();
     unsafe {
-        let cap = InterNode::<CounterI32, CounterI32>::cap();
+        let cap = InterNode::<CounterI32>::cap();
         println!("InterNode<CounterI32> cap {}", cap);
 
         // Create left node with some keys
-        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut left = InterNode::<CounterI32>::alloc(1);
         left.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..3 {
             left.insert_no_split(
@@ -463,7 +463,7 @@ fn test_inter_merge_basic() {
         assert_eq!(left.key_count(), 3);
 
         // Create right node with some keys
-        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut right = InterNode::<CounterI32>::alloc(1);
         right.set_left_ptr(0x2000 as *mut NodeHeader);
         for i in 0..3 {
             right.insert_no_split(
@@ -474,7 +474,7 @@ fn test_inter_merge_basic() {
         assert_eq!(right.key_count(), 3);
 
         // Create grandparent node with separator key
-        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut grand = InterNode::<CounterI32>::alloc(2);
         grand.set_left_ptr(left.get_ptr_mut());
         grand.insert_no_split(25_i32.into(), right.get_ptr_mut()); // separator key = 25
         assert_eq!(grand.key_count(), 1);
@@ -532,7 +532,7 @@ fn test_inter_merge_right_empty() {
     reset_alive_count();
     unsafe {
         // Create left node with keys
-        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut left = InterNode::<CounterI32>::alloc(1);
         left.set_left_ptr(0x1000 as *mut NodeHeader);
         for i in 0..3 {
             left.insert_no_split(
@@ -543,12 +543,12 @@ fn test_inter_merge_right_empty() {
         assert_eq!(left.key_count(), 3);
 
         // Create right node with NO keys (only left child)
-        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut right = InterNode::<CounterI32>::alloc(1);
         (*right.child_ptr_mut(0)) = 0x2000 as *mut NodeHeader;
         assert_eq!(right.key_count(), 0);
 
         // Create grandparent with separator key
-        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut grand = InterNode::<CounterI32>::alloc(2);
         grand.set_left_ptr(left.get_ptr_mut());
         grand.insert_no_split(25_i32.into(), right.get_ptr_mut());
         assert_eq!(grand.key_count(), 1);
@@ -585,12 +585,12 @@ fn test_inter_merge_left_empty() {
     reset_alive_count();
     unsafe {
         // Create left node with NO keys
-        let mut left = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut left = InterNode::<CounterI32>::alloc(1);
         (*left.child_ptr_mut(0)) = 0x1000 as *mut NodeHeader;
         assert_eq!(left.key_count(), 0);
 
         // Create right node with keys
-        let mut right = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut right = InterNode::<CounterI32>::alloc(1);
         right.set_left_ptr(0x2000 as *mut NodeHeader);
         for i in 0..3 {
             right.insert_no_split(
@@ -601,7 +601,7 @@ fn test_inter_merge_left_empty() {
         assert_eq!(right.key_count(), 3);
 
         // Create grandparent with separator key
-        let mut grand = InterNode::<CounterI32, CounterI32>::alloc(2);
+        let mut grand = InterNode::<CounterI32>::alloc(2);
         grand.set_left_ptr(left.get_ptr_mut());
         grand.insert_no_split(25_i32.into(), right.get_ptr_mut());
         assert_eq!(grand.key_count(), 1);
@@ -638,11 +638,11 @@ fn test_inter_merge_left_empty() {
 fn test_inter_insert_at_front() {
     reset_alive_count();
     unsafe {
-        let cap = InterNode::<CounterI32, CounterI32>::cap() as usize;
+        let cap = InterNode::<CounterI32>::cap() as usize;
         assert!(cap > 6);
 
         // Create an internal node with some keys
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         node.set_left_ptr(0x1000 as *mut NodeHeader);
 
         // Insert some keys
@@ -684,7 +684,7 @@ fn test_inter_insert_at_front_empty() {
     reset_alive_count();
     unsafe {
         // Create an empty internal node
-        let mut node = InterNode::<CounterI32, CounterI32>::alloc(1);
+        let mut node = InterNode::<CounterI32>::alloc(1);
         node.set_left_ptr(0x1000 as *mut NodeHeader);
         assert_eq!(node.key_count(), 0);
         // Insert at front on empty node (child_ptr, key)
@@ -718,20 +718,20 @@ fn test_inter_insert_at_front_empty() {
 fn test_insert_rotate_left_basic() {
     unsafe {
         // Create left node with keys [10, 20]
-        let mut left = InterNode::<i32, i32>::alloc(1);
+        let mut left = InterNode::<i32>::alloc(1);
         left.set_left_ptr(0x1000 as *mut NodeHeader);
         left.insert_no_split(10_i32, 0x1001 as *mut NodeHeader);
         left.insert_no_split(20_i32, 0x1002 as *mut NodeHeader);
 
         // Create right node with keys [110, 120, 130]
-        let mut right = InterNode::<i32, i32>::alloc(1);
+        let mut right = InterNode::<i32>::alloc(1);
         right.set_left_ptr(0x2000 as *mut NodeHeader);
         right.insert_no_split(110_i32, 0x2001 as *mut NodeHeader);
         right.insert_no_split(120_i32, 0x2002 as *mut NodeHeader);
         right.insert_no_split(130_i32, 0x2003 as *mut NodeHeader);
 
         // Create parent node with separator key 100
-        let mut parent = InterNode::<i32, i32>::alloc(2);
+        let mut parent = InterNode::<i32>::alloc(2);
         parent.set_left_ptr(left.get_ptr_mut());
         parent.insert_no_split(100_i32, right.get_ptr_mut());
 
@@ -783,19 +783,19 @@ fn test_insert_rotate_left_basic() {
 fn test_insert_rotate_left_middle() {
     unsafe {
         // Create left node with key [30]
-        let mut left = InterNode::<i32, i32>::alloc(1);
+        let mut left = InterNode::<i32>::alloc(1);
         left.set_left_ptr(0x3000 as *mut NodeHeader);
         left.insert_no_split(30_i32, 0x3001 as *mut NodeHeader);
 
         // Create right node with keys [210, 220, 230]
-        let mut right = InterNode::<i32, i32>::alloc(1);
+        let mut right = InterNode::<i32>::alloc(1);
         right.set_left_ptr(0x4000 as *mut NodeHeader);
         right.insert_no_split(210_i32, 0x4001 as *mut NodeHeader);
         right.insert_no_split(220_i32, 0x4002 as *mut NodeHeader);
         right.insert_no_split(230_i32, 0x4003 as *mut NodeHeader);
 
         // Create parent node with separator key 200
-        let mut parent = InterNode::<i32, i32>::alloc(2);
+        let mut parent = InterNode::<i32>::alloc(2);
         parent.set_left_ptr(left.get_ptr_mut());
         parent.insert_no_split(200_i32, right.get_ptr_mut());
 
@@ -846,18 +846,18 @@ fn test_insert_rotate_left_middle() {
 fn test_insert_rotate_left_last() {
     unsafe {
         // Create left node with key [40]
-        let mut left = InterNode::<i32, i32>::alloc(1);
+        let mut left = InterNode::<i32>::alloc(1);
         left.set_left_ptr(0x5000 as *mut NodeHeader);
         left.insert_no_split(40_i32, 0x5001 as *mut NodeHeader);
 
         // Create right node with keys [310, 320]
-        let mut right = InterNode::<i32, i32>::alloc(1);
+        let mut right = InterNode::<i32>::alloc(1);
         right.set_left_ptr(0x6000 as *mut NodeHeader);
         right.insert_no_split(310_i32, 0x6001 as *mut NodeHeader);
         right.insert_no_split(320_i32, 0x6002 as *mut NodeHeader);
 
         // Create parent node with separator key 300
-        let mut parent = InterNode::<i32, i32>::alloc(2);
+        let mut parent = InterNode::<i32>::alloc(2);
         parent.set_left_ptr(left.get_ptr_mut());
         parent.insert_no_split(300_i32, right.get_ptr_mut());
 

@@ -1,10 +1,14 @@
 use super::*;
+use captains_log::logfn;
+use rstest::*;
 
 // --- Forward Peaking & Moving Group ---
 
-#[test]
-fn test_occupied_move_forward_height_2() {
-    let mut builder = TreeBuilder::<u32, u32>::default();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_occupied_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
@@ -16,8 +20,8 @@ fn test_occupied_move_forward_height_2() {
     let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
-    assert_eq!(map.leaf_count(), 2);
-    assert_eq!(map.inter_count(), 1);
+    map.assert_leaf_count(2);
+    map.assert_inter_count(1);
     map.validate();
 
     if let Entry::Occupied(mut ent) = map.entry(0) {
@@ -29,7 +33,7 @@ fn test_occupied_move_forward_height_2() {
         assert_eq!(ent.key(), &2);
         assert_eq!(ent.get(), &10);
         ent.validate_cache_path();
-        // multi move delay PathCache adjustment
+        // multi move delay PathBuffer adjustment
         for _ in 1..(leaf_cap - 1) {
             ent = ent.move_forward().expect("can move");
         }
@@ -56,9 +60,11 @@ fn test_occupied_move_forward_height_2() {
     }
 }
 
-#[test]
-fn test_occupied_move_backward_height_2() {
-    let mut builder = TreeBuilder::<u32, u32>::default();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_occupied_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
@@ -70,8 +76,8 @@ fn test_occupied_move_backward_height_2() {
     let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
-    assert_eq!(map.leaf_count(), 2);
-    assert_eq!(map.inter_count(), 1);
+    map.assert_leaf_count(2);
+    map.assert_inter_count(1);
     map.validate();
 
     if let Entry::Occupied(mut ent) = map.entry(leaf_cap * 2) {
@@ -95,7 +101,7 @@ fn test_occupied_move_backward_height_2() {
         assert_eq!(ent.get(), &(prev * 10));
         ent.validate_cache_path();
 
-        // multi move delay PathCache adjustment
+        // multi move delay PathBuffer adjustment
         for _ in 0..(leaf_cap - 2) {
             ent = ent.move_backward().expect("can move");
         }
@@ -114,10 +120,12 @@ fn test_occupied_move_backward_height_2() {
     }
 }
 
-#[test]
-fn test_occupied_forward_same_leaf_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_occupied_forward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     map.insert(10i32, 100i32);
     map.insert(20i32, 200i32);
     map.insert(30i32, 300i32);
@@ -140,10 +148,12 @@ fn test_occupied_forward_same_leaf_height1() {
     }
 }
 
-#[test]
-fn test_occupied_forward_cross_leaf_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_occupied_forward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
 
     // Fill one leaf and start another
@@ -166,9 +176,11 @@ fn test_occupied_forward_cross_leaf_height1() {
     }
 }
 
-#[test]
-fn test_vacent_move_forward_height_2() {
-    let mut builder = TreeBuilder::<u32, u32>::default();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
@@ -180,8 +192,8 @@ fn test_vacent_move_forward_height_2() {
     let root = builder.new_root(1, leaf1.get_keys()[0], leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
-    assert_eq!(map.leaf_count(), 2);
-    assert_eq!(map.inter_count(), 1);
+    map.assert_leaf_count(2);
+    map.assert_inter_count(1);
     map.validate();
 
     if let Entry::Vacant(ent) = map.entry(1) {
@@ -224,9 +236,11 @@ fn test_vacent_move_forward_height_2() {
     }
 }
 
-#[test]
-fn test_vacent_move_backward_height_2() {
-    let mut builder = TreeBuilder::<u32, u32>::default();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
@@ -240,8 +254,8 @@ fn test_vacent_move_backward_height_2() {
     let root = builder.new_root(1, leaf_cap * 2, leaf0.get_ptr_mut(), leaf1.get_ptr_mut());
     let mut map = builder.build(root.into());
     assert_eq!(map.len(), leaf_cap as usize + 1);
-    assert_eq!(map.leaf_count(), 2);
-    assert_eq!(map.inter_count(), 1);
+    map.assert_leaf_count(2);
+    map.assert_inter_count(1);
     map.validate();
 
     if let Entry::Vacant(ent) = map.entry(2) {
@@ -286,10 +300,12 @@ fn test_vacent_move_backward_height_2() {
     }
 }
 
-#[test]
-fn test_vacant_forward_point_to_element_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_vacant_forward_point_to_element_height1<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<u32, u32, S>::new();
     map.insert(10, 100);
     map.insert(30, 300);
 
@@ -304,10 +320,12 @@ fn test_vacant_forward_point_to_element_height1() {
     }
 }
 
-#[test]
-fn test_vacant_forward_at_leaf_end_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_vacant_forward_at_leaf_end_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
 
     // Construct split
@@ -342,10 +360,12 @@ fn test_vacant_forward_at_leaf_end_height1() {
 
 // --- Backward Peaking & Moving Group ---
 
-#[test]
-fn test_occupied_backward_same_leaf_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_occupied_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
     map.insert(20, 200);
     map.insert(30, 300);
@@ -368,10 +388,12 @@ fn test_occupied_backward_same_leaf_height1() {
     }
 }
 
-#[test]
-fn test_occupied_backward_cross_leaf_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_occupied_backward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
 
     for i in 0..cap + 5 {
@@ -393,10 +415,12 @@ fn test_occupied_backward_cross_leaf_height1() {
     }
 }
 
-#[test]
-fn test_vacant_backward_same_leaf_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_vacant_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
     map.insert(30, 300);
 
@@ -409,10 +433,12 @@ fn test_vacant_backward_same_leaf_height1() {
     }
 }
 
-#[test]
-fn test_vacant_backward_at_leaf_start_height1() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_vacant_backward_at_leaf_start_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTreeMap::new();
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
 
     for i in 0..cap + 5 {
@@ -435,9 +461,11 @@ fn test_vacant_backward_at_leaf_start_height1() {
 
 // --- Alter Key Group ---
 
-#[test]
-fn test_alter_key_height_1() {
-    let mut map = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_alter_key_height_1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
     map.insert(20, 200);
     map.insert(30, 300);
@@ -469,11 +497,13 @@ fn test_alter_key_height_1() {
     }
 }
 
-#[test]
-fn test_alter_key_update_sep_height_2() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_alter_key_update_sep_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     {
-        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+        let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
         // Construct Root -> [leaf0 | sep1 | leaf1]
         let mut leaf0 = builder.new_leaf();
         let mut leaf1 = builder.new_leaf();
@@ -488,7 +518,7 @@ fn test_alter_key_update_sep_height_2() {
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 3);
-        assert_eq!(map.leaf_count(), 2);
+        map.assert_leaf_count(2);
         map.validate();
 
         // Alter key 20 to 25
@@ -504,11 +534,15 @@ fn test_alter_key_update_sep_height_2() {
     assert_eq!(alive_count(), 0);
 }
 
-#[test]
-fn test_alter_key_after_move_update_sep_height_2() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_alter_key_after_move_update_sep_height_2<S: Stats<CounterI32>>(
+    #[case] _s: S, setup_log: (),
+) {
     reset_alive_count();
     {
-        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+        let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
         // Construct Root -> [leaf0 | sep1 | leaf1 | sep2 | leaf2]
         let mut leaf0 = builder.new_leaf();
         let mut leaf1 = builder.new_leaf();
@@ -525,8 +559,8 @@ fn test_alter_key_after_move_update_sep_height_2() {
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 3);
-        assert_eq!(map.leaf_count(), 3);
-        assert_eq!(map.inter_count(), 1);
+        map.assert_leaf_count(3);
+        map.assert_inter_count(1);
         map.validate();
 
         // Alter key 20 to 25
@@ -549,11 +583,13 @@ fn test_alter_key_after_move_update_sep_height_2() {
     assert_eq!(alive_count(), 0);
 }
 
-#[test]
-fn test_alter_key_update_sep_height_3() {
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<CounterI32>::default())]
+fn test_alter_key_update_sep_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     {
-        let mut builder = TreeBuilder::<CounterI32, CounterI32>::default();
+        let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
         /*
           root (h=2) -> [InterL | sep_mid | InterR]
           InterL (h=1) -> [leaf0 | sep1 | leaf1]
@@ -584,7 +620,7 @@ fn test_alter_key_update_sep_height_3() {
 
         let mut map = builder.build(root.clone().into());
         assert_eq!(map.len(), 4);
-        assert_eq!(map.leaf_count(), 4);
+        map.assert_leaf_count(4);
         map.validate();
 
         // Alter key 30 (leaf2 first key) to 35
@@ -602,9 +638,11 @@ fn test_alter_key_update_sep_height_3() {
 
 // --- RangeTree Simulator Group ---
 
-#[test]
-fn test_rangetree_swallow_forward() {
-    let mut map = BTreeMap::<u32, u32>::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<u32>::default())]
+fn test_rangetree_swallow_forward<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<u32, u32, S>::new();
 
     // Mimic RangeTree segments: [10, 20], [30, 10], [50, 10]
     map.insert(10, 20);

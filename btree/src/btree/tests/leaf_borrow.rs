@@ -8,8 +8,9 @@ use std::println;
 /// middle_leaf[0], the original middle_leaf[0] is moved to left
 #[logfn]
 #[rstest]
-fn test_borrow_from_left_insert_first_height_2(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_left_insert_first_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
 
     let leaf_cap = builder.leaf_cap();
     assert!(5 < leaf_cap);
@@ -86,7 +87,7 @@ fn test_borrow_from_left_insert_first_height_2(setup_log: ()) {
     assert_eq!(map.get(&insert_key), Some(&insert_value));
 
     // Verify tree structure is still valid
-    let root = map.get_root_unwrap().into_inter();
+    let root = map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 2);
     assert_eq!(root.height(), 1);
@@ -95,9 +96,9 @@ fn test_borrow_from_left_insert_first_height_2(setup_log: ()) {
 
     assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
 
-    assert_eq!(map.leaf_count(), 3); // unchanged
+    map.assert_leaf_count(3); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
     drop(map); // This will deallocate all nodes
 }
 
@@ -106,8 +107,9 @@ fn test_borrow_from_left_insert_first_height_2(setup_log: ()) {
 /// insert to the middle of middle_leaf, with middle_leaf.keys[0] moved to the left.
 #[logfn]
 #[rstest]
-fn test_borrow_from_left_insert_mid_height_2(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_left_insert_mid_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     assert!(leaf_cap > 5);
     // Create three leaf nodes
@@ -177,16 +179,16 @@ fn test_borrow_from_left_insert_mid_height_2(setup_log: ()) {
     assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
 
     // Verify tree structure is still valid
-    let root = &map.get_root_unwrap().into_inter();
+    let root = &map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 2);
     assert_eq!(root.height(), 1);
     // verify the splitter of middle_leaf has changed
     assert_eq!(root.get_keys()[0], old_middle_leaf_key1);
 
-    assert_eq!(map.leaf_count(), 3); // unchanged
+    map.assert_leaf_count(3); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
 
     // Cleanup
     drop(map); // This will deallocate all nodes
@@ -197,8 +199,9 @@ fn test_borrow_from_left_insert_mid_height_2(setup_log: ()) {
 /// The insert pos is at middle_leaf, the last node from middle_leaf should move to right_leaf.
 #[logfn]
 #[rstest]
-fn test_borrow_from_right_height_2_not_last(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_right_height_2_not_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     println!("cap {}", leaf_cap);
     // Create three leaf nodes
@@ -243,7 +246,7 @@ fn test_borrow_from_right_height_2_not_last(setup_log: ()) {
     assert_eq!(map.len(), (3 * leaf_cap - 1) as usize);
     map.validate();
 
-    assert_eq!(map.get_root_unwrap().into_inter().get_keys()[1], right_leaf.get_keys()[0]);
+    assert_eq!(map.inner.get_root_unwrap().into_inter().get_keys()[1], right_leaf.get_keys()[0]);
 
     // Insert at the end of middle leaf (which is full) - should borrow from right
     let insert_key = 2 * leaf_cap as i32 * 2 - 3;
@@ -266,16 +269,16 @@ fn test_borrow_from_right_height_2_not_last(setup_log: ()) {
     assert_eq!(map.len(), 3 * leaf_cap as usize);
 
     // Verify tree structure is still valid
-    let root = &map.get_root_unwrap().into_inter();
+    let root = &map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 2);
     assert_eq!(root.height(), 1);
     // verify the splitter of right_leaf has changed
     assert_eq!(root.get_keys()[1], middle_last_key);
 
-    assert_eq!(map.leaf_count(), 3); // unchanged
+    map.assert_leaf_count(3); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
     // Cleanup
     drop(map);
 }
@@ -285,8 +288,9 @@ fn test_borrow_from_right_height_2_not_last(setup_log: ()) {
 /// The insert pos is beyond middle_leaf, but still < right_leaf.
 #[logfn]
 #[rstest]
-fn test_borrow_from_right_height_2_last(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_right_height_2_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     println!("cap {}", leaf_cap);
 
@@ -330,7 +334,7 @@ fn test_borrow_from_right_height_2_last(setup_log: ()) {
     map.validate();
     //map.dump();
 
-    assert_eq!(map.get_root_unwrap().into_inter().get_keys()[1], right_leaf.get_keys()[0]);
+    assert_eq!(map.inner.get_root_unwrap().into_inter().get_keys()[1], right_leaf.get_keys()[0]);
 
     // Insert at the end of middle leaf (which is full) - should borrow from right
     let insert_key = (2 * leaf_cap as i32 - 1) * 2 + 1;
@@ -357,16 +361,16 @@ fn test_borrow_from_right_height_2_last(setup_log: ()) {
     assert_eq!(map.len(), 3 * leaf_cap as usize);
 
     // Verify tree structure is still valid
-    let root = &map.get_root_unwrap().into_inter();
+    let root = &map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 2);
     assert_eq!(root.height(), 1);
     // verify the splitter of right_leaf has changed
     assert_eq!(root.get_keys()[1], insert_key);
 
-    assert_eq!(map.leaf_count(), 3); // unchanged
+    map.assert_leaf_count(3); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
     // Cleanup
     drop(map);
 }
@@ -376,8 +380,9 @@ fn test_borrow_from_right_height_2_last(setup_log: ()) {
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-fn test_borrow_from_left_insert_first_height_3(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_left_insert_first_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
     let mut leaf_0 = builder.new_leaf();
@@ -448,7 +453,7 @@ fn test_borrow_from_left_insert_first_height_3(setup_log: ()) {
 
     // Verify tree height is still 3
     assert_eq!(map.height(), 3);
-    let root = map.get_root_unwrap().into_inter();
+    let root = map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 1);
     // the root key has changed
@@ -458,9 +463,9 @@ fn test_borrow_from_left_insert_first_height_3(setup_log: ()) {
     //map.dump();
 
     map.validate();
-    assert_eq!(map.leaf_count(), 4); // unchanged
+    map.assert_leaf_count(4); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
     // Cleanup
     drop(map);
 }
@@ -470,8 +475,9 @@ fn test_borrow_from_left_insert_first_height_3(setup_log: ()) {
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-fn test_borrow_from_left_insert_mid_height_3(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_left_insert_mid_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
     let mut leaf_0 = builder.new_leaf();
@@ -542,7 +548,7 @@ fn test_borrow_from_left_insert_mid_height_3(setup_log: ()) {
 
     // Verify tree height is still 3
     assert_eq!(map.height(), 3);
-    let root = map.get_root_unwrap().into_inter();
+    let root = map.inner.get_root_unwrap().into_inter();
     // no split
     assert_eq!(root.key_count(), 1);
     // the root key has changed
@@ -550,9 +556,9 @@ fn test_borrow_from_left_insert_mid_height_3(setup_log: ()) {
     assert_eq!(internal_left.key_count(), 1);
     assert_eq!(internal_right.key_count(), 1);
 
-    assert_eq!(map.leaf_count(), 4); // unchanged
+    map.assert_leaf_count(4); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveLeft as u32 | TestFlag::UpdateSepKey as u32);
     // Cleanup
     drop(map);
 }
@@ -562,8 +568,9 @@ fn test_borrow_from_left_insert_mid_height_3(setup_log: ()) {
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-fn test_borrow_from_right_insert_not_last_height_3(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_right_insert_not_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
     let mut leaf_0 = builder.new_leaf();
@@ -625,12 +632,15 @@ fn test_borrow_from_right_insert_not_last_height_3(setup_log: ()) {
     assert_eq!(map.len(), (4 * leaf_cap - 1) as usize);
     map.validate();
     assert_eq!(map.height(), 3);
+    map.dump();
 
+    crate::trace_log!("inserting {insert_key:?}");
     map.insert(insert_key, insert_value);
+    map.dump();
     map.validate();
 
     assert_eq!(leaf_2.get_keys()[0], old_leaf_1_last);
-    let root = map.get_root_unwrap().into_inter();
+    let root = map.inner.get_root_unwrap().into_inter();
     assert_eq!(root.get_keys()[0], old_leaf_1_last);
 
     // Verify insertion succeeded
@@ -645,9 +655,9 @@ fn test_borrow_from_right_insert_not_last_height_3(setup_log: ()) {
     assert_eq!(internal_left.key_count(), 1);
     assert_eq!(internal_right.key_count(), 1);
 
-    assert_eq!(map.leaf_count(), 4); // unchanged
+    map.assert_leaf_count(4); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
     drop(map);
 }
 
@@ -656,8 +666,9 @@ fn test_borrow_from_right_insert_not_last_height_3(setup_log: ()) {
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-fn test_borrow_from_right_insert_last_height_3(setup_log: ()) {
-    let mut builder = TreeBuilder::<i32, i32>::default();
+#[case(TreeInfo::<i32>::default())]
+fn test_borrow_from_right_insert_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
     let mut leaf_0 = builder.new_leaf();
@@ -724,7 +735,7 @@ fn test_borrow_from_right_insert_last_height_3(setup_log: ()) {
     map.validate();
 
     assert_eq!(leaf_2.get_keys()[0], insert_key);
-    let root = map.get_root_unwrap().into_inter();
+    let root = map.inner.get_root_unwrap().into_inter();
     assert_eq!(root.get_keys()[0], insert_key);
 
     // Verify insertion succeeded
@@ -738,8 +749,8 @@ fn test_borrow_from_right_insert_last_height_3(setup_log: ()) {
     // the root key has changed
     assert_eq!(internal_left.key_count(), 1);
     assert_eq!(internal_right.key_count(), 1);
-    assert_eq!(map.leaf_count(), 4); // unchanged
+    map.assert_leaf_count(4); // unchanged
     #[cfg(feature = "trace_log")]
-    assert_eq!(map.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
+    assert_eq!(map.inner.triggers, TestFlag::LeafMoveRight as u32 | TestFlag::UpdateSepKey as u32);
     drop(map);
 }
