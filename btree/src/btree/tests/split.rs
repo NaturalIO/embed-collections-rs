@@ -10,7 +10,7 @@ use std::vec;
 #[case(TreeInfo::<i32>::default())]
 fn test_btree_large_tree_split_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
-    let (inter_cap, leaf_cap) = BTreeMap::<i32, i32>::cap();
+    let (inter_cap, leaf_cap) = BTree::<i32, i32, S>::cap();
     assert!(100 > inter_cap);
     assert!(100 > leaf_cap);
     // Insert many values to create multi-level tree

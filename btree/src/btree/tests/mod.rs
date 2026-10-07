@@ -12,8 +12,10 @@ mod leaf_borrow;
 mod leaf_delete;
 mod split;
 
-use super::{helper::*, inter::*, leaf::*, node::*, stats::*, *};
-pub use embed_collections_test::*;
+use super::{helper::*, inter::*, leaf::*, node::*, *};
+pub(super) use crate::compact::Compact;
+pub(super) use crate::large::TreeInfo;
+pub(super) use embed_collections_test::*;
 
 pub struct TreeBuilder<K: Key, V: Value, S: Stats<K>> {
     leaf_count: usize,
@@ -72,7 +74,7 @@ impl<K: Key, V: Value, S: Stats<K>> TreeBuilder<K, V, S> {
         leaf.insert_no_split(key, value);
     }
 
-    pub fn build(self, root: Node<K, V>) -> BTree<K, V, S> {
+    pub fn build(mut self, root: Node<K, V>) -> BTree<K, V, S> {
         self.stats.init_count(self.leaf_count, self.inter_count);
         BTree {
             inner: BTreeInner {

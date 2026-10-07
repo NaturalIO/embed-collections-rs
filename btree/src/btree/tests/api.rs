@@ -10,13 +10,12 @@ use std::vec::Vec;
 
 #[logfn]
 #[rstest]
-fn test_size(setup_log: ()) {
+#[case(TreeInfo::<u32>::default())]
+fn test_size<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let root = size_of::<Option<Node<u32, u32>>>();
     println!("size: root {}", root);
-    let path_cache = size_of::<TreeInfo<u32>>();
-    println!("size: path_cache {}", path_cache);
-    let tree = size_of::<BTreeMap<u32, u32>>();
-    println!("size: BTreeMap {}", tree);
+    let tree = size_of::<BTree<u32, u32, S>>();
+    println!("size: BTree {}", tree);
     let s_tree = size_of::<alloc::collections::BTreeMap<u32, u32>>();
     println!("size: std BTreeMap {}", s_tree);
 }
@@ -53,25 +52,31 @@ fn test_simple<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-fn test_unblanced_cap() {
-    let (inter_cap, leaf_cap) = BTreeMap::<u32, u32>::cap();
-    println!("cap 32/32: inter {inter_cap} leaf {leaf_cap}");
-    let (inter_cap_1, leaf_cap_1) = BTreeMap::<u32, u64>::cap();
-    println!("cap 32/64: inter {inter_cap_1} leaf {leaf_cap_1}");
-    assert_eq!(inter_cap, inter_cap_1);
-    assert!(leaf_cap > leaf_cap_1);
-    let (inter_cap_2, leaf_cap_2) = BTreeMap::<u64, u64>::cap();
-    println!("cap 64/64: inter {inter_cap_2} leaf {leaf_cap_2}");
-    let (inter_cap_3, leaf_cap_3) = BTreeMap::<u64, ()>::cap();
-    println!("cap 64/() inter {inter_cap_3} leaf {leaf_cap_3}");
-    assert!(leaf_cap_3 > leaf_cap_2);
+fn test_unblanced_cap(setup_log: ()) {
+    type Large<K, V> = crate::large::BTreeMap<K, V>;
+    macro_rules! test {
+        ($map_t: ident) => {
+            let (inter_cap, leaf_cap) = $map_t::<u32, u32>::cap();
+            println!("cap 32/32: inter {inter_cap} leaf {leaf_cap}");
+            let (inter_cap_1, leaf_cap_1) = $map_t::<u32, u64>::cap();
+            println!("cap 32/64: inter {inter_cap_1} leaf {leaf_cap_1}");
+            assert_eq!(inter_cap, inter_cap_1);
+            assert!(leaf_cap > leaf_cap_1);
+            let (inter_cap_2, leaf_cap_2) = $map_t::<u64, u64>::cap();
+            println!("cap 64/64: inter {inter_cap_2} leaf {leaf_cap_2}");
+            let (inter_cap_3, leaf_cap_3) = $map_t::<u64, ()>::cap();
+            println!("cap 64/() inter {inter_cap_3} leaf {leaf_cap_3}");
+            assert!(leaf_cap_3 > leaf_cap_2);
+        };
+    }
+    test!(Large);
 }
 
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<u8>::default())]
 fn test_zero_size<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
-    let (inter_cap, leaf_cap) = BTreeMap::<u8, ()>::cap();
+    let (inter_cap, leaf_cap) = BTree::<u8, (), S>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
 
     let inter_layout = InterNode::<u8>::LAYOUT;
@@ -84,7 +89,7 @@ fn test_zero_size<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
         "leaf_layout for u8, (), key_offset: {}, value_offset: {} ",
         leaf_layout.key_offset, leaf_layout.value_offset
     );
-    let mut map: BTreeMap<u8, ()> = BTreeMap::new();
+    let mut map = BTree::<u8, (), S>::new();
     for i in 0u8..=u8::MAX {
         map.insert(i, ());
     }
@@ -469,7 +474,7 @@ fn test_pop_last_all<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 #[rstest]
 #[case(TreeInfo::<String>::default())]
 fn test_borrow_string_str<S: Stats<String>>(#[case] _s: S, setup_log: ()) {
-    let mut map: BTreeMap<String, i32> = BTreeMap::new();
+    let mut map = BTree::<String, i32, S>::new();
     map.insert("hello".to_string(), 1);
     map.insert("world".to_string(), 2);
     map.insert("foo".to_string(), 3);

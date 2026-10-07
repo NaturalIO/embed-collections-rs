@@ -3,6 +3,18 @@ use captains_log::logfn;
 use rstest::rstest;
 use std::println;
 
+fn seek_cache_parent<'a, K: Key, V: Value, S: Stats<K>>(
+    map: &'a mut BTree<K, V, S>, stack: &'a mut S::BufferStack, key: &K,
+) -> (&'a mut BTreeInner<K, V>, S::PathBufferRef<'a>, InterNode<K>, u8) {
+    let (tree, stats) = (&mut map.inner, &mut map.stats);
+    let inter = tree.root_as_inter().unwrap();
+    let mut cache = stats.get_cache(stack, Some(inter.clone()));
+    // populate cache
+    let _ = inter.find_leaf_with_cache::<K, _, _>(&mut cache, key);
+    let (parent, idx) = cache.pop_path().unwrap();
+    (tree, cache, parent, idx)
+}
+
 // =============================================================================
 // Direct handle_inter_underflow Tests
 // =============================================================================
@@ -91,22 +103,17 @@ fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s:
         map.validate();
         //map.dump();
         assert_eq!(map.height(), 3);
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_1_first);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 1);
+            assert_eq!(popped_node, internal_a);
 
-        // Use find_leaf_with_cache to populate cache
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(3));
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, &leaf_1_first);
-
-        // Pop height=1 InterNode (internal_a) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 1);
-        assert_eq!(popped_node, internal_a);
-
-        // Directly call handle_inter_underflow
-        map.inner.handle_inter_underflow(&cache, internal_a);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_a);
+        }
 
         // Verify tree structure is complete
         map.validate();
@@ -221,24 +228,17 @@ fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: 
         assert_eq!(map.height(), 3);
         //map.dump();
 
-        // Use find_leaf_with_cache to populate cache
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(3));
-        // Use a reference to leaf_3's first key for lookup
         let leaf_3_lookup = &leaf_3.get_keys()[0];
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, leaf_3_lookup);
-
-        // Pop height=1 InterNode (internal_b) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 1);
-        assert_eq!(popped_node, internal_b);
-
-        // Directly call handle_inter_underflow
-        map.inner.handle_inter_underflow(&cache, internal_b);
-
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_3_lookup);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 1);
+            assert_eq!(popped_node, internal_b);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_b);
+        }
         // Verify tree structure is complete
         map.validate();
 
@@ -366,22 +366,17 @@ fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S
         assert_eq!(map.len(), 18);
         map.validate();
         assert_eq!(map.height(), 3, "Tree height should remain 3");
-        // map.dump();
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(3));
-        // Use find_leaf_with_cache to populate cache
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, &leaf_1.get_keys()[0]);
-
-        // Pop height=1 InterNode (internal_a) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        assert_eq!(popped_node, internal_a);
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 1);
-
-        // Directly call handle_inter_underflow
-        map.inner.handle_inter_underflow(&cache, internal_a);
+        let leaf_1_first = leaf_1.get_keys()[0].clone();
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_1_first);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 1);
+            assert_eq!(popped_node, internal_a);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_a);
+        }
 
         // Verify tree structure is complete
         map.validate();
@@ -519,24 +514,17 @@ fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S,
         //map.dump();
         assert_eq!(map.height(), 3, "Tree height should remain 3");
 
-        // Use find_leaf_with_cache to populate cache
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(3));
-        // Use a reference to leaf_3's first key for lookup
-        let leaf_3_lookup = &leaf_3.get_keys()[0];
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, leaf_3_lookup);
-
-        // Pop height=1 InterNode (internal_b) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 1);
-        assert_eq!(popped_node, internal_b);
-
-        // Directly call handle_inter_underflow
-        map.inner.handle_inter_underflow(&cache, internal_b);
-
+        let leaf_3_lookup = &leaf_3.get_keys()[0].clone();
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_3_lookup);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 1);
+            assert_eq!(popped_node, internal_b);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_b);
+        }
         // Verify tree structure is complete
         map.validate();
         //map.dump();
@@ -633,23 +621,16 @@ fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, s
         map.validate();
         assert_eq!(map.height(), 4);
         // map.dump();
-
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(4));
-        // Use find_leaf_with_cache to populate cache
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, &leaf_1_first);
-
-        // Pop height=1 InterNode (internal_b) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        assert_eq!(popped_node, internal_b);
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 0);
-
-        // Directly call handle_inter_underflow on internal_b
-        map.inner.handle_inter_underflow(&cache, internal_b);
-
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_1_first);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 0);
+            assert_eq!(popped_node, internal_b);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_b);
+        }
         // Verify tree structure is complete
         map.validate();
         // map.dump();
@@ -742,27 +723,23 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3<S: Stats<CounterI32>>(
         assert_eq!(map.len(), 9);
         map.validate();
         assert_eq!(map.height(), 3, "Tree height should be 3");
-        // map.dump();
 
-        let (tree, cache) = (&mut map.inner, &map.stats.get_cache(3));
-        // Use find_leaf_with_cache to populate cache
-        let _ = tree
-            .get_root_unwrap()
-            .into_inter()
-            .find_leaf_with_cache::<CounterI32, _, _>(&cache, &leaf_1_first);
+        let alive_before;
+        {
+            let mut stack = S::BufferStack::default();
+            let (tree, mut cache, popped_node, _) =
+                seek_cache_parent::<_, _, _>(&mut map, &mut stack, &leaf_1_first);
+            debug_assert_eq!(popped_node.height(), 1);
+            debug_assert_eq!(popped_node.key_count(), 0);
+            assert_eq!(popped_node, internal_a);
 
-        // Pop height=1 InterNode (internal_a) from cache
-        let (popped_node, _) = cache.pop_path().unwrap();
-        assert_eq!(popped_node, internal_a);
-        debug_assert_eq!(popped_node.height(), 1);
-        debug_assert_eq!(popped_node.key_count(), 0);
+            // Record alive count before underflow handling
+            alive_before = alive_count();
+            println!("Alive count before handle_inter_underflow: {}", alive_before);
 
-        // Record alive count before underflow handling
-        let alive_before = alive_count();
-        println!("Alive count before handle_inter_underflow: {}", alive_before);
-
-        // Directly call handle_inter_underflow
-        map.inner.handle_inter_underflow(&cache, internal_a);
+            // Directly call handle_inter_underflow
+            tree.handle_inter_underflow(&mut cache, internal_a);
+        }
 
         // Verify tree structure is complete
         map.validate();

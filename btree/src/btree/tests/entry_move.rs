@@ -202,7 +202,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
 
         // adjacent
         assert_eq!(ent.peek_forward(), Some((&2, &10)));
-        let o_ent = ent.move_forward().expect("can move");
+        let mut o_ent = ent.move_forward().expect("can move");
         assert_eq!(o_ent.key(), &2);
         assert_eq!(o_ent.get(), &10);
         o_ent.validate_cache_path();
@@ -218,7 +218,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
 
         // next leaf
         assert_eq!(ent.peek_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
-        let o_ent = ent.move_forward().expect("can move");
+        let mut o_ent = ent.move_forward().expect("can move");
         assert_eq!(o_ent.key(), &(leaf_cap * 2));
         assert_eq!(o_ent.get(), &(leaf_cap * 10));
         o_ent.validate_cache_path();
@@ -264,7 +264,7 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
 
         // adjacent
         assert_eq!(ent.peek_backward(), Some((&1, &0)));
-        let o_ent = ent.move_backward().expect("can move");
+        let mut o_ent = ent.move_backward().expect("can move");
         assert_eq!(o_ent.key(), &1);
         assert_eq!(o_ent.get(), &0);
         o_ent.validate_cache_path();
@@ -281,7 +281,7 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
         let pre_key = (leaf_cap - 1) * 2 + 1;
         let pre_value = (leaf_cap - 1) * 10;
         assert_eq!(ent.peek_backward(), Some((&pre_key, &pre_value)));
-        let o_ent = ent.move_backward().expect("can move");
+        let mut o_ent = ent.move_backward().expect("can move");
         assert_eq!(o_ent.key(), &pre_key);
         assert_eq!(o_ent.get(), &pre_value);
         o_ent.validate_cache_path();

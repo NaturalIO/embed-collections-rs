@@ -1,5 +1,5 @@
-use super::super::{leaf::*, *};
 use super::*;
+use captains_log::logfn;
 use rstest::rstest;
 use std::println;
 
@@ -264,9 +264,11 @@ fn test_leaf_node_split_insert_at_end() {
     }
 }
 
-#[test]
-fn test_btree_split_leaf_simple() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_split_leaf_simple<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
     // First, fill exactly to capacity
@@ -295,9 +297,11 @@ fn test_btree_split_leaf_simple() {
     }
 }
 
-#[test]
-fn test_btree_split_leaf_insert_at_beginning() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_split_leaf_insert_at_beginning<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
     // Fill to capacity
@@ -319,9 +323,11 @@ fn test_btree_split_leaf_insert_at_beginning() {
     assert_eq!(map.get(&(cap as i32 - 1)), Some(&((cap - 1) as i32 * 10)));
 }
 
-#[test]
-fn test_btree_split_leaf_insert_in_middle() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_split_leaf_insert_in_middle<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
     // Fill with even numbers: 0, 2, 4, 6, ...
@@ -345,9 +351,11 @@ fn test_btree_split_leaf_insert_in_middle() {
     assert_eq!(map.get(&2), Some(&20));
 }
 
-#[test]
-fn test_btree_split_leaf_seq() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_split_leaf_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
     // Insert just enough to trigger one split
@@ -358,9 +366,11 @@ fn test_btree_split_leaf_seq() {
     assert_eq!(map.len(), cap + 1);
 }
 
-#[test]
-fn test_btree_split_leaf_verify_structure() {
-    let mut map: BTreeMap<i32, i32> = BTreeMap::new();
+#[logfn]
+#[rstest]
+#[case(TreeInfo::<i32>::default())]
+fn test_btree_split_leaf_verify_structure<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
     // Insert just enough to trigger one split

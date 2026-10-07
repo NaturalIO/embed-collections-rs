@@ -1,5 +1,6 @@
 use super::super::*;
 use super::*;
+use crate::large;
 use captains_log::{log_println, logfn};
 use rstest::rstest;
 use std::println;
@@ -14,7 +15,7 @@ use std::vec::Vec;
 #[case(100, 2)]
 #[case(1000, 3)]
 #[case(10000, 3)]
-fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u8) {
+fn test_large_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u8) {
     #[cfg(miri)]
     {
         if count > 100 {
@@ -26,7 +27,7 @@ fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u8) {
     reset_alive_count();
     assert_eq!(alive_count(), 0);
 
-    let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
+    let mut map = large::BTreeMap::<CounterI32, CounterI32>::new();
     // Fill node to capacity
     for i in 0..count {
         map.insert((i as i32).into(), (i as i32 * 10).into());
@@ -84,7 +85,7 @@ fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u8) {
 #[case(1000, 10)] // Standard test: 1000 elements per batch, 10 iterations
 #[case(500, 5)] // Medium batch, fewer iterations
 #[case(10000, 3)] // Standard test: 1000 elements per batch, 10 iterations
-fn test_mixed_random_batch_insert_delete(
+fn test_large_mixed_random_batch_insert_delete(
     setup_log: (), #[case] batch_size: usize, #[case] iterations: usize,
 ) {
     reset_alive_count();
@@ -101,7 +102,7 @@ fn test_mixed_random_batch_insert_delete(
         seed, batch_size, iterations
     );
 
-    let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
+    let mut map = large::BTreeMap::<CounterI32, CounterI32>::new();
     let mut rng = fastrand::Rng::with_seed(seed);
 
     // Helper to compute value from key (use wrapping to avoid overflow)
@@ -211,7 +212,9 @@ fn test_mixed_random_batch_insert_delete(
 #[case(500, 20)]
 #[case(1000, 20)]
 #[case(10000, 5)]
-fn test_mix_remove_range_random(setup_log: (), #[case] count: usize, #[case] iterations: usize) {
+fn test_large_mix_remove_range_random(
+    setup_log: (), #[case] count: usize, #[case] iterations: usize,
+) {
     reset_alive_count();
     let seed: u64 = match std::env::var("TEST_SEED") {
         Ok(val) => val.parse().expect("TEST_SEED must be a valid u64"),
@@ -219,7 +222,7 @@ fn test_mix_remove_range_random(setup_log: (), #[case] count: usize, #[case] ite
     };
     println!("=== test_mix_remove_range_random seed: {} ===", seed);
     let mut rng = fastrand::Rng::with_seed(seed);
-    let mut map: BTreeMap<CounterI32, CounterI32> = BTreeMap::new();
+    let mut map = large::BTreeMap::<CounterI32, CounterI32>::new();
 
     for i in 0..iterations {
         // 1. Insert random elements

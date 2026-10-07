@@ -340,7 +340,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
     }
 
     #[cfg(test)]
-    pub(crate) fn validate_cache_path(&self) {
+    pub(crate) fn validate_cache_path(&mut self) {
         let k = self.leaf.get_keys()[self.inner.get_idx() as usize].clone();
         if let Some(root) = self.inner.get_tree().root_as_inter() {
             let backup = {
@@ -350,7 +350,8 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
             };
             // new cache, don't mix with original
             let mut _stats = S::default();
-            let mut cache = _stats.get_cache(Some(root));
+            let mut stack = S::BufferStack::default();
+            let mut cache = _stats.get_cache(&mut stack, Some(root));
             let _leaf = self
                 .inner
                 .get_tree()
