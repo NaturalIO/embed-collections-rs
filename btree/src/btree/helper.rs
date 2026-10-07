@@ -1,6 +1,7 @@
 use super::inter::*;
+use core::marker::PhantomData;
 
-pub(super) fn dummy_post_callback<K: Ord>(_node: InterNode<K>) {}
+pub(super) fn dummy_post_callback<K: Ord, C>(_cache: &mut C, _node: InterNode<K>) {}
 
 macro_rules! _move_to_ancestor {
     ($queue: expr, $pop: ident, $cond: expr, $post: expr) => {{
@@ -11,7 +12,7 @@ macro_rules! _move_to_ancestor {
                 res.replace((grand_parent, idx));
                 break;
             } else {
-                ($post)(grand_parent);
+                ($post)($queue, grand_parent);
             }
         }
         // grand_parent idx reach the end, will not visit again
@@ -20,46 +21,48 @@ macro_rules! _move_to_ancestor {
 }
 
 #[allow(private_bounds)]
-pub(super) trait PathBuffer<K: Ord>: Sized {
-    type Iter<'a>: Iterator<Item = (&'a InterNode<K>, u8)>
-    where
-        Self: 'a,
-        K: 'a;
-
+pub(crate) trait PathBuffer<K: Ord>: Sized {
     // --- stats method begins ---
     // methods should belong to Stats, but we put here due to borrow checker issues
-    fn inc_leaf_count(&self);
+    fn inc_leaf_count(&mut self);
 
-    fn dec_leaf_count(&self);
+    fn dec_leaf_count(&mut self);
 
-    fn inc_inter_count(&self);
+    fn inc_inter_count(&mut self);
 
-    fn dec_inter_count(&self);
+    fn dec_inter_count(&mut self);
 
     // --- stats method ends ---
 
     /// The count of current level items cotains by the PathBuffer
     fn buffer_len(&self) -> u8;
 
-    fn ensure_cap(&self, height: u8);
-
     fn buffer_pos(&self) -> i8;
 
     /// The delta position of current entry to the PathBuffer.
     /// < 0 for left, > 0 for right, ==0 for center
-    fn move_pos(&self, delta: i8);
+    fn move_pos(&mut self, delta: i8);
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
-    fn _push(&self, inter: InterNode<K>, idx: u8);
+    fn _push(&mut self, inter: InterNode<K>, idx: u8);
 
     /// Pop the top entry from the cache stack.
-    fn _pop(&self) -> Option<(InterNode<K>, u8)>;
+    fn _pop(&mut self) -> Option<(InterNode<K>, u8)>;
 
-    /// Reverse (top → bottom) iterator over the stack without consuming it.
-    fn iter<'a>(&'a self) -> Self::Iter<'a>;
+    unsafe fn _get_unchecked(&self, idx: u8) -> (InterNode<K>, u8);
 
-    /// Peek at the top of the stack (equivalent to `Various::last`).
-    fn last(&self) -> Option<(&InterNode<K>, u8)>;
+    /// Reverse (bottom->top) iterator over the stack without consuming it.
+    #[inline]
+    fn iter<'a>(&'a self) -> PathBufferIter<'a, K, Self> {
+        PathBufferIter { idx: self.buffer_len(), buf: self, _phan: Default::default() }
+    }
+
+    /// Peek at the last item (parent)
+    #[inline]
+    fn last(&self) -> Option<(InterNode<K>, u8)> {
+        let idx = self.buffer_len();
+        if idx > 0 { Some(unsafe { self._get_unchecked(idx - 1) }) } else { None }
+    }
 
     #[inline(always)]
     fn assert_center(&self) {
@@ -67,9 +70,9 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     }
 
     #[inline]
-    fn _move_left_and_pop<F>(&self, post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn _move_left_and_pop<F>(&mut self, mut post_callback: F) -> Option<(InterNode<K>, u8)>
     where
-        F: Fn(InterNode<K>),
+        F: FnMut(&mut Self, InterNode<K>),
     {
         while let Some((parent, idx)) = self._pop() {
             let pos = self.buffer_pos();
@@ -86,7 +89,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
             // only move 1 since we change the branch, leave the rest to the loop
             self.move_pos(1);
             let pre_height = parent.height();
-            post_callback(parent);
+            post_callback(self, parent);
             let cond = |_node: &InterNode<K>, idx: u8| -> bool { idx > 0 };
             // this is for entry API, we already know there is a previous node
             if let Some((grand_parent, grand_idx)) =
@@ -109,9 +112,9 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
 
     /// Return the last parent
     #[inline]
-    fn _move_right_and_pop<F>(&self, post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn _move_right_and_pop<F>(&mut self, mut post_callback: F) -> Option<(InterNode<K>, u8)>
     where
-        F: Fn(InterNode<K>),
+        F: FnMut(&mut Self, InterNode<K>),
     {
         // move of the time move_step is just 1
         while let Some((parent, idx)) = self._pop() {
@@ -130,7 +133,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
             // parent idx reach the end, will not visit again
             let pre_height = parent.height();
             self.move_pos(-1);
-            post_callback(parent);
+            post_callback(self, parent);
             // only move 1 since we change the branch, leave the rest to the loop
             if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
                 self,
@@ -154,7 +157,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     }
 
     #[inline(always)]
-    fn peek_parent(&self) -> Option<(InterNode<K>, u8)> {
+    fn peek_parent(&mut self) -> Option<(InterNode<K>, u8)> {
         self.assert_center();
         let (parent, idx) = self.last()?;
         Some((parent.clone(), idx))
@@ -163,7 +166,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     /// iter backward through cache internal stack, without changing the cache,
     /// return None if reaches root
     #[inline(always)]
-    fn peek_ancestor<FC>(&self, cond: FC) -> Option<(InterNode<K>, u8)>
+    fn peek_ancestor<FC>(&mut self, cond: FC) -> Option<(InterNode<K>, u8)>
     where
         FC: Fn(&InterNode<K>, u8) -> bool,
     {
@@ -171,7 +174,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
         let iter = self.iter();
         // For dropping scenario, cannot move further, reach the end at root
         for (grand_parent, idx) in iter {
-            if cond(grand_parent, idx) {
+            if cond(&grand_parent, idx) {
                 return Some((grand_parent.clone(), idx));
             }
         }
@@ -183,11 +186,11 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     /// return None if reaches root
     #[inline(always)]
     fn move_path_to_ancestor<FC, FP>(
-        &self, cond: FC, post_callback: FP,
+        &mut self, cond: FC, mut post_callback: FP,
     ) -> Option<(InterNode<K>, u8)>
     where
         FC: Fn(&InterNode<K>, u8) -> bool,
-        FP: Fn(InterNode<K>),
+        FP: FnMut(&mut Self, InterNode<K>),
     {
         // Self::pop() will detect pos and fix position
         _move_to_ancestor!(self, pop_path, cond, post_callback)
@@ -195,7 +198,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
 
     /// For moving the Entry position
     #[inline(always)]
-    fn move_path_left(&self) {
+    fn move_path_left(&mut self) {
         // We delay the cache adjustment until pop because may not need to visit the parent
         if self.buffer_pos() > i8::MIN {
         } else {
@@ -206,7 +209,7 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
 
     /// For moving the Entry position
     #[inline(always)]
-    fn move_path_right(&self) {
+    fn move_path_right(&mut self) {
         // We delay the cache adjustment until pop because may not need to visit the parent
         if self.buffer_pos() < i8::MAX {
         } else {
@@ -216,25 +219,25 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     }
 
     #[inline(always)]
-    fn _fix_center_from_left(&self) {
+    fn _fix_center_from_left(&mut self) {
         debug_assert!(self.buffer_pos() < 0);
-        if let Some((parent, idx)) = self._move_left_and_pop(dummy_post_callback::<K>) {
+        if let Some((parent, idx)) = self._move_left_and_pop(dummy_post_callback::<K, Self>) {
             self._push(parent, idx);
         }
         debug_assert_eq!(self.buffer_pos(), 0);
     }
 
     #[inline(always)]
-    fn _fix_center_from_right(&self) {
+    fn _fix_center_from_right(&mut self) {
         debug_assert!(self.buffer_pos() > 0);
-        if let Some((parent, idx)) = self._move_right_and_pop(dummy_post_callback::<K>) {
+        if let Some((parent, idx)) = self._move_right_and_pop(dummy_post_callback::<K, Self>) {
             self._push(parent, idx);
         }
         debug_assert_eq!(self.buffer_pos(), 0);
     }
 
     #[inline(always)]
-    fn fix_path_center(&self) {
+    fn fix_path_center(&mut self) {
         let pos = self.buffer_pos();
         if pos == 0 { // most frequent path
         } else if pos > 0 {
@@ -246,30 +249,30 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     }
 
     #[inline(always)]
-    fn push_path(&self, inter: InterNode<K>, idx: u8) {
+    fn push_path(&mut self, inter: InterNode<K>, idx: u8) {
         self.assert_center();
         self._push(inter, idx);
     }
 
     /// pop parent and its idx from cache, if we need new_root, return None
     #[inline(always)]
-    fn pop_path(&self) -> Option<(InterNode<K>, u8)> {
+    fn pop_path(&mut self) -> Option<(InterNode<K>, u8)> {
         let pos = self.buffer_pos();
         if pos == 0 {
             self._pop()
         } else if pos > 0 {
-            self._move_right_and_pop(dummy_post_callback::<K>)
+            self._move_right_and_pop(dummy_post_callback::<K, Self>)
         } else {
             debug_assert!(pos < 0);
-            self._move_left_and_pop(dummy_post_callback::<K>)
+            self._move_left_and_pop(dummy_post_callback::<K, Self>)
         }
     }
 
     // for dropping the tree, post order visit, `post_callback` should dealloc on the node
     #[inline(always)]
-    fn move_path_right_and_pop_l1<F>(&self, post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn move_path_right_and_pop_l1<F>(&mut self, post_callback: F) -> Option<(InterNode<K>, u8)>
     where
-        F: Fn(InterNode<K>) + Clone,
+        F: FnMut(&mut Self, InterNode<K>) + Clone,
     {
         if self.buffer_pos() < i8::MAX {
         } else {
@@ -281,9 +284,9 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
 
     // for dropping the tree, post order visit in reversed order, `post_callback` should dealloc on the node
     #[inline(always)]
-    fn move_path_left_and_pop_l1<F>(&self, post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn move_path_left_and_pop_l1<F>(&mut self, post_callback: F) -> Option<(InterNode<K>, u8)>
     where
-        F: Fn(InterNode<K>) + Clone,
+        F: Fn(&mut Self, InterNode<K>) + Clone,
     {
         if self.buffer_pos() > i8::MIN {
         } else {
@@ -303,29 +306,23 @@ pub(super) trait PathBuffer<K: Ord>: Sized {
     }
 }
 
-impl<'b, K: Ord, T: PathBuffer<K> + Sized> PathBuffer<K> for &'b T {
-    type Iter<'a>
-        = T::Iter<'a>
-    where
-        Self: 'a,
-        K: 'a;
-
+impl<'b, K: Ord, T: PathBuffer<K> + Sized> PathBuffer<K> for &'b mut T {
     // --- stats method begins ---
     // methods should belong to Stats, but we put here due to borrow checker issues
 
-    fn inc_leaf_count(&self) {
+    fn inc_leaf_count(&mut self) {
         T::inc_leaf_count(self)
     }
 
-    fn dec_leaf_count(&self) {
+    fn dec_leaf_count(&mut self) {
         T::dec_leaf_count(self)
     }
 
-    fn inc_inter_count(&self) {
+    fn inc_inter_count(&mut self) {
         T::inc_inter_count(self)
     }
 
-    fn dec_inter_count(&self) {
+    fn dec_inter_count(&mut self) {
         T::dec_inter_count(self)
     }
 
@@ -336,37 +333,60 @@ impl<'b, K: Ord, T: PathBuffer<K> + Sized> PathBuffer<K> for &'b T {
         T::buffer_len(self)
     }
 
-    fn ensure_cap(&self, height: u8) {
-        T::ensure_cap(self, height)
-    }
-
     fn buffer_pos(&self) -> i8 {
         T::buffer_pos(self)
     }
 
     /// The delta position of current entry to the PathBuffer.
     /// < 0 for left, > 0 for right, ==0 for center
-    fn move_pos(&self, delta: i8) {
+    fn move_pos(&mut self, delta: i8) {
         T::move_pos(self, delta)
     }
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
-    fn _push(&self, inter: InterNode<K>, idx: u8) {
+    fn _push(&mut self, inter: InterNode<K>, idx: u8) {
         T::_push(self, inter, idx)
     }
 
     /// Pop the top entry from the cache stack.
-    fn _pop(&self) -> Option<(InterNode<K>, u8)> {
+    fn _pop(&mut self) -> Option<(InterNode<K>, u8)> {
         T::_pop(self)
     }
 
-    /// Reverse (top → bottom) iterator over the stack without consuming it.
-    fn iter<'a>(&'a self) -> Self::Iter<'a> {
-        T::iter(self)
+    #[inline]
+    unsafe fn _get_unchecked(&self, idx: u8) -> (InterNode<K>, u8) {
+        unsafe { T::_get_unchecked(self, idx) }
+    }
+
+    /// Reverse (bottom->top) iterator over the stack without consuming it.
+    #[inline]
+    fn iter<'a>(&'a self) -> PathBufferIter<'a, K, Self> {
+        PathBufferIter { idx: self.buffer_len(), buf: self, _phan: Default::default() }
     }
 
     /// Peek at the top of the stack (equivalent to `Various::last`).
-    fn last(&self) -> Option<(&InterNode<K>, u8)> {
+    fn last(&self) -> Option<(InterNode<K>, u8)> {
         T::last(self)
+    }
+}
+
+/// Reverse (top-of-stack → bottom) iterator produced by [`TreeInfo::_iter`].
+pub(crate) struct PathBufferIter<'a, K: Ord + 'a, T: PathBuffer<K>> {
+    buf: &'a T,
+    idx: u8,
+    _phan: PhantomData<fn(&K)>,
+}
+
+impl<'a, K: Ord + 'a, T: PathBuffer<K>> Iterator for PathBufferIter<'a, K, T> {
+    type Item = (InterNode<K>, u8);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx > 0 {
+            self.idx -= 1;
+            Some(unsafe { self.buf._get_unchecked(self.idx) })
+        } else {
+            None
+        }
     }
 }

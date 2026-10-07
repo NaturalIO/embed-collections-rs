@@ -2,38 +2,101 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
 #![cfg_attr(not(feature = "std"), no_std)]
-//! ### embed-btree
+
+//! # embed-btree
 //!
-//! We provide a `BTreeMap` for single-threaded long-term in-memory storage.
-//! It's a cache aware b+tree:
+//! We provide a `BTreeMap` for single-threaded in-memory storage.
+//! It's b+tree designed
 //!
-//! - Being B+Tree, the leaves are linked, provide faster iteration and teardown.
-//! - Nodes are filled up in 4 cache lines (256 bytes on x86_64).
-//!   - Capacity in compile-time determined according to the size of Key, Value.
-//!   - Reduce memory fragmentation by alignment.
-//! - **Optimised for numeric key**
-//!   - Respecting numeric space for sequential insertion.
-//!   - Reduce latency for sequential insertion.
-//! - Bytes keys on the heap are supported, but we will not do prefix compress.
-//! - Support unbalanced size K / V, and 0-size V, will fill the space (to increase fanout) as much as it could.
-//! - **Limitation**:
-//!   - K should have clone (for propagate into the InterNode during split)
-//!   - K & V should <= CACHE_LINE_SIZE - 16
+//! - cache-aware principles,
+//!   - All page is aligned in 4*CACHE_LINE (256 bytes on x86_64).
+//!   - Use Layout API to determine the capacity, offset and alignement for the keys and values.
+//!   - Keys is a tight array to enable efficient forward search for CPU pipeline.
+//!   - No parent pointer in the page, we fill PathBuffer during descending, and pop when working upward.
+//!   - Avoid memory fragmentation for the allocator.
+//!
+//! There tree variants:
+//! - [various_map]:
+//!   - Delay page allocation by inlining K, V with option.
+//!   - Fallback to [compact] after inserting the 2nd element
+//! - [compact]
+//!   - For short-lived small size tree.
+//!   - Avoid allocation of PathBuffer on heap, until the tree-height grows > 2.
+//!   - PathBuffer allocation is reused.
+//! - [large]
+//!   - For long-lived large size tree.
+//!   - Maintain a small statistic of page counts (inter and leaves), and PathBuffer, on the heap if tree-hight grows > 1
+//!
+//! ## Supported K, V types
+//!
+//! **Optimised for numeric key**
+//!   - Respecting numeric space, more compact tree when doing sequential insertion
+//!   - Reduce latency for sequential get and insertion.
+//!
+//! Optimised for unbalanced size K / V, and specially 0-size V, for most capacity.
+//!
+//! Bytes keys on the heap are supported, but we will not do prefix compress.
+//!   (You may look for other structures with prefix compression: Art, Masstree)
+//!
+//! Limits:
+//!   - K should have `Clone` (for propagate into the InterNode during split)
+//!   - K + V should < 2 * CACHE_LINE_SIZE
 //!     - It make sure InterNode can hold at least two children.
 //!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
-//! - **Special API**:
-//!   - Peak and move to previous/next `Entry` (for modification).
-//!   - Alter key of an OccupiedEntry.
-//!   - Batch remove with range.
-//!   - Movable `Cursor` (for readonly)
 //!
-//! Compared to std::collections::btree (as of rust 1.94):
-//! - The std impl is pure btree (not b+tree) without horizontal links. Each key store only once at either leaf and inter nodes.
-//! - The std impl is optimised for point lookup.
-//! - The std impl has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
-//! - The std cursor API is still unstable (as of 1.94) and relatively complex to use.
+//! ## Compared to std btree_map
 //!
-//! **benchmark**
+//! (Analyse based on source of rust 1.94)
+//!
+//! std:
+//! - pure btree (without horizontal links).
+//! - Each key store only once at either leaf and inter nodes, don't require key to be `Clone`.
+//! - good for point lookup (value may be at top level)
+//! - has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
+//! - the size of page varies for different type of K / V, might not perfectly aligned for the cache and allocator.
+//! - each page has keys, values, pointers. the section of pointers may be wasted for leaves.
+//! - cursor API is still unstable, need nightly.
+//!
+//! embed-btree:
+//! - faster sequential get & insert
+//! - faster iteration
+//! - faster teardown
+//! - higher fan-out, reduction in height
+//!
+//! ## Special API and Scenario
+//!
+//! statistic (node count and memory usage) in [large] variant
+//!
+//! Entries:
+//! - Adjacent `Entry` (for iter and modification).
+//!   - `Entry::peek_forward()`
+//!   - `Entry::peek_backward()`
+//!   - `Entry::move_forward()`
+//!   - `Entry::move_backward()`
+//!   - `VacantEntry::peek_forward()`
+//!   - `VacantEntry::peek_backward()`
+//!   - `VacantEntry::move_forward()`
+//!   - `VacantEntry::move_backward()`
+//!   - `OccupiedEntry::peek_forward()`
+//!   - `OccupiedEntry::peek_backward()`
+//!   - `OccupiedEntry::move_forward()`
+//!   - `OccupiedEntry::move_backward()`
+//! - Alter key of an OccupiedEntry.
+//!   - `OccupiedEntry::alter_key()`
+//!
+//! Batch removal:
+//! - `BTree::remove_range()`
+//! - `BTree::remove_range_with()`
+//!
+//! Readonly [Cursor]:
+//! - [BTree::cursor()]
+//! - [BTree::first_cursor()]
+//! - [BTree::last_cursor()]
+//!
+//! Use case:
+//! - [range-tree-rs](https://docs.rs/range-tree-rs)
+//!
+//! ## benchmark
 //!
 //! platform: intel i7-8550U, key: u32, value: u32, rust 1.97.
 //!
@@ -88,8 +151,10 @@ extern crate std;
 #[allow(private_interfaces)]
 pub mod various_map;
 pub use various_map::VariousMap;
-pub mod btree;
-pub use btree::BTreeMap;
+mod btree;
+pub mod large;
+pub use btree::{Key, Value};
+
 pub use embed_collections::CACHE_LINE_SIZE;
 
 /// logging macro for development

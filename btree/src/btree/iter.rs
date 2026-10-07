@@ -1,4 +1,4 @@
-use super::{BTree, helper::*, leaf::*, node::*, stats::*, *};
+use super::{BTree, helper::*, leaf::*, node::*, *};
 use crate::trace_log;
 use core::marker::PhantomData;
 use core::mem::needs_drop;
@@ -552,13 +552,13 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
         if let Some(root_p) = root {
             // Move TreeInfo out of BTreeMap, leave a fresh empty one as placeholder.
             let (cache, leaf) = match Node::from_root_ptr(root_p) {
-                Node::Leaf(leaf) => (stats.take_cache(0), leaf),
+                Node::Leaf(leaf) => (stats.take_cache(None), leaf),
                 Node::Inter(inter) => {
-                    let cache = stats.take_cache(inter.height() as u8);
+                    let mut cache = stats.take_cache(Some(inter.clone()));
                     let leaf = if is_forward {
-                        inter.find_first_leaf::<V, _>(Some(&cache))
+                        inter.find_first_leaf_with_cache::<V, _>(&mut cache)
                     } else {
-                        inter.find_last_leaf::<V, _>(Some(&cache))
+                        inter.find_last_leaf_with_cache::<V, _>(&mut cache)
                     };
                     (cache, leaf)
                 }
@@ -571,7 +571,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
                 is_forward,
             }
         } else {
-            Self { cache: stats.take_cache(0), leaf: None, idx: 0, remaining: 0, is_forward }
+            Self { cache: stats.take_cache(None), leaf: None, idx: 0, remaining: 0, is_forward }
         }
     }
 
@@ -581,7 +581,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self
             .cache
-            .move_path_right_and_pop_l1(|node| {
+            .move_path_right_and_pop_l1(|_cache, node| {
                 node.dealloc::<true>();
             })
             .unwrap();
@@ -596,7 +596,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
         let (parent, idx) =
-            self.cache.move_path_left_and_pop_l1(|node| node.dealloc::<true>()).unwrap();
+            self.cache.move_path_left_and_pop_l1(|_cache, node| node.dealloc::<true>()).unwrap();
         self.cache.push_path(parent.clone(), idx);
         let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = new_leaf.key_count();
@@ -685,18 +685,22 @@ impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
             leaf.dealloc::<false>();
             // We should free the rest internal nodes even after leaf iteration done
             if is_forward {
-                while let Some((parent, idx)) = self.cache.move_path_right_and_pop_l1(|_node| {
-                    _node.dealloc::<true>();
-                }) {
+                while let Some((parent, idx)) =
+                    self.cache.move_path_right_and_pop_l1(|_cache, _node| {
+                        _node.dealloc::<true>();
+                    })
+                {
                     trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push_path(parent.clone(), idx);
                     let leaf = parent.get_child_as_leaf::<V>(idx);
                     leaf.dealloc::<true>();
                 }
             } else {
-                while let Some((parent, idx)) = self.cache.move_path_left_and_pop_l1(|_node| {
-                    _node.dealloc::<true>();
-                }) {
+                while let Some((parent, idx)) =
+                    self.cache.move_path_left_and_pop_l1(|_cache, _node| {
+                        _node.dealloc::<true>();
+                    })
+                {
                     trace_log!("into_iter drop forward parent {parent:?}:{idx}");
                     self.cache.push_path(parent.clone(), idx);
                     let leaf = parent.get_child_as_leaf::<V>(idx);
@@ -748,9 +752,9 @@ impl<K: Key, V: Value, S: Stats<K>> Iterator for IntoIter<K, V, S> {
         match &mut self.base {
             Ok(base) => base.next(),
             Err((tree, is_forward)) => {
-                let mut empty = BTree::new();
-                core::mem::swap(&mut empty, tree);
-                self.base = Ok(IntoIterBase::new(empty, *is_forward));
+                let mut temp = BTree::new();
+                core::mem::swap(&mut temp, tree);
+                self.base = Ok(IntoIterBase::new(temp, *is_forward));
                 if let Ok(base) = &mut self.base {
                     base.next()
                 } else {

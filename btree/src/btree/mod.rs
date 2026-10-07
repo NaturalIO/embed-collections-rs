@@ -1,53 +1,3 @@
-//! B+Tree Map - A in memory cache-optimized B+Tree for single-threaded use.
-//!
-//! ## Feature outlines
-//! - A B+tree. Data stores only at leaf level, with links at leaf level.
-//!   - Provides efficient iteration of data
-//!   - Linear search within nodes, respecting cacheline boundaries
-//!   - Reduce memory fragmentation by alignment.
-//! - Optimised for numeric key type
-//!   - Typical scenario: [range-tree-rs](https://docs.rs/range-tree-rs)
-//!   - Respecting numeric space for sequential insertion.
-//!   - Reduce latency for sequential insertion.
-//! - Support string keys, but optimization is non-goal
-//!   - You may look for other structures with prefix compression: Art, Masstree.
-//! - Nodes are filled up in 4 cache lines (256 bytes on x86_64)
-//!   - the capacity is calculated according to the size of K, V
-//! - **Limitation**:
-//!   - K should have clone (for propagate into the InterNode during split)
-//!   - K & V should <= CACHE_LINE_SIZE - 16
-//!     - It make sure InterNode can hold  at least two children.
-//!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
-//! - The detail design notes are with the source in mod.rs and node.rs
-//!
-//! ## Special APIs
-//!
-//! We have special Cursor & Entry API, which allow to modify after moving the cursor to adjacent data.
-//!
-//! Batch removal:
-//! - [BTree::remove_range()]
-//! - [BTree::remove_range_with()]
-//!
-//! Adjacent entry:
-//! - [Entry::peek_forward()]
-//! - [Entry::peek_backward()]
-//! - [Entry::move_forward()]
-//! - [Entry::move_backward()]
-//! - [VacantEntry::peek_forward()]
-//! - [VacantEntry::peek_backward()]
-//! - [VacantEntry::move_forward()]
-//! - [VacantEntry::move_backward()]
-//! - [OccupiedEntry::peek_forward()]
-//! - [OccupiedEntry::peek_backward()]
-//! - [OccupiedEntry::move_forward()]
-//! - [OccupiedEntry::move_backward()]
-//! - [OccupiedEntry::alter_key()]
-//!
-//! Readonly [Cursor]:
-//! - [BTree::cursor()]
-//! - [BTree::first_cursor()]
-//! - [BTree::last_cursor()]
-
 /*
 
 # Designer notes
@@ -95,38 +45,34 @@ which lead to the first InterNode allocation.
 
 */
 
+#[allow(unused_imports)]
+use crate::{print_log, trace_log};
 use core::borrow::Borrow;
 use core::fmt::{self, Debug};
 use core::ops::{Bound, RangeBounds};
-mod cursor;
-pub use cursor::*;
+pub mod cursor;
+use cursor::*;
 #[allow(private_bounds)]
-mod entry;
+pub mod entry;
 pub use entry::*;
 
 #[allow(private_bounds)]
-mod helper;
+pub(crate) mod helper;
 use helper::*;
-mod node;
+pub(crate) mod node;
 use node::*;
-mod inter;
+pub(crate) mod inter;
 use inter::*;
-mod leaf;
+pub(crate) mod leaf;
 use leaf::*;
 #[allow(private_bounds)]
-mod iter;
+pub mod iter;
 
-#[allow(private_bounds)]
-pub mod stats;
-mod tree;
-#[allow(unused_imports)]
-use crate::{print_log, trace_log};
+pub(crate) mod tree;
 use iter::RangeBase;
 #[allow(private_bounds)]
-pub use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
-use stats::*;
+use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
 use tree::BTreeInner;
-pub mod compact;
 
 #[cfg(test)]
 mod tests;
@@ -142,13 +88,57 @@ impl<T: Value + Clone + Ord + 'static> Key for T {}
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
 #[allow(private_bounds)]
 pub struct BTree<K: Key, V: Value, S: Stats<K>> {
-    inner: BTreeInner<K, V>,
+    pub(crate) inner: BTreeInner<K, V>,
     // use unsafe to avoid borrow problems
-    stats: S,
+    pub(crate) stats: S,
 }
 
-pub type BTreeMap<K, V> = BTree<K, V, TreeInfo<K>>;
-pub type BTreeMapLarge<K, V> = BTree<K, V, TreeInfo<K>>;
+#[allow(private_bounds)]
+pub(crate) trait Stats<K: Key>: Default + Send + Debug + 'static {
+    #[allow(private_bounds)]
+    type EntryInner<'a, V>: EntryInner<K, V>
+    where
+        V: Value + 'a;
+
+    #[allow(private_bounds)]
+    type PathBufferRef<'a>: PathBuffer<K>
+    where
+        K: 'a,
+        Self: 'a;
+
+    // owned for IntoIter and drop
+    #[allow(private_bounds)]
+    type PathBuffer: PathBuffer<K> + 'static;
+
+    type BufferStack: Default;
+
+    // the stack part pass with mut reference, avoid moving
+    fn get_cache<'a>(
+        &'a mut self, stack: &'a mut Self::BufferStack, root: Option<InterNode<K>>,
+    ) -> Self::PathBufferRef<'a>;
+
+    fn take_cache(self, root: Option<InterNode<K>>) -> Self::PathBuffer;
+
+    /// Reset the stack without freeing the buffer.
+    fn clear_cache(&mut self);
+
+    fn search_entry<'a, V: Value>(tree: &'a mut BTree<K, V, Self>, key: K)
+    -> Entry<'a, K, V, Self>;
+
+    /// seek first or last entry
+    fn seek_entry<'a, V: Value, const FIRST: bool>(
+        tree: &'a mut BTree<K, V, Self>,
+    ) -> Option<OccupiedEntry<'a, K, V, Self>>;
+
+    #[cfg(test)]
+    fn init_count(&mut self, leaf_count: usize, inter_count: u32);
+
+    #[cfg(test)]
+    fn assert_leaf_count(&self, _leaf_count: usize) {}
+
+    #[cfg(test)]
+    fn assert_inter_count(&self, _inter_count: usize) {}
+}
 
 #[cfg(all(test, feature = "trace_log"))]
 #[repr(u32)]
@@ -280,9 +270,12 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let mut is_seq = true;
-        let (o_leaf, cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_leaf_with_cache_smart::<K, V, _>(cache, &key, &mut is_seq)
-        });
+
+        let mut stack = S::BufferStack::default();
+        let (o_leaf, mut cache) =
+            self.inner.search_leaf_with_cache(&mut stack, &mut self.stats, |inter, _cache| {
+                inter.find_leaf_with_cache_smart::<K, V, _>(_cache, &key, &mut is_seq)
+            });
         if let Some(mut leaf) = o_leaf {
             let (idx, is_equal) = leaf.search_smart(&key, is_seq);
             if is_equal {
@@ -296,7 +289,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
                     leaf.insert_no_split_with_idx(idx, key, value);
                 } else {
                     // Leaf is full, need to split
-                    self.inner.insert_with_split(&cache, key, value, leaf, idx);
+                    self.inner.insert_with_split(&mut cache, key, value, leaf, idx);
                 }
                 None
             }
@@ -322,9 +315,11 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let (o_leaf, cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_leaf_with_cache::<V, Q, _>(cache, key)
-        });
+        let mut stack = S::BufferStack::default();
+        let (o_leaf, mut cache) =
+            self.inner.search_leaf_with_cache(&mut stack, &mut self.stats, |inter, _cache| {
+                inter.find_leaf_with_cache::<V, Q, _>(_cache, key)
+            });
         let mut leaf = o_leaf?;
         let (idx, is_equal) = leaf.search(key);
         if is_equal {
@@ -336,7 +331,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
             let min_count = LeafNode::<K, V>::cap() >> 1;
             if new_count < min_count && self.inner.root_is_inter() {
                 // The cache should already contain the path from the entry lookup
-                self.inner.handle_leaf_underflow(&cache, leaf, true);
+                self.inner.handle_leaf_underflow(&mut cache, leaf, true);
             }
             Some(val)
         } else {
@@ -360,9 +355,11 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        let (o_leaf, cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_leaf_with_cache::<V, Q, _>(cache, key)
-        });
+        let mut stack = S::BufferStack::default();
+        let (o_leaf, mut cache) =
+            self.inner.search_leaf_with_cache(&mut stack, &mut self.stats, |inter, _cache| {
+                inter.find_leaf_with_cache::<V, Q, _>(_cache, key)
+            });
         let mut leaf = o_leaf?;
         let (idx, is_equal) = leaf.search(key);
         if is_equal {
@@ -374,7 +371,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
             let min_count = LeafNode::<K, V>::cap() >> 1;
             if new_count < min_count && self.inner.root_is_inter() {
                 // The cache should already contain the path from the entry lookup
-                self.inner.handle_leaf_underflow(&cache, leaf, true);
+                self.inner.handle_leaf_underflow(&mut cache, leaf, true);
             }
             Some((_key, val))
         } else {
@@ -385,58 +382,21 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Returns an entry to the key in the map
     #[inline]
     pub fn entry<'a>(&'a mut self, key: K) -> Entry<'a, K, V, S> {
-        let mut is_seq = true;
-        let (o_leaf, _cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_leaf_with_cache_smart::<K, V, _>(cache, &key, &mut is_seq)
-        });
-        drop(_cache);
-        let (inner, leaf) = if let Some(leaf) = o_leaf {
-            let (idx, is_equal) = leaf.search_smart(&key, is_seq);
-            let inner = S::make_entry(self, idx);
-            if is_equal {
-                return Entry::Occupied(OccupiedEntry { inner, leaf });
-            } else {
-                (inner, Some(leaf))
-            }
-        } else {
-            (S::make_entry(self, 0), None)
-        };
-        Entry::Vacant(VacantEntry { inner, key, leaf })
+        S::search_entry::<V>(self, key)
     }
 
     /// Returns an entry to the first key in the map
     /// Returns `None` if the map is empty
     #[inline]
     pub fn first_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, K, V, S>> {
-        let (o_leaf, _cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_first_leaf::<V, _>(Some(cache))
-        });
-        drop(_cache);
-        let leaf = o_leaf?;
-        if leaf.key_count() > 0 {
-            Some(OccupiedEntry { inner: S::make_entry(self, 0), leaf })
-        } else {
-            // when root is leaf, remove_entry does not dealloc the leaf
-            None
-        }
+        S::seek_entry::<V, true>(self)
     }
 
     /// Returns an entry to the last key in the map
     /// Returns `None` if the map is empty
     #[inline]
     pub fn last_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, K, V, S>> {
-        let (o_leaf, _cache) = self.inner.search_leaf_with_cache(&self.stats, |inter, cache| {
-            inter.find_last_leaf::<V, _>(Some(cache))
-        });
-        drop(_cache);
-        let leaf = o_leaf?;
-        let count = leaf.key_count();
-        if count > 0 {
-            Some(OccupiedEntry { inner: S::make_entry(self, count - 1), leaf })
-        } else {
-            // when root is leaf, remove_entry does not dealloc the leaf
-            None
-        }
+        S::seek_entry::<V, false>(self)
     }
 
     /// Removes and returns the first key-value pair in the map
@@ -594,8 +554,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn first_key_value(&self) -> Option<(&K, &V)> {
-        let leaf =
-            self.inner.search_leaf_with(|inter| inter.find_first_leaf::<V, S::PathBuffer>(None))?;
+        let leaf = self.inner.search_leaf_with(InterNode::<K>::find_first_leaf::<V>)?;
         debug_assert!(leaf.key_count() > 0);
         unsafe {
             let key = (*leaf.key_ptr(0)).assume_init_ref();
@@ -608,8 +567,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Returns `None` if the map is empty
     #[inline]
     pub fn last_key_value(&self) -> Option<(&K, &V)> {
-        let leaf =
-            self.inner.search_leaf_with(|inter| inter.find_last_leaf::<V, S::PathBuffer>(None))?;
+        let leaf = self.inner.search_leaf_with(InterNode::<K>::find_last_leaf::<V>)?;
         let count = leaf.key_count();
         debug_assert!(count > 0);
         unsafe {
@@ -661,10 +619,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
         let root = self.inner.root?;
         if !Node::<K, V>::root_is_leaf(root) {
             let inter = InterNode::<K>::from(root);
-            Some((
-                inter.clone().find_first_leaf::<V, S::PathBuffer>(None),
-                inter.find_last_leaf::<V, S::PathBuffer>(None),
-            ))
+            Some((inter.clone().find_first_leaf::<V>(), inter.find_last_leaf::<V>()))
         } else {
             let leaf = LeafNode::<K, V>::from_root_ptr(root);
             Some((leaf.clone(), leaf))
@@ -706,8 +661,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Returns `None` if the map is empty.
     #[inline]
     pub fn first_cursor(&self) -> Cursor<'_, K, V> {
-        if let Some(leaf) =
-            self.inner.search_leaf_with(|inter| inter.find_first_leaf::<V, S::PathBuffer>(None))
+        if let Some(leaf) = self.inner.search_leaf_with(InterNode::<K>::find_first_leaf::<V>)
             && leaf.key_count() > 0
         {
             return Cursor {
@@ -724,9 +678,7 @@ impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Returns `None` if the map is empty.
     #[inline]
     pub fn last_cursor(&self) -> Cursor<'_, K, V> {
-        if let Some(leaf) =
-            self.inner.search_leaf_with(|inter| inter.find_last_leaf::<V, S::PathBuffer>(None))
-        {
+        if let Some(leaf) = self.inner.search_leaf_with(InterNode::<K>::find_last_leaf::<V>) {
             let count = leaf.key_count();
             if count > 0 {
                 return Cursor {
@@ -786,13 +738,14 @@ impl<K: Key, V: Value, S: Stats<K>> Drop for BTree<K, V, S> {
                 leaf.dealloc::<true>();
             } else {
                 let inter = InterNode::<K>::from(root);
-                let mut cache = self.stats.get_cache(inter.height());
-                let mut cur = inter.find_first_leaf::<V, _>(Some(&mut cache));
+                let mut stack = S::BufferStack::default();
+                let mut cache = self.stats.get_cache(&mut stack, Some(inter.clone()));
+                let mut cur = inter.find_first_leaf_with_cache::<V, _>(&mut cache);
                 cur.dealloc::<true>();
                 // To navigate to next leaf,
                 // return None when reach the end
                 while let Some((parent, idx)) =
-                    cache.move_path_right_and_pop_l1(|node| node.dealloc::<true>())
+                    cache.move_path_right_and_pop_l1(|_cache, node| node.dealloc::<true>())
                 {
                     cache.push_path(parent.clone(), idx);
                     cur = parent.get_child_as_leaf::<V>(idx);
@@ -864,37 +817,5 @@ impl<K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for BTree<K, V, S> {
             }
         }
         write!(f, "}}")
-    }
-}
-
-impl<K: Key, V: Value> BTree<K, V, TreeInfo<K>> {
-    /// Return the number of leaf nodes
-    #[inline(always)]
-    pub fn leaf_count(&self) -> usize {
-        if self.inner.root.is_some() { self.stats.leaf_count() } else { 0 }
-    }
-
-    /// Return the number of inter nodes
-    #[inline(always)]
-    pub fn inter_count(&self) -> usize {
-        self.stats.inter_count() as usize
-    }
-
-    #[inline]
-    pub fn memory_used(&self) -> usize {
-        (self.leaf_count() + self.inter_count()) * NODE_SIZE
-    }
-
-    /// Return the average fill ratio of leaf nodes
-    ///
-    /// The range is [0.0, 100]
-    #[inline]
-    pub fn get_fill_ratio(&self) -> f32 {
-        if self.inner.len == 0 {
-            0.0
-        } else {
-            let cap = LeafNode::<K, V>::cap() as usize * self.leaf_count();
-            self.inner.len as f32 / cap as f32 * 100.0
-        }
     }
 }

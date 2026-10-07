@@ -26,7 +26,7 @@ pub(super) struct LeafPtrs {
 }
 
 /// Leaf node wrapper - wraps Node and provides leaf-specific operations
-pub(super) struct LeafNode<K, V> {
+pub(crate) struct LeafNode<K, V> {
     base: NodeBase,
     _phan: PhantomData<fn(&K, &V)>,
 }
@@ -251,7 +251,7 @@ impl<K, V> LeafNode<K, V> {
 
     /// Get pointer to LeafPtrs
     #[inline(always)]
-    pub unsafe fn brothers(&self) -> *mut LeafPtrs {
+    pub(super) unsafe fn brothers(&self) -> *mut LeafPtrs {
         unsafe { NodeHeader::get_field::<LeafPtrs>(self.header, NODE_SIZE - LEAF_PTR_SIZE) }
     }
 

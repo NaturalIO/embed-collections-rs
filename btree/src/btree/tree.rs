@@ -1,6 +1,6 @@
 #[cfg(all(test, feature = "trace_log"))]
 use super::TestFlag;
-use super::{helper::*, inter::*, leaf::*, node::*, stats::*, *};
+use super::{helper::*, inter::*, leaf::*, node::*, *};
 #[allow(unused_imports)]
 use crate::{print_log, trace_log};
 use core::fmt::Debug;
@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
-pub(super) struct BTreeInner<K: Key, V: Value> {
+pub(crate) struct BTreeInner<K: Key, V: Value> {
     // Root node (may be None for empty tree)
     // `Option<Node>` is larger than `Option<NonNull<NodeHeader>>`
     pub root: Option<NonNull<NodeHeader>>,
@@ -35,6 +35,16 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         if let Some(root) = self.root { !Node::<K, V>::root_is_leaf(root) } else { false }
     }
 
+    #[inline(always)]
+    pub fn root_as_inter(&self) -> Option<InterNode<K>> {
+        if let Some(root) = self.root {
+            if !Node::<K, V>::root_is_leaf(root) {
+                return Some(InterNode::<K>::from(root));
+            }
+        }
+        None
+    }
+
     #[inline]
     pub fn init_empty(&mut self, key: K, value: V) -> *mut V {
         debug_assert!(self.root.is_none());
@@ -50,21 +60,21 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// return Some(leaf)
     #[inline(always)]
     pub fn search_leaf_with_cache<'a, S: Stats<K>, F>(
-        &self, stats: &'a S, search: F,
+        &self, stack: &'a mut S::BufferStack, stats: &'a mut S, search: F,
     ) -> (Option<LeafNode<K, V>>, S::PathBufferRef<'a>)
     where
-        F: FnOnce(InterNode<K>, &S::PathBufferRef<'a>) -> LeafNode<K, V>,
+        F: FnOnce(InterNode<K>, &mut S::PathBufferRef<'a>) -> LeafNode<K, V>,
     {
         if let Some(root) = self.root {
             if !Node::<K, V>::root_is_leaf(root) {
                 let _root = InterNode::<K>::from(root);
-                let cache = stats.get_cache(_root.height());
-                (Some(search(_root, &cache)), cache)
+                let mut cache = stats.get_cache(stack, Some(_root.clone()));
+                (Some(search(_root, &mut cache)), cache)
             } else {
-                (Some(LeafNode::<K, V>::from_root_ptr(root)), stats.get_cache(0))
+                (Some(LeafNode::<K, V>::from_root_ptr(root)), stats.get_cache(stack, None))
             }
         } else {
-            (None, stats.get_cache(0))
+            (None, stats.get_cache(stack, None))
         }
     }
 
@@ -90,7 +100,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
     pub fn handle_leaf_underflow<C: PathBuffer<K>>(
-        &mut self, cache: &C, mut leaf: LeafNode<K, V>, try_merge: bool,
+        &mut self, cache: &mut C, mut leaf: LeafNode<K, V>, try_merge: bool,
     ) {
         debug_assert!(!self.get_root_unwrap().is_leaf());
         let cur_count = leaf.key_count();
@@ -204,7 +214,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// XXX due to borrow issue, we use &self here
     #[inline(always)]
     fn propagate_split<C: PathBuffer<K>>(
-        &mut self, cache: &C, mut promote_key: K, mut left_ptr: *mut NodeHeader,
+        &mut self, cache: &mut C, mut promote_key: K, mut left_ptr: *mut NodeHeader,
         mut right_ptr: *mut NodeHeader,
     ) -> Result<u32, InterNode<K>> {
         let mut height = 0;
@@ -326,7 +336,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// return the Some(node) when need to rebalance
     #[inline]
     fn remove_child_from_inter<C: PathBuffer<K>>(
-        &mut self, cache: &C, node: &mut InterNode<K>, delete_idx: u8, right_sep: Option<K>,
+        &mut self, cache: &mut C, node: &mut InterNode<K>, delete_idx: u8, right_sep: Option<K>,
         _no_right: bool,
     ) {
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
@@ -385,7 +395,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     #[inline]
     pub(crate) fn handle_inter_underflow<C: PathBuffer<K>>(
-        &mut self, cache: &C, mut node: InterNode<K>,
+        &mut self, cache: &mut C, mut node: InterNode<K>,
     ) {
         let cap = InterNode::<K>::cap();
         let mut root_height = 0;
@@ -477,7 +487,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     #[inline]
     fn remove_only_child<C: PathBuffer<K>>(
-        &mut self, cache: &C, node: InterNode<K>,
+        &mut self, cache: &mut C, node: InterNode<K>,
     ) -> Option<(InterNode<K>, u8)> {
         debug_assert_eq!(node.key_count(), 0);
         #[cfg(all(test, feature = "trace_log"))]
@@ -486,8 +496,8 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         }
         let r = cache.move_path_to_ancestor(
             |node: &InterNode<K>, _idx: u8| -> bool { node.key_count() != 0 },
-            |node| {
-                cache.dec_inter_count();
+            |_cache, node| {
+                _cache.dec_inter_count();
                 node.dealloc::<false>();
             },
         );
@@ -503,12 +513,15 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// update the separate_key in parent after borrowing space from left/right node
     #[inline(always)]
     pub fn update_ancestor_sep_key<const MOVE: bool, C: PathBuffer<K>>(
-        &mut self, cache: &C, sep_key: K,
+        &mut self, cache: &mut C, sep_key: K,
     ) {
         // if idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
         // split key
         let ret = if MOVE {
-            cache.move_path_to_ancestor(|_node, idx| -> bool { idx > 0 }, dummy_post_callback)
+            cache.move_path_to_ancestor(
+                |_node, idx| -> bool { idx > 0 },
+                dummy_post_callback::<K, C>,
+            )
         } else {
             cache.peek_ancestor(|_node, idx| -> bool { idx > 0 })
         };
@@ -524,7 +537,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     /// Insert with split handling - called when leaf is full
     pub fn insert_with_split<C: PathBuffer<K>>(
-        &mut self, cache: &C, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u8,
+        &mut self, cache: &mut C, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u8,
     ) -> *mut V {
         debug_assert!(leaf.is_full());
         let cap = LeafNode::<K, V>::cap();
@@ -672,8 +685,9 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
             }
             Node::Inter(inter) => {
                 // Do not use btree internal PathBuffer (might distrupt test scenario)
-                let stats = S::default();
-                let cache = stats.get_cache(inter.height());
+                let mut stats = S::default();
+                let mut stack = S::BufferStack::default();
+                let mut cache = stats.get_cache(&mut stack, Some(inter.clone()));
                 let mut cur = inter.clone();
                 loop {
                     cache.push_path(cur.clone(), 0);
@@ -713,7 +727,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
                 // Continue traversal like Drop does
                 while let Some((parent, idx)) =
-                    cache.move_path_right_and_pop_l1(dummy_post_callback::<K>)
+                    cache.move_path_right_and_pop_l1(dummy_post_callback::<K, _>)
                 {
                     cache.push_path(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child::<V>(idx) {

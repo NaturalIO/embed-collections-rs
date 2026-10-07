@@ -1,18 +1,18 @@
 use super::iter::{IterBackward, IterForward};
-use super::{stats::Stats, *};
+use super::*;
 use core::fmt::{self, Debug};
 
 /// Entry for an existing key-value pair in the tree
 pub struct OccupiedEntry<'a, K: Key, V: Value, S: Stats<K>> {
-    pub(super) inner: S::EntryInner<'a, V>,
-    pub(super) leaf: LeafNode<K, V>,
+    pub(crate) inner: S::EntryInner<'a, V>,
+    pub(crate) leaf: LeafNode<K, V>,
 }
 
 /// Entry for a vacant key position in the tree
 pub struct VacantEntry<'a, K: Key, V: Value, S: Stats<K>> {
-    pub(super) inner: S::EntryInner<'a, V>,
-    pub(super) leaf: Option<LeafNode<K, V>>,
-    pub(super) key: K,
+    pub(crate) inner: S::EntryInner<'a, V>,
+    pub(crate) leaf: Option<LeafNode<K, V>>,
+    pub(crate) key: K,
 }
 
 /// Entry into a BTreeMap for in-place manipulation
@@ -21,15 +21,13 @@ pub enum Entry<'a, K: Key, V: Value, S: Stats<K>> {
     Vacant(VacantEntry<'a, K, V, S>),
 }
 
-pub(super) trait EntryInner<K: Key, V: Value> {
-    type PathBuffer: PathBuffer<K>;
-
-    fn get_cache(&self) -> &Self::PathBuffer;
+pub(crate) trait EntryInner<K: Key, V: Value> {
+    fn get_cache<'a>(&'a mut self) -> impl PathBuffer<K> + 'a;
 
     #[cfg(test)]
     fn get_tree(&self) -> &BTreeInner<K, V>;
 
-    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, &Self::PathBuffer);
+    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, impl PathBuffer<K>);
 
     fn set_idx(&mut self, idx: u8);
 
@@ -198,14 +196,14 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
     #[inline(always)]
     pub(crate) fn _remove_entry(mut self, merge: bool) -> (K, V) {
         let (key, val) = self.leaf.remove_pair_no_borrow(self.inner.get_idx());
-        let (tree, cache) = self.inner.get_tree_cache();
+        let (tree, mut cache) = self.inner.get_tree_cache();
         tree.len -= 1;
         // Check for underflow and handle merge
         let new_count = self.leaf.key_count();
         let min_count = LeafNode::<K, V>::cap() >> 1;
         if new_count < min_count && tree.root_is_inter() {
             // The cache should already contain the path from the entry lookup
-            tree.handle_leaf_underflow(cache, self.leaf, merge);
+            tree.handle_leaf_underflow(&mut cache, self.leaf, merge);
         }
         (key, val)
     }
@@ -330,11 +328,11 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
         let idx = self.inner.get_idx();
         unsafe {
             let k_ref = (*self.leaf.key_ptr_mut(idx)).assume_init_mut();
-            let (tree, cache) = self.inner.get_tree_cache();
+            let (tree, mut cache) = self.inner.get_tree_cache();
             if idx == 0 && tree.root_is_inter() {
                 // We need to keep the PathBuffer intact, use peek rather than move_to_ancestor
                 // it's allowed to move the entry or remove afterwards
-                tree.update_ancestor_sep_key::<false, _>(cache, k.clone());
+                tree.update_ancestor_sep_key::<false, _>(&mut cache, k.clone());
             }
             *k_ref = k;
             Ok(())
@@ -343,16 +341,20 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
 
     #[cfg(test)]
     pub(crate) fn validate_cache_path(&self) {
-        let k = self.leaf.get_keys()[self.idx as usize].clone();
-        if let Some(root) = self.inner.get_tree().get_root() {
-            self.inner.get_cache().fix_path_center();
-            let backup = self.inner.get_cache().to_vec();
+        let k = self.leaf.get_keys()[self.inner.get_idx() as usize].clone();
+        if let Some(root) = self.inner.get_tree().root_as_inter() {
+            let backup = {
+                let mut cache = self.inner.get_cache();
+                cache.fix_path_center();
+                cache.to_vec()
+            };
+            // new cache, don't mix with original
             let mut _stats = S::default();
-            let cache = _stats.get_cache(root.height() as u8);
+            let mut cache = _stats.get_cache(Some(root));
             let _leaf = self
                 .inner
                 .get_tree()
-                .search_leaf_with(|inter| inter.find_leaf_with_cache::<V, _, _>(&cache, &k))
+                .search_leaf_with(|inter| inter.find_leaf_with_cache::<V, _, _>(&mut cache, &k))
                 .unwrap();
             assert_eq!(self.leaf, _leaf);
             assert_eq!(backup, cache.to_vec());
@@ -381,7 +383,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
     {
         let (key, mut inner) = (self.key, self.inner);
         let idx = inner.get_idx();
-        let (tree, cache) = inner.get_tree_cache();
+        let (tree, mut cache) = inner.get_tree_cache();
         if tree.root.is_none() {
             return unsafe { &mut *tree.init_empty(key, value) };
         }
@@ -394,7 +396,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
             leaf.insert_no_split_with_idx(idx, key, value)
         } else {
             // Leaf is full, need to split
-            tree.insert_with_split(cache, key, value, leaf, idx)
+            tree.insert_with_split(&mut cache, key, value, leaf, idx)
             // NOTE: the PathBuffer might be a different path with the one inserted,
             // because borrowing on inter node might happen, and the cache is consumed during
             // propagate_split moves upwards.

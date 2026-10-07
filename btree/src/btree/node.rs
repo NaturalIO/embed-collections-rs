@@ -16,10 +16,10 @@ use core::ops::Bound;
 use core::ptr::{self, NonNull};
 
 /// Key area size: first 128 bytes (2 cache lines)
-pub(super) const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
+pub const AREA_SIZE: usize = 2 * CACHE_LINE_SIZE; // 128 bytes
 
 /// Total node size: 4 cache lines (256 bytes on x86_64)
-pub(super) const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
+pub const NODE_SIZE: usize = 2 * AREA_SIZE; // 256 bytes
 
 pub(super) const PTR_SIZE: usize = size_of::<*mut NodeHeader>();
 pub(super) const PTR_ALIGN: usize = align_of::<*mut NodeHeader>();
@@ -29,7 +29,7 @@ pub(super) const NODE_HEADER_SIZE: usize = size_of::<NodeHeader>();
 /// height: 0 = leaf node, >0 = internal node (height of subtree)
 ///
 #[repr(C)]
-pub(super) struct NodeHeader {
+pub(crate) struct NodeHeader {
     // NOTE: a tree have height 255 and node cap 255, can have 255 ^ 255 number of items, more than enough.
     // So u8 is ok.
     /// Height of the node (0 = leaf, >0 = internal)
@@ -55,7 +55,7 @@ impl NodeHeader {
 
 /// Generic node wrapper
 #[derive(Clone)]
-pub(super) struct NodeBase {
+pub(crate) struct NodeBase {
     pub header: NonNull<NodeHeader>,
 }
 
