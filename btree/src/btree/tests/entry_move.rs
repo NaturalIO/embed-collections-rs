@@ -338,24 +338,26 @@ fn test_vacant_forward_at_leaf_end_height1<S: Stats<i32>>(#[case] _s: S, setup_l
     map.insert(1000, 1000); // Trigger split
 
     // Find where last_key is.
+    let count;
     if let Entry::Occupied(oe) = map.entry(last_key) {
         let leaf = oe.leaf.clone();
-        if oe.inner.get_idx() as usize == leaf.key_count() as usize - 1 {
-            // It is at the end of its leaf.
-            // Vacant entry just after it should be at idx == key_count
-            drop(oe);
-            let search_key = last_key + 1;
-            if let Entry::Vacant(ve) = map.entry(search_key) {
-                assert_eq!(ve.inner.get_idx() as usize, leaf.key_count() as usize);
-                // Should peek forward to next leaf
-                let next_pair = ve.peek_forward();
-                assert!(next_pair.is_some());
-                assert!(*next_pair.unwrap().0 > search_key);
+        count = leaf.key_count();
+        assert_eq!(oe.inner.get_idx() as usize, leaf.key_count() as usize - 1);
+    } else {
+        unreachable!();
+    }
+    // It is at the end of its leaf.
+    // Vacant entry just after it should be at idx == key_count
+    let search_key = last_key + 1;
+    if let Entry::Vacant(ve) = map.entry(search_key) {
+        assert_eq!(ve.inner.get_idx(), count);
+        // Should peek forward to next leaf
+        let next_pair = ve.peek_forward();
+        assert!(next_pair.is_some());
+        assert!(*next_pair.unwrap().0 > search_key);
 
-                let oe_next = ve.move_forward().ok().unwrap();
-                assert!(*oe_next.key() > search_key);
-            }
-        }
+        let oe_next = ve.move_forward().ok().unwrap();
+        assert!(*oe_next.key() > search_key);
     }
 }
 
@@ -491,11 +493,11 @@ fn test_alter_key_height_1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
         assert!(oe.alter_key(11).is_ok());
         assert_eq!(*oe.key(), 11);
         assert_eq!(oe.get(), &100);
-        assert!(map.get(&10).is_none());
-        assert_eq!(map.get(&11), Some(&100));
     } else {
         unreachable!();
     }
+    assert!(map.get(&10).is_none());
+    assert_eq!(map.get(&11), Some(&100));
 }
 
 #[logfn]
