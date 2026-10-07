@@ -1,7 +1,7 @@
 /*
 LeafNode layout:
 
-    NODE_SIZE(8B NodeHeader | alignment | Keys | alignment | values | alignment | 16B LeafPtrs )
+    NODE_SIZE(4B NodeHeader | alignment | Keys | alignment | values | alignment | 16B LeafPtrs )
 
 */
 
@@ -212,7 +212,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn get_raw_pair(&self, idx: u32) -> Option<(*mut K, *mut V)> {
+    pub fn get_raw_pair(&self, idx: u8) -> Option<(*mut K, *mut V)> {
         if self.key_count() > idx {
             unsafe { Some((self.key_ptr(idx) as *mut K, self.value_ptr(idx) as *mut V)) }
         } else {
@@ -221,31 +221,31 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub unsafe fn get_raw_pair_unchecked(&self, idx: u32) -> (*mut K, *mut V) {
+    pub unsafe fn get_raw_pair_unchecked(&self, idx: u8) -> (*mut K, *mut V) {
         unsafe { (self.key_ptr(idx) as *mut K, self.value_ptr(idx) as *mut V) }
     }
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
+    pub unsafe fn key_ptr(&self, idx: u8) -> *const MaybeUninit<K> {
         unsafe { self.base.item_ptr::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
+    pub unsafe fn key_ptr_mut(&mut self, idx: u8) -> *mut MaybeUninit<K> {
         unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
-    pub unsafe fn value_ptr(&self, idx: u32) -> *const MaybeUninit<V> {
+    pub unsafe fn value_ptr(&self, idx: u8) -> *const MaybeUninit<V> {
         unsafe { self.base.item_ptr::<MaybeUninit<V>>(Self::value_offset(), idx) }
     }
 
     /// Get pointer to value at index
     #[inline(always)]
-    pub unsafe fn value_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<V> {
+    pub unsafe fn value_ptr_mut(&mut self, idx: u8) -> *mut MaybeUninit<V> {
         unsafe { self.base.item_ptr_mut::<MaybeUninit<V>>(Self::value_offset(), idx) }
     }
 
@@ -280,7 +280,7 @@ impl<K, V> LeafNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search<Q>(&self, key: &Q) -> (u32, bool)
+    pub fn search<Q>(&self, key: &Q) -> (u8, bool)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -291,7 +291,7 @@ impl<K, V> LeafNode<K, V> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_smart<Q>(&self, key: &Q, is_seq: bool) -> (u32, bool)
+    pub fn search_smart<Q>(&self, key: &Q, is_seq: bool) -> (u8, bool)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -313,7 +313,7 @@ impl<K, V> LeafNode<K, V> {
     /// Insert key-value at index (assuming there is space)
     /// Uses copy_within pattern for efficient shifting
     #[inline]
-    pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, value: V) -> *mut V {
+    pub fn insert_no_split_with_idx(&mut self, idx: u8, key: K, value: V) -> *mut V {
         debug_assert!(self.key_count() < Self::cap());
         unsafe {
             self.base._insert::<K, V>(Self::key_offset(), Self::value_offset(), idx, key, value)
@@ -335,7 +335,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn remove_pair_no_borrow(&mut self, idx: u32) -> (K, V) {
+    pub fn remove_pair_no_borrow(&mut self, idx: u8) -> (K, V) {
         let left = self.key_count() - 1;
         let key = self._remove_slot::<K>(Self::key_offset(), idx, left);
         let value = self._remove_slot::<V>(Self::value_offset(), idx, left);
@@ -344,7 +344,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn remove_value_no_borrow(&mut self, idx: u32) -> V {
+    pub fn remove_value_no_borrow(&mut self, idx: u8) -> V {
         let left = self.key_count() - 1;
         unsafe {
             let key_p = self.key_ptr_mut(idx);
@@ -362,7 +362,7 @@ impl<K, V> LeafNode<K, V> {
 
     /// NOTE: it will require two calls to remove (k, v) pair, so the count is not decrease here
     #[inline]
-    fn _remove_slot<T>(&mut self, header_offset: usize, idx: u32, mut left: u32) -> T {
+    fn _remove_slot<T>(&mut self, header_offset: usize, idx: u8, mut left: u8) -> T {
         debug_assert!(idx < left + 1);
         unsafe {
             let item_p = self.item_ptr_mut::<T>(header_offset, idx);
@@ -385,12 +385,12 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub const fn cap() -> u32 {
-        Self::LAYOUT.cap as u32
+    pub const fn cap() -> u8 {
+        Self::LAYOUT.cap as u8
     }
 
     #[inline(always)]
-    pub fn replace(&mut self, idx: u32, value: V) -> V {
+    pub fn replace(&mut self, idx: u8, value: V) -> V {
         unsafe {
             let val_ptr = self.value_ptr_mut(idx);
             let old = (*val_ptr).assume_init_read();
@@ -402,7 +402,7 @@ impl<K, V> LeafNode<K, V> {
     /// move items at the beginning of this node to the tail of left_node
     #[inline(always)]
     pub fn insert_borrow_left(
-        &mut self, left_node: &mut Self, mut idx: u32, key: K, value: V,
+        &mut self, left_node: &mut Self, mut idx: u8, key: K, value: V,
     ) -> *mut V {
         debug_assert!(idx != 0);
         debug_assert!(idx < self.key_count());
@@ -438,7 +438,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline(always)]
-    pub fn copy_left(&mut self, left_node: &mut Self, copy_count: u32) {
+    pub fn copy_left(&mut self, left_node: &mut Self, copy_count: u8) {
         let left_count = left_node.key_count();
         debug_assert!(copy_count <= self.key_count());
         debug_assert!(left_count + copy_count <= Self::cap());
@@ -460,7 +460,7 @@ impl<K, V> LeafNode<K, V> {
 
     /// move the items to the tail of right_node
     #[inline(always)]
-    pub fn move_right(&mut self, right_node: &mut Self, start_idx: u32, move_count: u32) {
+    pub fn move_right(&mut self, right_node: &mut Self, start_idx: u8, move_count: u8) {
         self.copy_right::<true>(right_node, start_idx, move_count);
         self.dec_count(move_count);
     }
@@ -473,7 +473,7 @@ impl<K, V> LeafNode<K, V> {
     /// It does not change the count of current node
     #[inline]
     pub fn copy_right<const APPEND: bool>(
-        &mut self, right_node: &mut Self, start_idx: u32, copy_count: u32,
+        &mut self, right_node: &mut Self, start_idx: u8, copy_count: u8,
     ) {
         let right_count = right_node.key_count();
         debug_assert!(start_idx + copy_count <= self.key_count());
@@ -524,7 +524,7 @@ impl<K, V> LeafNode<K, V> {
     }
 
     #[inline]
-    pub fn insert_with_split(&mut self, idx: u32, key: K, value: V) -> (Self, *mut V) {
+    pub fn insert_with_split(&mut self, idx: u8, key: K, value: V) -> (Self, *mut V) {
         let mut new_leaf = unsafe { LeafNode::<K, V>::alloc() };
         let count = self.key_count();
         unsafe {
@@ -622,7 +622,7 @@ impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
 
         // Validate count is within bounds
         assert!(
-            count as u32 <= Self::cap(),
+            count as u8 <= Self::cap(),
             "Leaf {:?} node has too many keys: {} > {}",
             self,
             count,
@@ -636,8 +636,8 @@ impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
         unsafe {
             // Validate keys are sorted
             for i in 1..count {
-                let prev_key = (*self.key_ptr((i - 1) as u32)).assume_init_ref();
-                let curr_key = (*self.key_ptr(i as u32)).assume_init_ref();
+                let prev_key = (*self.key_ptr((i - 1) as u8)).assume_init_ref();
+                let curr_key = (*self.key_ptr(i as u8)).assume_init_ref();
                 assert!(
                     prev_key < curr_key,
                     "Leaf {:?} node keys not sorted: {:?} >= {:?}",
@@ -649,7 +649,7 @@ impl<K: Ord + fmt::Debug, V: fmt::Debug> LeafNode<K, V> {
 
             // Validate keys are within parent bounds
             let first_key = (*self.key_ptr(0)).assume_init_ref();
-            let last_key = (*self.key_ptr((count - 1) as u32)).assume_init_ref();
+            let last_key = (*self.key_ptr((count - 1) as u8)).assume_init_ref();
 
             if let Some(min) = min_key {
                 assert!(

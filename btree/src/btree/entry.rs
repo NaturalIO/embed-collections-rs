@@ -6,7 +6,7 @@ use core::fmt::{self, Debug};
 pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     pub(super) inner: &'a mut S::EntryInner<V>,
     pub(super) leaf: LeafNode<K, V>,
-    pub(super) idx: u32,
+    pub(super) idx: u8,
 }
 
 /// Entry for a vacant key position in the tree
@@ -14,7 +14,7 @@ pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     pub(super) inner: &'a mut S::EntryInner<V>,
     pub(super) leaf: Option<LeafNode<K, V>>,
     pub(super) key: K,
-    pub(super) idx: u32,
+    pub(super) idx: u8,
 }
 
 /// Entry into a BTreeMap for in-place manipulation

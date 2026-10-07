@@ -30,22 +30,22 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> Default for TreeBuilder<K, V
 }
 
 impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> TreeBuilder<K, V, S> {
-    pub fn leaf_cap(&self) -> u32 {
+    pub fn leaf_cap(&self) -> u8 {
         LeafNode::<K, V>::cap()
     }
 
-    pub fn inter_cap(&self) -> u32 {
+    pub fn inter_cap(&self) -> u8 {
         InterNode::<K>::cap()
     }
 
-    pub fn new_inter(&mut self, height: u32) -> InterNode<K> {
+    pub fn new_inter(&mut self, height: u8) -> InterNode<K> {
         self.inter_count += 1;
         unsafe { InterNode::alloc(height) }
     }
 
     // XXX this helper only support building height > 1 tree
     pub fn new_root(
-        &mut self, height: u32, promote_key: K, left_ptr: *mut NodeHeader,
+        &mut self, height: u8, promote_key: K, left_ptr: *mut NodeHeader,
         right_ptr: *mut NodeHeader,
     ) -> InterNode<K> {
         let mut root = self.new_inter(height);

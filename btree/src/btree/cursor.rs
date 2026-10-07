@@ -48,7 +48,7 @@ use core::marker::PhantomData;
 /// ```
 pub struct Cursor<'a, K: Ord + Clone + Sized, V: Sized> {
     pub(super) leaf: Option<LeafNode<K, V>>,
-    pub(super) idx: u32,
+    pub(super) idx: u8,
     pub(super) is_exist: bool,
     pub(super) _marker: PhantomData<&'a ()>,
 }

@@ -58,7 +58,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
         if let Some(root) = self.root {
             if !Node::<K, V>::root_is_leaf(root) {
                 let _root = InterNode::<K>::from(root);
-                let cache = stats.get_cache(_root.height() as u8);
+                let cache = stats.get_cache(_root.height());
                 (Some(search(_root, &cache)), cache)
             } else {
                 (Some(LeafNode::<K, V>::from_root_ptr(root)), stats.get_cache(0))
@@ -308,8 +308,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
         // cache.ensure_cap(height + 1);
         cache.inc_inter_count();
         // No more parents in cache, create new root
-        let new_root =
-            InterNode::<K>::new_root(height as u32 + 1, promote_key, left_ptr, right_ptr);
+        let new_root = InterNode::<K>::new_root(height + 1, promote_key, left_ptr, right_ptr);
 
         // to avoid borrow issue, set root outside
         #[cfg(debug_assertions)]
@@ -327,7 +326,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
     /// return the Some(node) when need to rebalance
     #[inline]
     fn remove_child_from_inter<C: PathBuffer<K>>(
-        &mut self, cache: &C, node: &mut InterNode<K>, delete_idx: u32, right_sep: Option<K>,
+        &mut self, cache: &C, node: &mut InterNode<K>, delete_idx: u8, right_sep: Option<K>,
         _no_right: bool,
     ) {
         debug_assert!(node.key_count() > 0, "{:?} {}", node, node.key_count());
@@ -341,7 +340,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
             node.remove_last_child();
             if let Some(key) = right_sep
                 && let Some((mut grand_parent, grand_idx)) =
-                    cache.peek_ancestor(|_node: &InterNode<K>, idx: u32| -> bool {
+                    cache.peek_ancestor(|_node: &InterNode<K>, idx: u8| -> bool {
                         _node.key_count() > idx
                     })
             {
@@ -403,7 +402,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
                 // I guess remove_range delay the underflow might make it possible.
                 if node_height == root_height
                     || cache
-                        .peek_ancestor(|_node: &InterNode<K>, _idx: u32| -> bool {
+                        .peek_ancestor(|_node: &InterNode<K>, _idx: u8| -> bool {
                             _node.key_count() > 0
                         })
                         .is_none()
@@ -479,14 +478,14 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
     #[inline]
     fn remove_only_child<C: PathBuffer<K>>(
         &mut self, cache: &C, node: InterNode<K>,
-    ) -> Option<(InterNode<K>, u32)> {
+    ) -> Option<(InterNode<K>, u8)> {
         debug_assert_eq!(node.key_count(), 0);
         #[cfg(all(test, feature = "trace_log"))]
         {
             self.triggers |= TestFlag::RemoveOnlyChild as u32;
         }
         let r = cache.move_path_to_ancestor(
-            |node: &InterNode<K>, _idx: u32| -> bool { node.key_count() != 0 },
+            |node: &InterNode<K>, _idx: u8| -> bool { node.key_count() != 0 },
             |node| {
                 cache.dec_inter_count();
                 node.dealloc::<false>();
@@ -525,7 +524,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
 
     /// Insert with split handling - called when leaf is full
     pub fn insert_with_split<C: PathBuffer<K>>(
-        &mut self, cache: &C, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u32,
+        &mut self, cache: &C, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u8,
     ) -> *mut V {
         debug_assert!(leaf.is_full());
         let cap = LeafNode::<K, V>::cap();
@@ -674,7 +673,7 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
             Node::Inter(inter) => {
                 // Do not use btree internal PathBuffer (might distrupt test scenario)
                 let stats = S::default();
-                let cache = stats.get_cache(inter.height() as u8);
+                let cache = stats.get_cache(inter.height());
                 let mut cur = inter.clone();
                 loop {
                     cache.push_path(cur.clone(), 0);

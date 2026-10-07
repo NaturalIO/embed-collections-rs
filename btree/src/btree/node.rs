@@ -27,12 +27,15 @@ pub(super) const NODE_HEADER_SIZE: usize = size_of::<NodeHeader>();
 
 /// Node header (8 bytes at start of key area)
 /// height: 0 = leaf node, >0 = internal node (height of subtree)
+///
 #[repr(C)]
 pub(super) struct NodeHeader {
+    // NOTE: a tree have height 255 and node cap 255, can have 255 ^ 255 number of items, more than enough.
+    // So u8 is ok.
     /// Height of the node (0 = leaf, >0 = internal)
-    pub height: u32,
+    pub height: u8,
     /// Count of items in the node
-    pub count: u32,
+    pub count: u8,
 }
 
 impl NodeHeader {
@@ -80,19 +83,19 @@ impl NodeBase {
     }
 
     #[inline(always)]
-    pub fn set_count(&mut self, count: u32) {
+    pub fn set_count(&mut self, count: u8) {
         // we should always modify with raw pointer, not with &mut
         unsafe { (*self.header.as_ptr()).count = count };
     }
 
     #[inline(always)]
-    pub fn inc_count(&mut self, count: u32) {
+    pub fn inc_count(&mut self, count: u8) {
         // we should always modify with raw pointer, not with &mut
         unsafe { (*self.header.as_ptr()).count += count };
     }
 
     #[inline(always)]
-    pub fn dec_count(&mut self, count: u32) {
+    pub fn dec_count(&mut self, count: u8) {
         // we should always modify with raw pointer, not with &mut
         unsafe { (*self.header.as_ptr()).count -= count };
     }
@@ -110,7 +113,7 @@ impl NodeBase {
     ///
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
-    pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u32) -> *const T {
+    pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u8) -> *const T {
         let v_size = size_of::<T>();
         unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
     }
@@ -121,36 +124,36 @@ impl NodeBase {
     ///
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
-    pub unsafe fn item_ptr_mut<T>(&mut self, start_offset: usize, idx: u32) -> *mut T {
+    pub unsafe fn item_ptr_mut<T>(&mut self, start_offset: usize, idx: u8) -> *mut T {
         let v_size = size_of::<T>();
         unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
     }
 
     /// Get count of items in the node
     #[inline(always)]
-    pub fn key_count(&self) -> u32 {
+    pub fn key_count(&self) -> u8 {
         unsafe { (*self.header.as_ptr()).count }
     }
 
     /// Get height of the node
     #[inline(always)]
-    pub fn height(&self) -> u32 {
+    pub fn height(&self) -> u8 {
         unsafe { (*self.header.as_ptr()).height }
     }
 
     /// search the position to insert (need to move old items from idx to the right)
     /// returns the idx, is_equal
     #[inline]
-    pub fn _search<K, Q>(&self, header_offset: usize, count: u32, key: &Q) -> (u32, bool)
+    pub fn _search<K, Q>(&self, header_offset: usize, count: u8, key: &Q) -> (u8, bool)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
         macro_rules! _search {
             ($start: expr, $end: expr) => {
-                let mut idx = $start as u32;
+                let mut idx = $start as u8;
                 if $start < $end {
-                    let mut k = self.item_ptr::<K>(header_offset, $start as u32);
+                    let mut k = self.item_ptr::<K>(header_offset, $start as u8);
                     loop {
                         let k_ref: &Q = (&*k).borrow();
                         let r = k_ref.cmp(key);
@@ -175,7 +178,7 @@ impl NodeBase {
         }
         unsafe {
             let first_line_bytes = CACHE_LINE_SIZE - header_offset;
-            let first_line_limit = (first_line_bytes / size_of::<K>()) as u32;
+            let first_line_limit = (first_line_bytes / size_of::<K>()) as u8;
             if count > first_line_limit {
                 let first_line_last = &*self.item_ptr::<K>(header_offset, first_line_limit - 1);
                 if key > first_line_last.borrow() {
@@ -196,7 +199,7 @@ impl NodeBase {
     /// it does not check is_full
     #[inline(always)]
     pub unsafe fn _insert<K, V>(
-        &mut self, key_header_offset: usize, value_header_offset: usize, idx: u32, key: K, value: V,
+        &mut self, key_header_offset: usize, value_header_offset: usize, idx: u8, key: K, value: V,
     ) -> *mut V {
         let count = self.key_count();
         unsafe {
@@ -288,7 +291,7 @@ impl<K: Ord, V> Node<K, V> {
     }
 
     #[inline(always)]
-    pub fn height(&self) -> u32 {
+    pub fn height(&self) -> u8 {
         match self {
             Self::Inter(node) => node.height(),
             Self::Leaf(_) => 0,
@@ -311,7 +314,7 @@ impl<K: Ord, V> Node<K, V> {
     /// - idx: regardless include or exclude, idx always return idx|0 for start_bound,
     ///   return (idx + 1) | key_count() for end_bound
     #[inline]
-    pub fn find_leaf_with_bound<Q>(&self, bound: Bound<&Q>, is_start: bool) -> (LeafNode<K, V>, u32)
+    pub fn find_leaf_with_bound<Q>(&self, bound: Bound<&Q>, is_start: bool) -> (LeafNode<K, V>, u8)
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,

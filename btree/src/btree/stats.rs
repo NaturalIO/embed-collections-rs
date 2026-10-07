@@ -37,12 +37,12 @@ pub(super) trait Stats<K: Ord + Clone + Sized>: Default + Send + Debug {
 
     #[allow(private_bounds)]
     fn make_occupied_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u32,
+        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u8,
     ) -> OccupiedEntry<'a, K, V, Self>;
 
     #[allow(private_bounds)]
     fn make_vacant_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u32,
+        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u8,
     ) -> VacantEntry<'a, K, V, Self>;
 
     #[cfg(test)]
@@ -67,7 +67,7 @@ pub(super) trait EntryInner<K: Ord + Clone + Sized, V: Sized> {
 
 /// Header stored at the start of the `TreeInfo` heap buffer.
 ///
-/// Immediately followed by `[(InterNode<K,V>, u32); cap]` items.
+/// Immediately followed by `[(InterNode<K,V>, u8); cap]` items.
 #[repr(C)]
 struct TreeInfoHeader {
     leaf_count: usize,
@@ -75,7 +75,9 @@ struct TreeInfoHeader {
     cap: u8,
     // the current heap, in the unit of CACHE_LINE_SIZE
     size: u8,
+    // array items count
     buffer_idx: u8,
+    // left / right
     buffer_pos: i8,
 }
 
@@ -155,14 +157,14 @@ impl<K: Ord + Clone + Sized> Stats<K> for TreeInfo<K> {
 
     #[inline]
     fn make_occupied_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u32,
+        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u8,
     ) -> OccupiedEntry<'a, K, V, Self> {
         OccupiedEntry { inner: tree, idx, leaf }
     }
 
     #[inline]
     fn make_vacant_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u32,
+        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u8,
     ) -> VacantEntry<'a, K, V, Self> {
         VacantEntry { inner: tree, idx, key, leaf }
     }
@@ -223,6 +225,7 @@ impl<K: Ord> PathBuffer<K> for TreeInfo<K> {
 
     #[inline]
     fn ensure_cap(&self, height: u8) {
+        assert!(height < u8::MAX);
         if height == 0 {
             return;
         }
@@ -266,7 +269,7 @@ impl<K: Ord> PathBuffer<K> for TreeInfo<K> {
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
     #[inline]
-    fn _push(&self, inter: InterNode<K>, idx: u32) {
+    fn _push(&self, inter: InterNode<K>, idx: u8) {
         if let Some(header) = self.header_mut() {
             let wi = header.buffer_idx;
             debug_assert!(wi < header.cap, "{wi} {}", header.cap);
@@ -277,7 +280,7 @@ impl<K: Ord> PathBuffer<K> for TreeInfo<K> {
 
     /// Pop the top entry from the cache stack.
     #[inline]
-    fn _pop(&self) -> Option<(InterNode<K>, u32)> {
+    fn _pop(&self) -> Option<(InterNode<K>, u8)> {
         let header = self.header_mut()?;
         if header.buffer_idx == 0 {
             return None;
@@ -298,7 +301,7 @@ impl<K: Ord> PathBuffer<K> for TreeInfo<K> {
 
     /// Peek at the top of the stack (equivalent to `Various::last`).
     #[inline]
-    fn last(&self) -> Option<(&InterNode<K>, u32)> {
+    fn last(&self) -> Option<(&InterNode<K>, u8)> {
         let idx = self.buffer_len();
         if idx == 0 { None } else { Some(unsafe { self._get(idx - 1) }) }
     }
@@ -306,17 +309,17 @@ impl<K: Ord> PathBuffer<K> for TreeInfo<K> {
 
 impl<K> TreeInfo<K> {
     // Size/align of one stack entry.
-    const ITEM_SIZE: usize = size_of::<(InterNode<K>, u32)>();
+    const ITEM_SIZE: usize = size_of::<(InterNode<K>, u8)>();
     // Offset at which items start (header size rounded up to item alignment).
     const ITEMS_OFFSET: usize = {
         let hs = size_of::<TreeInfoHeader>();
-        let ia = align_of::<(InterNode<K>, u32)>();
+        let ia = align_of::<(InterNode<K>, u8)>();
         (hs + ia - 1) & !(ia - 1)
     };
     // Buffer alignment: max of header and item alignments.
     const BUF_ALIGN: usize = {
         let ha = align_of::<TreeInfoHeader>();
-        let ia = align_of::<(InterNode<K>, u32)>();
+        let ia = align_of::<(InterNode<K>, u8)>();
         if ha > ia { ha } else { ia }
     };
 
@@ -389,7 +392,7 @@ impl<K> TreeInfo<K> {
     }
 
     #[inline]
-    unsafe fn item_ptr(&self, idx: u8) -> *const (InterNode<K>, u32) {
+    unsafe fn item_ptr(&self, idx: u8) -> *const (InterNode<K>, u8) {
         let p = self.ptr.load(Relaxed);
         unsafe {
             (p as *const u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE) as *const _
@@ -397,13 +400,13 @@ impl<K> TreeInfo<K> {
     }
 
     #[inline]
-    unsafe fn item_ptr_mut(&self, idx: u8) -> *mut (InterNode<K>, u32) {
+    unsafe fn item_ptr_mut(&self, idx: u8) -> *mut (InterNode<K>, u8) {
         let p = self.ptr.load(Relaxed);
         unsafe { (p as *mut u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE) as *mut _ }
     }
 
     #[inline]
-    unsafe fn _get(&self, idx: u8) -> (&InterNode<K>, u32) {
+    unsafe fn _get(&self, idx: u8) -> (&InterNode<K>, u8) {
         unsafe {
             let p = &*self.item_ptr(idx);
             (&p.0, p.1)
@@ -432,7 +435,7 @@ pub(super) struct TreeInfoIter<'a, K: Ord + 'a> {
 }
 
 impl<'a, K: Ord + 'a> Iterator for TreeInfoIter<'a, K> {
-    type Item = (&'a InterNode<K>, u32);
+    type Item = (&'a InterNode<K>, u8);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

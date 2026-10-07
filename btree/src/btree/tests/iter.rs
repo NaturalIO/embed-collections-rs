@@ -931,7 +931,7 @@ fn test_cursor_mixed_navigation<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 #[case(TreeInfo::<i32>::default())]
 fn test_cursor_multi_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     // Test with at least 3 leaf nodes
-    let leaf_cap = LeafNode::<i32, i32>::cap() as usize;
+    let leaf_cap = LeafNode::<i32, i32>::cap();
     let n = leaf_cap * 3 + 10;
 
     let mut map = BTree::<i32, i32, S>::new();
@@ -966,7 +966,7 @@ fn test_cursor_multi_leaf<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let leaf0_last_key = (leaf_cap as i32 - 1) * 2;
     let leaf0_last_value = (leaf_cap as i32 - 1) * 10;
     let mut cursor = map.cursor(&(leaf0_last_key + 1));
-    assert_eq!(cursor.idx, leaf_cap as u32);
+    assert_eq!(cursor.idx, leaf_cap);
     assert_eq!(cursor.is_exist(), false);
     let key = leaf_cap as i32 * 2;
     let value = leaf_cap as i32 * 10;

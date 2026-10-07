@@ -48,7 +48,7 @@ impl<K> From<NonNull<NodeHeader>> for InterNode<K> {
 
 // pub for test
 pub(super) struct InterLayout {
-    pub key_cap: u32,
+    pub key_cap: u8,
     pub layout: Layout,
     pub key_offset: usize,
     pub ptrs_offset: usize,
@@ -58,7 +58,7 @@ impl<K> InterNode<K> {
     /// (inter_key_cap, leaf_key_cap)
     pub(super) const LAYOUT: InterLayout = Self::cal_layout();
 
-    pub(super) const UNDERFLOW_CAP: u32 = Self::LAYOUT.key_cap / 3;
+    pub(super) const UNDERFLOW_CAP: u8 = Self::LAYOUT.key_cap / 3;
 
     /// where: inter_key_cap + 1 inter_value_cap;
     /// assert K can fit into the cacheline after divided by header.
@@ -85,7 +85,7 @@ impl<K> InterNode<K> {
             cap -= 1;
         };
         match Layout::from_size_align(NODE_SIZE, align) {
-            Ok(layout) => InterLayout { key_offset, ptrs_offset, key_cap: cap as u32, layout },
+            Ok(layout) => InterLayout { key_offset, ptrs_offset, key_cap: cap as u8, layout },
             Err(_) => panic!("invalid layout"),
         }
     }
@@ -99,7 +99,7 @@ impl<K> InterNode<K> {
     }
 
     #[inline(always)]
-    pub unsafe fn alloc(height: u32) -> Self {
+    pub unsafe fn alloc(height: u8) -> Self {
         let mut base = NodeBase::_alloc(Self::LAYOUT.layout);
         let header = base.get_ptr_mut();
         unsafe {
@@ -131,7 +131,7 @@ impl<K> InterNode<K> {
     ///
     /// NOTE: the capacity of ptr array = cap + 1
     #[inline]
-    pub const fn cap() -> u32 {
+    pub const fn cap() -> u8 {
         Self::LAYOUT.key_cap
     }
 
@@ -161,35 +161,35 @@ impl<K> InterNode<K> {
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr(&self, idx: u32) -> *const MaybeUninit<K> {
+    pub unsafe fn key_ptr(&self, idx: u8) -> *const MaybeUninit<K> {
         unsafe { self.base.item_ptr::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to key at index
     #[inline(always)]
-    pub unsafe fn key_ptr_mut(&mut self, idx: u32) -> *mut MaybeUninit<K> {
+    pub unsafe fn key_ptr_mut(&mut self, idx: u8) -> *mut MaybeUninit<K> {
         unsafe { self.base.item_ptr_mut::<MaybeUninit<K>>(Self::key_offset(), idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
-    pub unsafe fn child_ptr(&self, idx: u32) -> *const *mut NodeHeader {
+    pub unsafe fn child_ptr(&self, idx: u8) -> *const *mut NodeHeader {
         unsafe { self.base.item_ptr::<*mut NodeHeader>(Self::ptrs_offset(), idx) }
     }
 
     /// Get pointer to child at index
     #[inline(always)]
-    pub unsafe fn child_ptr_mut(&mut self, idx: u32) -> *mut *mut NodeHeader {
+    pub unsafe fn child_ptr_mut(&mut self, idx: u8) -> *mut *mut NodeHeader {
         unsafe { self.base.item_ptr_mut::<*mut NodeHeader>(Self::ptrs_offset(), idx) }
     }
 
     #[inline(always)]
-    pub fn get_child_ptr(&self, idx: u32) -> *mut NodeHeader {
+    pub fn get_child_ptr(&self, idx: u8) -> *mut NodeHeader {
         unsafe { *self.child_ptr(idx) }
     }
 
     #[inline]
-    pub fn get_child<V>(&self, idx: u32) -> Node<K, V> {
+    pub fn get_child<V>(&self, idx: u8) -> Node<K, V> {
         unsafe {
             let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
@@ -203,7 +203,7 @@ impl<K> InterNode<K> {
     }
 
     #[inline]
-    pub fn get_child_as_inter(&self, idx: u32) -> Self {
+    pub fn get_child_as_inter(&self, idx: u8) -> Self {
         unsafe {
             let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
@@ -216,7 +216,7 @@ impl<K> InterNode<K> {
     }
 
     #[inline]
-    pub fn get_child_as_leaf<V>(&self, idx: u32) -> LeafNode<K, V> {
+    pub fn get_child_as_leaf<V>(&self, idx: u8) -> LeafNode<K, V> {
         unsafe {
             let child_ptr = *self.child_ptr(idx);
             if child_ptr.is_null() {
@@ -233,7 +233,7 @@ impl<K: Ord> InterNode<K> {
     /// (inter_key_cap, leaf_key_cap)
     #[inline(always)]
     pub fn new_root(
-        height: u32, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
+        height: u8, promote_key: K, left_ptr: *mut NodeHeader, right_ptr: *mut NodeHeader,
     ) -> Self {
         let mut root = unsafe { Self::alloc(height) };
         root.set_left_ptr(left_ptr);
@@ -244,7 +244,7 @@ impl<K: Ord> InterNode<K> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_child<Q>(&self, key: &Q) -> u32
+    pub fn search_child<Q>(&self, key: &Q) -> u8
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -257,7 +257,7 @@ impl<K: Ord> InterNode<K> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_child_smart<Q>(&self, key: &Q, is_seq: &mut bool) -> u32
+    pub fn search_child_smart<Q>(&self, key: &Q, is_seq: &mut bool) -> u8
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -286,7 +286,7 @@ impl<K: Ord> InterNode<K> {
     /// search the position to insert
     /// returns the idx, is_equal
     #[inline(always)]
-    pub fn search_key<Q>(&self, key: &Q) -> u32
+    pub fn search_key<Q>(&self, key: &Q) -> u8
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -418,7 +418,7 @@ impl<K: Ord> InterNode<K> {
     ///
     /// NOTE: idx is the idx of key
     #[inline(always)]
-    pub fn insert_no_split_with_idx(&mut self, idx: u32, key: K, ptr: *mut NodeHeader) {
+    pub fn insert_no_split_with_idx(&mut self, idx: u8, key: K, ptr: *mut NodeHeader) {
         debug_assert!(self.key_count() < Self::cap());
         let _ = unsafe {
             self.base._insert::<K, *mut NodeHeader>(
@@ -468,7 +468,7 @@ impl<K: Ord> InterNode<K> {
     /// It does not change the count of current node (It only add the count of right node).
     /// It does not change the left ptr of right node.
     #[inline(always)]
-    fn copy_right(&mut self, right_node: &mut Self, start_idx: u32, copy_count: u32) {
+    fn copy_right(&mut self, right_node: &mut Self, start_idx: u8, copy_count: u8) {
         let right_count = right_node.key_count();
         debug_assert!(start_idx + copy_count <= self.key_count());
         debug_assert!(right_count + copy_count <= Self::cap());
@@ -490,7 +490,7 @@ impl<K: Ord> InterNode<K> {
 
     /// Merge right node into self, delete `right`, pull down separator key from grandparent
     /// not including the left(0) child of right
-    pub fn merge(&mut self, mut right: Self, grand: &mut Self, right_idx: u32) {
+    pub fn merge(&mut self, mut right: Self, grand: &mut Self, right_idx: u8) {
         let key = grand.remove_mid_child(right_idx);
         let right_count = right.key_count();
         let mut self_count = self.key_count();
@@ -577,8 +577,8 @@ impl<K: Ord> InterNode<K> {
 
     #[inline]
     pub fn find_child_branch<C: PathBuffer<K>>(
-        &self, height: u32, mut idx: u32, left: bool, cache: Option<&C>,
-    ) -> (Self, u32) {
+        &self, height: u8, mut idx: u8, left: bool, cache: Option<&C>,
+    ) -> (Self, u8) {
         debug_assert!(height > 0);
         let mut child = self.get_child_as_inter(idx);
         if let Some(_cache) = cache.as_ref() {
@@ -596,7 +596,7 @@ impl<K: Ord> InterNode<K> {
 
     /// old key is auto drop, replace with new key
     #[inline(always)]
-    pub fn change_key(&mut self, idx: u32, key: K) -> K {
+    pub fn change_key(&mut self, idx: u8, key: K) -> K {
         debug_assert!(self.key_count() > idx);
         unsafe {
             let k_ptr = self.key_ptr_mut(idx);
@@ -639,7 +639,7 @@ impl<K: Ord> InterNode<K> {
     }
 
     #[inline(always)]
-    pub fn remove_mid_child(&mut self, child_idx: u32) -> K {
+    pub fn remove_mid_child(&mut self, child_idx: u8) -> K {
         let key_count = self.key_count();
         debug_assert!(child_idx > 0);
         debug_assert!(child_idx <= key_count);
@@ -667,7 +667,7 @@ impl<K: Ord> InterNode<K> {
     /// my_idx: parent.child_ptr[child_idx] == self
     #[inline]
     pub fn insert_rotate_left(
-        &mut self, parent: &mut Self, my_idx: u32, left: &mut Self, insert_child_idx: u32, key: K,
+        &mut self, parent: &mut Self, my_idx: u8, left: &mut Self, insert_child_idx: u8, key: K,
         child_ptr: *mut NodeHeader,
     ) {
         debug_assert!(insert_child_idx <= self.key_count());
@@ -692,7 +692,7 @@ impl<K: Ord> InterNode<K> {
 
     /// my_idx: parent.child_ptr[child_idx] == self
     #[inline]
-    pub fn rotate_right(&mut self, parent: &mut Self, my_idx: u32, right: &mut Self) {
+    pub fn rotate_right(&mut self, parent: &mut Self, my_idx: u8, right: &mut Self) {
         let (promote_key, child) = self.remove_last_child();
         let demote_key = parent.change_key(my_idx, promote_key);
         right.insert_at_front(child, demote_key);
@@ -756,7 +756,7 @@ impl<K: Ord + fmt::Debug> InterNode<K> {
         }
         // Validate count is within bounds
         assert!(
-            count as u32 <= Self::cap(),
+            count as u8 <= Self::cap(),
             "Internal node has too many keys: {} > {}",
             count,
             Self::cap()
@@ -765,8 +765,8 @@ impl<K: Ord + fmt::Debug> InterNode<K> {
         // Validate keys are sorted
         unsafe {
             for i in 1..count {
-                let prev_key = (*self.key_ptr((i - 1) as u32)).assume_init_ref();
-                let curr_key = (*self.key_ptr(i as u32)).assume_init_ref();
+                let prev_key = (*self.key_ptr((i - 1) as u8)).assume_init_ref();
+                let curr_key = (*self.key_ptr(i as u8)).assume_init_ref();
                 assert!(
                     prev_key < curr_key,
                     "Internal node keys not sorted: {:?} >= {:?}",

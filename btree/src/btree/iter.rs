@@ -7,12 +7,12 @@ pub(super) struct IterForward<K, V> {
     /// Current leaf node for forward iteration
     pub front_leaf: LeafNode<K, V>,
     /// Current index within the leaf for forward iteration
-    pub idx: u32,
+    pub idx: u8,
 }
 
 impl<K, V> IterForward<K, V> {
     #[inline]
-    pub fn next(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    pub fn next(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         if self.idx >= self.front_leaf.key_count() {
             if let Some(next) = self.front_leaf.get_right_node() {
                 debug_assert!(next.key_count() > 0);
@@ -39,12 +39,12 @@ pub(super) struct IterBackward<K, V> {
     pub back_leaf: LeafNode<K, V>,
     /// back_idx - 1 is the next index within the back leaf, initial to key_count
     /// When back_idx == 0, should go to previous leaf
-    pub back_idx: u32,
+    pub back_idx: u8,
 }
 
 impl<K, V> IterBackward<K, V> {
     #[inline]
-    pub fn prev(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    pub fn prev(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         if self.back_idx == 0 {
             if let Some(prev) = self.back_leaf.get_left_node() {
                 self.back_idx = prev.key_count();
@@ -90,7 +90,7 @@ impl<K, V> IterBase<K, V> {
     /// Advance the forward iterator and return the current leaf and index
     /// Returns None if we've moved past the end
     #[inline]
-    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         if self.remaining == 0 {
             return None;
         }
@@ -101,7 +101,7 @@ impl<K, V> IterBase<K, V> {
     /// Advance the backward iterator and return the current leaf and index
     /// Returns None if we've moved past the beginning
     #[inline]
-    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         if self.remaining == 0 {
             return None;
         }
@@ -360,16 +360,16 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for ValuesMut<'a, K, V> {
 pub(super) struct RangeBase<'a, K: 'a, V: 'a> {
     front_leaf: LeafNode<K, V>,
     back_leaf: LeafNode<K, V>,
-    front_idx: u32,
+    front_idx: u8,
     // back_idx -1 is the next pos, initial to be key_count
-    back_idx: u32,
+    back_idx: u8,
     _marker: PhantomData<&'a ()>,
 }
 
 impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
     #[inline]
     pub fn new(
-        front_leaf: LeafNode<K, V>, front_idx: u32, back_leaf: LeafNode<K, V>, back_idx: u32,
+        front_leaf: LeafNode<K, V>, front_idx: u8, back_leaf: LeafNode<K, V>, back_idx: u8,
     ) -> Self {
         Self { front_leaf, front_idx, back_leaf, back_idx, _marker: PhantomData }
     }
@@ -377,7 +377,7 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
     /// Advance forward and return the current leaf and index
     /// Returns None when range is exhausted, caller should set RangeBase to None
     #[inline]
-    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    fn advance_forward(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         loop {
             let idx = self.front_idx;
             if self.front_leaf == self.back_leaf {
@@ -404,7 +404,7 @@ impl<'a, K: 'a, V: 'a> RangeBase<'a, K, V> {
     /// Advance backward and return the current leaf and index
     /// Returns None when range is exhausted, caller should set RangeBase to None
     #[inline]
-    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u32)> {
+    fn advance_backward(&mut self) -> Option<(&mut LeafNode<K, V>, u8)> {
         loop {
             if self.back_leaf == self.front_leaf {
                 if self.back_idx == 0 {
@@ -535,7 +535,7 @@ struct IntoIterBase<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     /// Current leaf being iterated
     leaf: Option<LeafNode<K, V>>,
     /// Current index within the leaf
-    idx: u32,
+    idx: u8,
     /// Remaining elements to iterate
     remaining: usize,
     is_forward: bool,

@@ -14,7 +14,7 @@ use std::vec::Vec;
 #[case(100, 2)]
 #[case(1000, 3)]
 #[case(10000, 3)]
-fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u32) {
+fn test_delete_all_seq(setup_log: (), #[case] count: u32, #[case] height: u8) {
     #[cfg(miri)]
     {
         if count > 100 {

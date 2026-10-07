@@ -9,7 +9,7 @@ use rstest::*;
 #[case(TreeInfo::<u32>::default())]
 fn test_occupied_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
-    let leaf_cap = builder.leaf_cap();
+    let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
     let mut leaf1 = builder.new_leaf();
@@ -65,7 +65,7 @@ fn test_occupied_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: 
 #[case(TreeInfo::<u32>::default())]
 fn test_occupied_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
-    let leaf_cap = builder.leaf_cap();
+    let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
     let mut leaf1 = builder.new_leaf();
@@ -181,7 +181,7 @@ fn test_occupied_forward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_
 #[case(TreeInfo::<u32>::default())]
 fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
-    let leaf_cap = builder.leaf_cap();
+    let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
     let mut leaf1 = builder.new_leaf();
@@ -214,7 +214,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
     if let Entry::Vacant(ent) = map.entry(bound_key) {
         assert_eq!(ent.key(), &bound_key);
         // the node is full, so it's on the cap
-        assert_eq!(ent.idx, leaf_cap);
+        assert_eq!(ent.idx, leaf_cap as u8);
 
         // next leaf
         assert_eq!(ent.peek_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
@@ -241,7 +241,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
 #[case(TreeInfo::<u32>::default())]
 fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
-    let leaf_cap = builder.leaf_cap();
+    let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
     let mut leaf0 = builder.new_leaf();
     let mut leaf1 = builder.new_leaf();
@@ -302,12 +302,12 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-fn test_vacant_forward_point_to_element_height1<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::<u8>::default())]
+fn test_vacant_forward_point_to_element_height1<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
-    let mut map = BTree::<u32, u32, S>::new();
+    let mut map = BTree::<u8, u8, S>::new();
     map.insert(10, 100);
-    map.insert(30, 300);
+    map.insert(30, 200);
 
     // Vacant entry at 20, idx should point to 30
     if let Entry::Vacant(ve) = map.entry(20) {
@@ -640,9 +640,9 @@ fn test_alter_key_update_sep_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-fn test_rangetree_swallow_forward<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
-    let mut map = BTree::<u32, u32, S>::new();
+#[case(TreeInfo::<u8>::default())]
+fn test_rangetree_swallow_forward<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
+    let mut map = BTree::<u8, u8, S>::new();
 
     // Mimic RangeTree segments: [10, 20], [30, 10], [50, 10]
     map.insert(10, 20);

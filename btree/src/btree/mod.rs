@@ -199,7 +199,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
 
     /// return (cap_of_inter_node, cap_of_leaf_node)
     #[inline]
-    pub const fn cap() -> (u32, u32) {
+    pub const fn cap() -> (u8, u8) {
         let inter_cap = InterNode::<K>::cap();
         let leaf_cap = LeafNode::<K, V>::cap();
         (inter_cap, leaf_cap)
@@ -207,7 +207,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
 
     /// When root is leaf, returns 1, otherwise return the number of layers of inter node
     #[inline(always)]
-    pub fn height(&self) -> u32 {
+    pub fn height(&self) -> u8 {
         if let Some(root) = self.inner.get_root() {
             return root.height() + 1;
         }
@@ -215,7 +215,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
     }
 
     #[inline(always)]
-    fn find<Q>(&self, key: &Q) -> Option<(LeafNode<K, V>, u32)>
+    fn find<Q>(&self, key: &Q) -> Option<(LeafNode<K, V>, u8)>
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
@@ -551,7 +551,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
                 std::print!("{:indent$}", "", indent = depth * 2);
                 print_log!("{}", inter);
                 // Dump children
-                let count = inter.key_count() as u32;
+                let count = inter.key_count() as u8;
                 for i in 0..=count {
                     unsafe {
                         let child_ptr = *inter.child_ptr(i);
@@ -775,7 +775,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Drop for BTree<K, V, S> {
                 leaf.dealloc::<true>();
             } else {
                 let inter = InterNode::<K>::from(root);
-                let mut cache = self.stats.get_cache(inter.height() as u8);
+                let mut cache = self.stats.get_cache(inter.height());
                 let mut cur = inter.find_first_leaf::<V, _>(Some(&mut cache));
                 cur.dealloc::<true>();
                 // To navigate to next leaf,

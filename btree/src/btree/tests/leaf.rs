@@ -38,21 +38,21 @@ fn test_leaf_align() {
 #[case::node_1_key(1)]
 #[case::node_3_keys(3)]
 #[case::node_5_keys(5)]
-fn test_leaf_search_smart(#[case] key_count: u32) {
+fn test_leaf_search_smart(#[case] key_count: u8) {
     let is_seqs = [false, true];
     unsafe {
-        let mut node = LeafNode::<i32, i32>::alloc();
+        let mut node = LeafNode::<u8, u8>::alloc();
 
         for i in 1..=key_count {
-            let key = (i * 2 - 1) as i32;
+            let key = i * 2 - 1;
             node.insert_no_split(key, key * 10);
         }
 
-        let upper_bound = if key_count == 0 { 2 } else { (key_count * 2) as i32 + 1 };
+        let upper_bound = if key_count == 0 { 2 } else { (key_count * 2) + 1 };
         for is_seq in is_seqs {
             for search_key in 0..=upper_bound {
                 let (expected_idx, expected_eq) = node.search(&search_key);
-                let programmatic_idx = (search_key / 2).min(key_count as i32) as u32;
+                let programmatic_idx = (search_key / 2).min(key_count);
                 let programmatic_eq = (search_key % 2 != 0) && programmatic_idx < key_count;
 
                 assert_eq!(
@@ -100,7 +100,7 @@ fn test_leaf_node_split_insert_at_split_idx_left() {
         }
 
         // Insert key smaller than the key at split_idx
-        let split_idx = (cap >> 1) as u32;
+        let split_idx = cap >> 1;
         let new_key = split_idx * 2 - 2 - 2 - 1; // odd key
         let new_value = new_key * 10;
         let (insert_idx, _is_equal) = leaf.search(&(new_key as i32));
@@ -178,12 +178,12 @@ fn test_leaf_node_split_insert_at_split_idx_right() {
         }
 
         // Insert key larger than the key at split_idx
-        let split_idx = (cap >> 1) as u32;
+        let split_idx = cap as i32 >> 1;
         println!("split_idx {split_idx}");
         let new_key = split_idx * 2 + 1; // odd number
         let new_value = new_key * 10;
         let (insert_idx, _is_equal) = leaf.search(&(new_key as i32));
-        assert_eq!(insert_idx, split_idx + 1);
+        assert_eq!(insert_idx, split_idx as u8 + 1);
         assert!(!_is_equal);
 
         let (new_leaf, _ptr_v) =
@@ -192,12 +192,12 @@ fn test_leaf_node_split_insert_at_split_idx_right() {
         // Verify the split
         let left_count = leaf.key_count();
         let right_count = new_leaf.key_count();
-        assert_eq!(left_count, split_idx, "Left node should have keys");
+        assert_eq!(left_count, split_idx as u8, "Left node should have keys");
         assert!(right_count > 0, "Right node should have keys");
         assert_eq!(left_count + right_count, cap + 1, "Total keys should be cap + 1");
-        for i in 0..split_idx {
-            assert_eq!((*leaf.key_ptr(i)).assume_init_read(), i as i32 * 2);
-            assert_eq!((*leaf.value_ptr(i)).assume_init_read(), i as i32 * 10);
+        for i in 0..split_idx as i32 {
+            assert_eq!((*leaf.key_ptr(i as u8)).assume_init_read(), i as i32 * 2);
+            assert_eq!((*leaf.value_ptr(i as u8)).assume_init_read(), i as i32 * 10);
         }
         assert_eq!((*new_leaf.key_ptr(0)).assume_init_read(), split_idx as i32 * 2);
         assert_eq!((*new_leaf.value_ptr(0)).assume_init_read(), split_idx as i32 * 10);
@@ -209,14 +209,14 @@ fn test_leaf_node_split_insert_at_split_idx_right() {
             *found_value, new_value as i32,
             "New value should be at position 1 in right node"
         );
-        for i in 0..(cap - split_idx - 1) {
+        for i in 0..(cap as i32 - split_idx as i32 - 1) {
             // println!("checkout {i} {}", i+2);
             assert_eq!(
-                (*new_leaf.key_ptr(i + 2)).assume_init_read(),
+                (*new_leaf.key_ptr(i as u8 + 2)).assume_init_read(),
                 (i + split_idx + 1) as i32 * 2
             );
             assert_eq!(
-                (*new_leaf.value_ptr(i + 2)).assume_init_read(),
+                (*new_leaf.value_ptr(i as u8 + 2)).assume_init_read(),
                 (i + split_idx + 1) as i32 * 10
             );
         }

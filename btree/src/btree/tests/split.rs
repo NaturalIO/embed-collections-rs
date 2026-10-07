@@ -71,7 +71,7 @@ fn test_node_capacity() {
 #[case(TreeInfo::<u32>::default())]
 fn test_btree_split_leaf_root<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, u32, S>::new();
-    let leaf_cap = LeafNode::<u32, u32>::cap();
+    let leaf_cap = LeafNode::<u32, u32>::cap() as u32;
     crate::trace_log!("cap {leaf_cap}");
     for k in 0..(leaf_cap + 1) {
         map.insert(k, k * 10);
