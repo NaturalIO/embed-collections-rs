@@ -6,7 +6,7 @@ LeafNode layout:
 */
 
 use super::node::*;
-use crate::{CACHE_LINE_SIZE, trace_log};
+use crate::trace_log;
 use alloc::alloc::{Layout, dealloc};
 use core::borrow::Borrow;
 use core::fmt;
@@ -99,14 +99,15 @@ impl<K, V> LeafNode<K, V> {
         }
         let key_size = size_of::<K>();
         let value_size = size_of::<V>();
-        assert!(key_size <= CACHE_LINE_SIZE - 16);
-        assert!(value_size <= CACHE_LINE_SIZE - 16);
         assert!(key_size > 0, "BTree key must not be a zero-sized type");
 
         let key_offset = align_up::<K>(NODE_HEADER_SIZE);
         let end = NODE_SIZE - LEAF_PTR_SIZE;
         let avail = end - key_offset;
         let mut cap = avail / (key_size + value_size);
+        if cap < 2 {
+            panic!("key_size + value_size too large");
+        }
         let value_offset = loop {
             assert!(cap > 0);
             let _key_end = key_offset + cap * key_size;
