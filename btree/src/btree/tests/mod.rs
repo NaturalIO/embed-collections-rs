@@ -15,7 +15,7 @@ mod split;
 use super::{helper::*, inter::*, leaf::*, node::*, stats::*, *};
 pub use embed_collections_test::*;
 
-pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
+pub struct TreeBuilder<K: Key, V: Value, S: Stats<K>> {
     leaf_count: usize,
     inter_count: u32,
     stats: S,
@@ -23,13 +23,13 @@ pub struct TreeBuilder<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     prev: Option<LeafNode<K, V>>,
 }
 
-impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> Default for TreeBuilder<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> Default for TreeBuilder<K, V, S> {
     fn default() -> Self {
         Self { leaf_count: 0, inter_count: 0, len: 0, prev: None, stats: S::default() }
     }
 }
 
-impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> TreeBuilder<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> TreeBuilder<K, V, S> {
     pub fn leaf_cap(&self) -> u8 {
         LeafNode::<K, V>::cap()
     }

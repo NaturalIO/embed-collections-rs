@@ -3,27 +3,40 @@ use super::{stats::Stats, *};
 use core::fmt::{self, Debug};
 
 /// Entry for an existing key-value pair in the tree
-pub struct OccupiedEntry<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
-    pub(super) inner: &'a mut S::EntryInner<V>,
+pub struct OccupiedEntry<'a, K: Key, V: Value, S: Stats<K>> {
+    pub(super) inner: S::EntryInner<'a, V>,
     pub(super) leaf: LeafNode<K, V>,
-    pub(super) idx: u8,
 }
 
 /// Entry for a vacant key position in the tree
-pub struct VacantEntry<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
-    pub(super) inner: &'a mut S::EntryInner<V>,
+pub struct VacantEntry<'a, K: Key, V: Value, S: Stats<K>> {
+    pub(super) inner: S::EntryInner<'a, V>,
     pub(super) leaf: Option<LeafNode<K, V>>,
     pub(super) key: K,
-    pub(super) idx: u8,
 }
 
 /// Entry into a BTreeMap for in-place manipulation
-pub enum Entry<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
+pub enum Entry<'a, K: Key, V: Value, S: Stats<K>> {
     Occupied(OccupiedEntry<'a, K, V, S>),
     Vacant(VacantEntry<'a, K, V, S>),
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Entry<'a, K, V, S> {
+pub(super) trait EntryInner<K: Key, V: Value> {
+    type PathBuffer: PathBuffer<K>;
+
+    fn get_cache(&self) -> &Self::PathBuffer;
+
+    #[cfg(test)]
+    fn get_tree(&self) -> &BTreeInner<K, V>;
+
+    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, &Self::PathBuffer);
+
+    fn set_idx(&mut self, idx: u8);
+
+    fn get_idx(&self) -> u8;
+}
+
+impl<'a, K: Key, V: Value, S: Stats<K>> Entry<'a, K, V, S> {
     #[inline]
     pub fn exists(&self) -> bool {
         matches!(self, Entry::Occupied(_))
@@ -138,25 +151,19 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Entry<'a, K, V, S> {
     }
 }
 
-impl<'a, K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug
-    for OccupiedEntry<'a, K, V, S>
-{
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for OccupiedEntry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OccupiedEntry").field("key", self.key()).field("value", self.get()).finish()
     }
 }
 
-impl<'a, K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug
-    for VacantEntry<'a, K, V, S>
-{
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for VacantEntry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VacantEntry").field("key", &self.key).finish()
     }
 }
 
-impl<'a, K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug
-    for Entry<'a, K, V, S>
-{
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for Entry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Entry::Occupied(ent) => f.debug_tuple("Occupied").field(ent).finish(),
@@ -165,12 +172,12 @@ impl<'a, K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
     /// Get a reference to the key
     #[inline]
     pub fn key(&self) -> &K {
         unsafe {
-            let key_ptr = self.leaf.key_ptr(self.idx);
+            let key_ptr = self.leaf.key_ptr(self.inner.get_idx());
             (*key_ptr).assume_init_ref()
         }
     }
@@ -190,7 +197,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     /// Remove the key-value pair from the tree and return the key and value
     #[inline(always)]
     pub(crate) fn _remove_entry(mut self, merge: bool) -> (K, V) {
-        let (key, val) = self.leaf.remove_pair_no_borrow(self.idx);
+        let (key, val) = self.leaf.remove_pair_no_borrow(self.inner.get_idx());
         let (tree, cache) = self.inner.get_tree_cache();
         tree.len -= 1;
         // Check for underflow and handle merge
@@ -207,7 +214,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     #[inline]
     pub fn get(&self) -> &V {
         unsafe {
-            let val_ptr = self.leaf.value_ptr(self.idx);
+            let val_ptr = self.leaf.value_ptr(self.inner.get_idx());
             (*val_ptr).assume_init_ref()
         }
     }
@@ -216,7 +223,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     #[inline]
     pub fn get_mut(&mut self) -> &mut V {
         unsafe {
-            let val_ptr = self.leaf.value_ptr_mut(self.idx);
+            let val_ptr = self.leaf.value_ptr_mut(self.inner.get_idx());
             (*val_ptr).assume_init_mut()
         }
     }
@@ -226,7 +233,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     #[inline]
     pub fn into_mut(mut self) -> &'a mut V {
         unsafe {
-            let val_ptr = self.leaf.value_ptr_mut(self.idx);
+            let val_ptr = self.leaf.value_ptr_mut(self.inner.get_idx());
             (*val_ptr).assume_init_mut()
         }
     }
@@ -234,14 +241,15 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     /// replace a value into the tree and return the old value
     #[inline]
     pub fn insert(&mut self, value: V) -> V {
-        self.leaf.replace(self.idx, value)
+        self.leaf.replace(self.inner.get_idx(), value)
     }
 
     /// Peak previous OccupiedEntry
     #[inline(always)]
     #[allow(clippy::needless_lifetimes)]
     pub fn peek_backward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
-        let mut cursor = IterBackward { back_leaf: self.leaf.clone(), back_idx: self.idx };
+        let mut cursor =
+            IterBackward { back_leaf: self.leaf.clone(), back_idx: self.inner.get_idx() };
         unsafe {
             if let Some((k, v)) = cursor.prev_pair() {
                 return Some((&*k, &*v));
@@ -254,7 +262,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     #[inline(always)]
     #[allow(clippy::needless_lifetimes)]
     pub fn peek_forward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
-        let mut cursor = IterForward { front_leaf: self.leaf.clone(), idx: self.idx + 1 };
+        let mut cursor =
+            IterForward { front_leaf: self.leaf.clone(), idx: self.inner.get_idx() + 1 };
         unsafe {
             if let Some((k, v)) = cursor.next_pair() {
                 return Some((&*k, &*v));
@@ -267,14 +276,17 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     ///
     /// When reaching the front, return the original entry in Err()
     #[inline]
-    pub fn move_backward(self) -> Result<Self, Self> {
-        if self.idx > 0 {
-            Ok(Self { inner: self.inner, leaf: self.leaf, idx: self.idx - 1 })
+    pub fn move_backward(mut self) -> Result<Self, Self> {
+        let idx = self.inner.get_idx();
+        if idx > 0 {
+            self.inner.set_idx(idx - 1);
+            Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(leaf) = self.leaf.get_left_node() {
             self.inner.get_cache().move_path_left();
             let count = leaf.key_count();
             debug_assert!(count > 0);
-            Ok(Self { inner: self.inner, leaf, idx: count - 1 })
+            self.inner.set_idx(count - 1);
+            Ok(Self { inner: self.inner, leaf })
         } else {
             Err(self)
         }
@@ -284,14 +296,16 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     ///
     /// When reaching the end, return the original entry in Err()
     #[inline]
-    pub fn move_forward(self) -> Result<Self, Self> {
-        let next_idx = self.idx + 1;
+    pub fn move_forward(mut self) -> Result<Self, Self> {
+        let next_idx = self.inner.get_idx() + 1;
         if self.leaf.key_count() > next_idx {
-            Ok(Self { inner: self.inner, leaf: self.leaf, idx: next_idx })
+            self.inner.set_idx(next_idx);
+            Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(right) = self.leaf.get_right_node() {
             self.inner.get_cache().move_path_right();
             debug_assert!(right.key_count() > 0);
-            Ok(Self { inner: self.inner, leaf: right, idx: 0 })
+            self.inner.set_idx(0);
+            Ok(Self { inner: self.inner, leaf: right })
         } else {
             Err(self)
         }
@@ -313,10 +327,11 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
         {
             return Err(());
         }
+        let idx = self.inner.get_idx();
         unsafe {
-            let k_ref = (*self.leaf.key_ptr_mut(self.idx)).assume_init_mut();
+            let k_ref = (*self.leaf.key_ptr_mut(idx)).assume_init_mut();
             let (tree, cache) = self.inner.get_tree_cache();
-            if self.idx == 0 && tree.root_is_inter() {
+            if idx == 0 && tree.root_is_inter() {
                 // We need to keep the PathBuffer intact, use peek rather than move_to_ancestor
                 // it's allowed to move the entry or remove afterwards
                 tree.update_ancestor_sep_key::<false, _>(cache, k.clone());
@@ -345,7 +360,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> OccupiedEntry<'a, K, V, 
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
     /// Get a reference to the key
     #[inline]
     pub fn key(&self) -> &K {
@@ -364,10 +379,11 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S>
     where
         K: 'a,
     {
-        let (key, inner, idx) = (self.key, self.inner, self.idx);
+        let (key, mut inner) = (self.key, self.inner);
+        let idx = inner.get_idx();
         let (tree, cache) = inner.get_tree_cache();
         if tree.root.is_none() {
-            return inner.get_tree_mut().init_empty(key, value);
+            return unsafe { &mut *tree.init_empty(key, value) };
         }
         tree.len += 1;
         // Get the leaf node where we should insert
@@ -395,7 +411,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S>
         if let Some(leaf) = self.leaf.as_ref() {
             // The key of previous pos is always smaller than self.key ;
             // the key at current idx (if exists) must larger than self.key.
-            let mut cursor = IterBackward { back_leaf: leaf.clone(), back_idx: self.idx };
+            let mut cursor =
+                IterBackward { back_leaf: leaf.clone(), back_idx: self.inner.get_idx() };
             unsafe {
                 if let Some((k, v)) = cursor.prev_pair() {
                     return Some((&*k, &*v));
@@ -411,7 +428,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S>
     pub fn peek_forward<'b>(&'b self) -> Option<(&'b K, &'b V)> {
         if let Some(leaf) = self.leaf.as_ref() {
             unsafe {
-                if let Some((k, v)) = leaf.get_raw_pair(self.idx) {
+                if let Some((k, v)) = leaf.get_raw_pair(self.inner.get_idx()) {
                     // get_raw_pair will validate idx
                     return Some((&*k, &*v));
                 }
@@ -429,23 +446,22 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S>
     ///
     /// When reaching the front return the original entry in Err()
     #[inline]
-    pub fn move_backward(self) -> Result<OccupiedEntry<'a, K, V, S>, Self> {
+    pub fn move_backward(mut self) -> Result<OccupiedEntry<'a, K, V, S>, Self> {
         if let Some(leaf) = self.leaf.as_ref() {
             // The key of previous pos is always smaller than self.key ;
             // the key at current idx (if exists) must larger than self.key.
             // It's possible the leaf.idx may be == leaf.key_count(), but it's the same.
-            if self.idx > 0 {
-                return Ok(OccupiedEntry {
-                    inner: self.inner,
-                    leaf: leaf.clone(),
-                    idx: self.idx - 1,
-                });
+            let idx = self.inner.get_idx();
+            if idx > 0 {
+                self.inner.set_idx(idx - 1);
+                return Ok(OccupiedEntry { inner: self.inner, leaf: leaf.clone() });
             }
             if let Some(left) = leaf.get_left_node() {
                 let count = left.key_count();
                 debug_assert!(count > 0);
                 self.inner.get_cache().move_path_left();
-                return Ok(OccupiedEntry { inner: self.inner, leaf: left, idx: count - 1 });
+                self.inner.set_idx(count - 1);
+                return Ok(OccupiedEntry { inner: self.inner, leaf: left });
             }
         }
         Err(self)
@@ -455,15 +471,17 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> VacantEntry<'a, K, V, S>
     ///
     /// When reaching the end, return the original entry in Err()
     #[inline]
-    pub fn move_forward(self) -> Result<OccupiedEntry<'a, K, V, S>, Self> {
+    pub fn move_forward(mut self) -> Result<OccupiedEntry<'a, K, V, S>, Self> {
         if let Some(leaf) = self.leaf.as_ref() {
-            if leaf.key_count() > self.idx {
+            let idx = self.inner.get_idx();
+            if leaf.key_count() > idx {
                 // the key at current idx (if exists) must larger than self.key, no need to move
-                return Ok(OccupiedEntry { inner: self.inner, leaf: leaf.clone(), idx: self.idx });
+                return Ok(OccupiedEntry { inner: self.inner, leaf: leaf.clone() });
             } else if let Some(right) = leaf.get_right_node() {
                 debug_assert!(right.key_count() > 0);
                 self.inner.get_cache().move_path_right();
-                return Ok(OccupiedEntry { inner: self.inner, leaf: right, idx: 0 });
+                self.inner.set_idx(0);
+                return Ok(OccupiedEntry { inner: self.inner, leaf: right });
             }
         }
         Err(self)

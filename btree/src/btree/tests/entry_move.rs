@@ -164,13 +164,13 @@ fn test_occupied_forward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_
     // Get entry at end of first leaf
     let end_of_first = cap as i32 - 1;
     if let Entry::Occupied(oe) = map.entry(end_of_first) {
-        assert_eq!(oe.idx as usize, (cap - 1) as usize);
+        assert_eq!(oe.inner.get_idx() as usize, (cap - 1) as usize);
         // Peak should cross leaf
         assert_eq!(*oe.peek_forward().unwrap().0, cap as i32);
         // Move should cross leaf
         let oe = oe.move_forward().ok().unwrap();
         assert_eq!(*oe.key(), cap as i32);
-        assert_eq!(oe.idx, 0); // First element of next leaf
+        assert_eq!(oe.inner.get_idx(), 0); // First element of next leaf
     } else {
         panic!("entry missing");
     }
@@ -198,7 +198,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
 
     if let Entry::Vacant(ent) = map.entry(1) {
         assert_eq!(ent.key(), &1);
-        assert_eq!(ent.idx, 1);
+        assert_eq!(ent.inner.get_idx(), 1);
 
         // adjacent
         assert_eq!(ent.peek_forward(), Some((&2, &10)));
@@ -214,7 +214,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
     if let Entry::Vacant(ent) = map.entry(bound_key) {
         assert_eq!(ent.key(), &bound_key);
         // the node is full, so it's on the cap
-        assert_eq!(ent.idx, leaf_cap as u8);
+        assert_eq!(ent.inner.get_idx(), leaf_cap as u8);
 
         // next leaf
         assert_eq!(ent.peek_forward(), Some((&(leaf_cap * 2), &(leaf_cap * 10))));
@@ -226,7 +226,7 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
         unreachable!("should not exist");
     }
     if let Entry::Vacant(mut ent) = map.entry(leaf_cap * 2 + 1) {
-        assert_eq!(ent.idx, 1);
+        assert_eq!(ent.inner.get_idx(), 1);
         // last node
         assert_eq!(ent.peek_forward(), None);
         ent = ent.move_forward().unwrap_err();
@@ -260,7 +260,7 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
 
     if let Entry::Vacant(ent) = map.entry(2) {
         assert_eq!(ent.key(), &2);
-        assert_eq!(ent.idx, 1);
+        assert_eq!(ent.inner.get_idx(), 1);
 
         // adjacent
         assert_eq!(ent.peek_backward(), Some((&1, &0)));
@@ -275,7 +275,7 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
     let bound_key = leaf_cap * 2;
     if let Entry::Vacant(ent) = map.entry(bound_key) {
         assert_eq!(ent.key(), &bound_key);
-        assert_eq!(ent.idx, 0);
+        assert_eq!(ent.inner.get_idx(), 0);
 
         // previous leaf
         let pre_key = (leaf_cap - 1) * 2 + 1;
@@ -290,7 +290,7 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
     }
     // before first node
     if let Entry::Vacant(mut ent) = map.entry(0) {
-        assert_eq!(ent.idx, 0);
+        assert_eq!(ent.inner.get_idx(), 0);
         // last node
         assert_eq!(ent.peek_backward(), None);
         ent = ent.move_backward().unwrap_err();
@@ -340,12 +340,13 @@ fn test_vacant_forward_at_leaf_end_height1<S: Stats<i32>>(#[case] _s: S, setup_l
     // Find where last_key is.
     if let Entry::Occupied(oe) = map.entry(last_key) {
         let leaf = oe.leaf.clone();
-        if oe.idx as usize == leaf.key_count() as usize - 1 {
+        if oe.inner.get_idx() as usize == leaf.key_count() as usize - 1 {
             // It is at the end of its leaf.
             // Vacant entry just after it should be at idx == key_count
+            drop(oe);
             let search_key = last_key + 1;
             if let Entry::Vacant(ve) = map.entry(search_key) {
-                assert_eq!(ve.idx as usize, leaf.key_count() as usize);
+                assert_eq!(ve.inner.get_idx() as usize, leaf.key_count() as usize);
                 // Should peek forward to next leaf
                 let next_pair = ve.peek_forward();
                 assert!(next_pair.is_some());
@@ -403,13 +404,13 @@ fn test_occupied_backward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup
     // Get entry at start of second leaf
     let start_of_second = cap as i32;
     if let Entry::Occupied(oe) = map.entry(start_of_second) {
-        assert_eq!(oe.idx, 0);
+        assert_eq!(oe.inner.get_idx(), 0);
         // Peak should cross leaf to left
         assert_eq!(*oe.peek_backward().unwrap().0, cap as i32 - 1);
         // Move should cross leaf
         let oe = oe.move_backward().ok().unwrap();
         assert_eq!(*oe.key(), cap as i32 - 1);
-        assert_eq!(oe.idx as usize, (cap - 1) as usize); // Last element of previous leaf
+        assert_eq!(oe.inner.get_idx() as usize, (cap - 1) as usize); // Last element of previous leaf
     } else {
         panic!("entry missing");
     }
@@ -450,7 +451,7 @@ fn test_vacant_backward_at_leaf_start_height1<S: Stats<i32>>(#[case] _s: S, setu
     let search_key = start_of_second - 1; // e.g. if leaf1 ends at 98, leaf2 starts at 100. search 99.
 
     if let Entry::Vacant(ve) = map.entry(search_key) {
-        if ve.idx == 0 {
+        if ve.inner.get_idx() == 0 {
             // It is at the start of its leaf and root is InterNode
             assert_eq!(*ve.peek_backward().unwrap().0, start_of_second - 2);
             let oe = ve.move_backward().ok().unwrap();
@@ -653,28 +654,30 @@ fn test_rangetree_swallow_forward<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
     // New range is [10, 65]. Should swallow (30, 10) and (50, 10).
 
     let target_end = 65;
-    let mut oe = match map.entry(10) {
-        Entry::Occupied(o) => o,
-        _ => panic!("missing"),
-    };
-
-    while let Some((&ns, _)) = oe.peek_forward() {
-        if ns > target_end {
-            break;
-        }
-        // Swallow
-        let next_oe = oe.move_forward().ok().expect("move fail");
-        next_oe.remove();
-
-        // Refetch/Keep base oe
-        oe = match map.entry(10) {
+    {
+        let mut oe = match map.entry(10) {
             Entry::Occupied(o) => o,
-            _ => panic!("lost"),
+            _ => panic!("missing"),
         };
-    }
 
-    // Final expansion
-    *oe.get_mut() = target_end - 10;
+        while let Some((&ns, _)) = oe.peek_forward() {
+            if ns > target_end {
+                break;
+            }
+            // Swallow
+            let next_oe = oe.move_forward().ok().expect("move fail");
+            next_oe.remove();
+
+            // Refetch/Keep base oe
+            oe = match map.entry(10) {
+                Entry::Occupied(o) => o,
+                _ => panic!("lost"),
+            };
+        }
+
+        // Final expansion
+        *oe.get_mut() = target_end - 10;
+    }
 
     assert_eq!(map.len(), 1);
     assert_eq!(*map.get(&10).unwrap(), 55);

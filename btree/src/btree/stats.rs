@@ -1,4 +1,4 @@
-use super::{BTree, entry::*, helper::PathBuffer, inter::*, leaf::*, tree::BTreeInner};
+use super::{BTree, entry::*, helper::PathBuffer, inter::*, tree::BTreeInner, *};
 use crate::CACHE_LINE_SIZE;
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 use core::fmt::{self, Debug};
@@ -11,9 +11,11 @@ use core::sync::atomic::{
 };
 
 #[allow(private_bounds)]
-pub(super) trait Stats<K: Ord + Clone + Sized>: Default + Send + Debug {
+pub(super) trait Stats<K: Key>: Default + Send + Debug + 'static {
     #[allow(private_bounds)]
-    type EntryInner<V>: EntryInner<K, V>;
+    type EntryInner<'a, V>: EntryInner<K, V>
+    where
+        V: Value + 'a;
 
     #[allow(private_bounds)]
     type PathBufferRef<'a>: PathBuffer<K>
@@ -36,33 +38,15 @@ pub(super) trait Stats<K: Ord + Clone + Sized>: Default + Send + Debug {
     fn init_count(&self, leaf_count: usize, inter_count: u32);
 
     #[allow(private_bounds)]
-    fn make_occupied_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u8,
-    ) -> OccupiedEntry<'a, K, V, Self>;
-
-    #[allow(private_bounds)]
-    fn make_vacant_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u8,
-    ) -> VacantEntry<'a, K, V, Self>;
+    fn make_entry<'a, V: Value>(
+        tree: &'a mut BTree<K, V, Self>, idx: u8,
+    ) -> Self::EntryInner<'a, V>;
 
     #[cfg(test)]
     fn assert_leaf_count(&self, _leaf_count: usize) {}
 
     #[cfg(test)]
     fn assert_inter_count(&self, _inter_count: usize) {}
-}
-
-pub(super) trait EntryInner<K: Ord + Clone + Sized, V: Sized> {
-    type PathBuffer: PathBuffer<K>;
-
-    fn get_cache<'a>(&'a self) -> &'a Self::PathBuffer;
-
-    #[cfg(test)]
-    fn get_tree<'a>(&'a self) -> &'a BTreeInner<K, V>;
-
-    fn get_tree_mut<'a>(&'a mut self) -> &'a mut BTreeInner<K, V>;
-
-    fn get_tree_cache<'a>(&'a mut self) -> (&'a mut BTreeInner<K, V>, &'a Self::PathBuffer);
 }
 
 /// Header stored at the start of the `TreeInfo` heap buffer.
@@ -102,18 +86,60 @@ impl<K> Default for TreeInfo<K> {
     }
 }
 
+pub(crate) struct TreeInfoEntry<'a, K, V>
+where
+    K: Key,
+    V: Value,
+{
+    tree: &'a mut BTree<K, V, TreeInfo<K>>,
+    idx: u8,
+}
+
+impl<'a, K: Key, V: Value> EntryInner<K, V> for TreeInfoEntry<'a, K, V> {
+    type PathBuffer = TreeInfo<K>;
+
+    #[inline(always)]
+    fn get_cache(&self) -> &TreeInfo<K> {
+        &self.tree.stats
+    }
+
+    #[cfg(test)]
+    #[inline(always)]
+    fn get_tree(&self) -> &BTreeInner<K, V> {
+        &self.tree.inner
+    }
+
+    #[inline(always)]
+    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, &TreeInfo<K>) {
+        (&mut self.tree.inner, &self.tree.stats)
+    }
+
+    #[inline(always)]
+    fn set_idx(&mut self, idx: u8) {
+        self.idx = idx;
+    }
+
+    #[inline(always)]
+    fn get_idx(&self) -> u8 {
+        self.idx
+    }
+}
+
 unsafe impl<K> Send for TreeInfo<K> {}
 unsafe impl<K> Sync for TreeInfo<K> {}
 
 // for log
-impl<K: Ord + Clone + Sized> Debug for TreeInfo<K> {
+impl<K> Debug for TreeInfo<K> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "TreeInfo")
     }
 }
 
-impl<K: Ord + Clone + Sized> Stats<K> for TreeInfo<K> {
-    type EntryInner<V> = BTree<K, V, TreeInfo<K>>;
+impl<K: Key> Stats<K> for TreeInfo<K> {
+    type EntryInner<'a, V>
+        = TreeInfoEntry<'a, K, V>
+    where
+        V: Value + 'a;
 
     type PathBufferRef<'a>
         = &'a TreeInfo<K>
@@ -156,17 +182,10 @@ impl<K: Ord + Clone + Sized> Stats<K> for TreeInfo<K> {
     }
 
     #[inline]
-    fn make_occupied_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, leaf: LeafNode<K, V>, idx: u8,
-    ) -> OccupiedEntry<'a, K, V, Self> {
-        OccupiedEntry { inner: tree, idx, leaf }
-    }
-
-    #[inline]
-    fn make_vacant_entry<'a, V: Sized>(
-        tree: &'a mut BTree<K, V, Self>, key: K, leaf: Option<LeafNode<K, V>>, idx: u8,
-    ) -> VacantEntry<'a, K, V, Self> {
-        VacantEntry { inner: tree, idx, key, leaf }
+    fn make_entry<'a, V: Value + 'static>(
+        tree: &'a mut BTree<K, V, Self>, idx: u8,
+    ) -> Self::EntryInner<'a, V> {
+        TreeInfoEntry { tree, idx }
     }
 
     #[cfg(test)]
@@ -429,12 +448,12 @@ impl<K> Drop for TreeInfo<K> {
 }
 
 /// Reverse (top-of-stack → bottom) iterator produced by [`TreeInfo::_iter`].
-pub(super) struct TreeInfoIter<'a, K: Ord + 'a> {
+pub(super) struct TreeInfoIter<'a, K: 'a> {
     info: &'a TreeInfo<K>,
     idx: u8,
 }
 
-impl<'a, K: Ord + 'a> Iterator for TreeInfoIter<'a, K> {
+impl<'a, K: 'a> Iterator for TreeInfoIter<'a, K> {
     type Item = (&'a InterNode<K>, u8);
 
     #[inline]

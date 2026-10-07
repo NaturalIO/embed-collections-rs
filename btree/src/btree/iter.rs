@@ -1,4 +1,4 @@
-use super::{BTree, helper::*, leaf::*, node::*, stats::*};
+use super::{BTree, helper::*, leaf::*, node::*, stats::*, *};
 use crate::trace_log;
 use core::marker::PhantomData;
 use core::mem::needs_drop;
@@ -529,7 +529,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
     }
 }
 
-struct IntoIterBase<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
+struct IntoIterBase<K: Key, V: Value, S: Stats<K>> {
     /// Path cache for deallocating internal nodes after iteration
     cache: S::PathBuffer,
     /// Current leaf being iterated
@@ -541,7 +541,7 @@ struct IntoIterBase<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
     is_forward: bool,
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterBase<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
     #[inline]
     fn new(mut tree: BTree<K, V, S>, is_forward: bool) -> Self {
         let mut stats = S::default();
@@ -653,7 +653,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterBase<K, V, S> {
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
     fn drop(&mut self) {
         let is_forward = self.is_forward;
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
@@ -711,12 +711,12 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Drop for IntoIterBase<K, V, 
 /// Uses PathBuffer to manage tree traversal and safe deallocation
 ///
 /// NOTE: In order to keep the logic simple, we does not implement `DoubleEndedIterator` here
-pub struct IntoIter<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
+pub struct IntoIter<K: Key, V: Value, S: Stats<K>> {
     /// If true, iterate in reverse order
     base: Result<IntoIterBase<K, V, S>, (BTree<K, V, S>, bool)>,
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> IntoIter<K, V, S> {
     #[inline]
     pub(super) fn new(tree: BTree<K, V, S>, is_forward: bool) -> Self {
         Self { base: Err((tree, is_forward)) }
@@ -740,7 +740,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIter<K, V, S> {
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Iterator for IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> Iterator for IntoIter<K, V, S> {
     type Item = (K, V);
 
     #[inline]
@@ -770,7 +770,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Iterator for IntoIter<K, V, 
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> ExactSizeIterator for IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> ExactSizeIterator for IntoIter<K, V, S> {
     #[inline]
     fn len(&self) -> usize {
         match &self.base {

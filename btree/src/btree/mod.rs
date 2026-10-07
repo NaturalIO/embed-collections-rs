@@ -126,13 +126,22 @@ use iter::RangeBase;
 pub use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
 use stats::*;
 use tree::BTreeInner;
+pub mod compact;
 
 #[cfg(test)]
 mod tests;
 
+pub trait Value: Sized + 'static {}
+
+impl<T: Sized + 'static> Value for T {}
+
+pub trait Key: Value + Clone + Ord + 'static {}
+
+impl<T: Value + Clone + Ord + 'static> Key for T {}
+
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
 #[allow(private_bounds)]
-pub struct BTree<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> {
+pub struct BTree<K: Key, V: Value, S: Stats<K>> {
     inner: BTreeInner<K, V>,
     // use unsafe to avoid borrow problems
     stats: S,
@@ -163,14 +172,14 @@ enum TestFlag {
     RemoveChildLast = 1 << 16,
 }
 
-unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send, S: Stats<K>> Send for BTree<K, V, S> {}
-unsafe impl<K: Ord + Clone + Sized + Send, V: Sized + Send, S: Stats<K>> Sync for BTree<K, V, S> {}
+unsafe impl<K: Key + Send, V: Value + Send, S: Stats<K>> Send for BTree<K, V, S> {}
+unsafe impl<K: Key + Send, V: Value + Send, S: Stats<K>> Sync for BTree<K, V, S> {}
 
 #[cfg(feature = "std")]
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> std::panic::RefUnwindSafe for BTree<K, V, S> {}
+impl<K: Key, V: Value, S: Stats<K>> std::panic::RefUnwindSafe for BTree<K, V, S> {}
 
 #[allow(private_bounds)]
-impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> BTree<K, V, S> {
     /// Create a new empty BTreeMap
     pub fn new() -> Self {
         Self {
@@ -381,16 +390,18 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
             inter.find_leaf_with_cache_smart::<K, V, _>(cache, &key, &mut is_seq)
         });
         drop(_cache);
-        if let Some(leaf) = o_leaf {
+        let (inner, leaf) = if let Some(leaf) = o_leaf {
             let (idx, is_equal) = leaf.search_smart(&key, is_seq);
+            let inner = S::make_entry(self, idx);
             if is_equal {
-                Entry::Occupied(S::make_occupied_entry(self, leaf, idx))
+                return Entry::Occupied(OccupiedEntry { inner, leaf });
             } else {
-                Entry::Vacant(S::make_vacant_entry(self, key, Some(leaf), idx))
+                (inner, Some(leaf))
             }
         } else {
-            Entry::Vacant(S::make_vacant_entry(self, key, None, 0))
-        }
+            (S::make_entry(self, 0), None)
+        };
+        Entry::Vacant(VacantEntry { inner, key, leaf })
     }
 
     /// Returns an entry to the first key in the map
@@ -403,7 +414,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
         drop(_cache);
         let leaf = o_leaf?;
         if leaf.key_count() > 0 {
-            Some(S::make_occupied_entry(self, leaf, 0))
+            Some(OccupiedEntry { inner: S::make_entry(self, 0), leaf })
         } else {
             // when root is leaf, remove_entry does not dealloc the leaf
             None
@@ -421,7 +432,7 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
         let leaf = o_leaf?;
         let count = leaf.key_count();
         if count > 0 {
-            Some(S::make_occupied_entry(self, leaf, count - 1))
+            Some(OccupiedEntry { inner: S::make_entry(self, count - 1), leaf })
         } else {
             // when root is leaf, remove_entry does not dealloc the leaf
             None
@@ -761,13 +772,13 @@ impl<K: Ord + Sized + Clone, V: Sized, S: Stats<K>> BTree<K, V, S> {
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Default for BTree<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> Default for BTree<K, V, S> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Drop for BTree<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> Drop for BTree<K, V, S> {
     fn drop(&mut self) {
         if let Some(root) = self.inner.root {
             if Node::<K, V>::root_is_leaf(root) {
@@ -792,7 +803,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> Drop for BTree<K, V, S> {
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for BTree<K, V, S> {
+impl<K: Key, V: Value, S: Stats<K>> IntoIterator for BTree<K, V, S> {
     type Item = (K, V);
     type IntoIter = IntoIter<K, V, S>;
 
@@ -802,7 +813,7 @@ impl<K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for BTree<K, V,
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for &'a BTree<K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats<K>> IntoIterator for &'a BTree<K, V, S> {
     type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
 
@@ -812,7 +823,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for &'a BTr
     }
 }
 
-impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for &'a mut BTree<K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats<K>> IntoIterator for &'a mut BTree<K, V, S> {
     type Item = (&'a K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
 
@@ -822,7 +833,7 @@ impl<'a, K: Ord + Clone + Sized, V: Sized, S: Stats<K>> IntoIterator for &'a mut
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized + PartialEq, S: Stats<K>> PartialEq for BTree<K, V, S> {
+impl<K: Key, V: Value + PartialEq, S: Stats<K>> PartialEq for BTree<K, V, S> {
     fn eq(&self, other: &Self) -> bool {
         let mut this_iter = self.iter();
         let mut other_iter = other.iter();
@@ -842,7 +853,7 @@ impl<K: Ord + Clone + Sized, V: Sized + PartialEq, S: Stats<K>> PartialEq for BT
     }
 }
 
-impl<K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug for BTree<K, V, S> {
+impl<K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for BTree<K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let _ = write!(f, "{{");
         let mut iter = self.iter();
@@ -856,32 +867,7 @@ impl<K: Ord + Clone + Sized + Debug, V: Sized + Debug, S: Stats<K>> Debug for BT
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> EntryInner<K, V> for BTree<K, V, TreeInfo<K>> {
-    type PathBuffer = TreeInfo<K>;
-
-    #[inline(always)]
-    fn get_cache<'a>(&'a self) -> &'a TreeInfo<K> {
-        &self.stats
-    }
-
-    #[cfg(test)]
-    #[inline(always)]
-    fn get_tree<'a>(&'a self) -> &'a BTreeInner<K, V> {
-        &self.inner
-    }
-
-    #[inline(always)]
-    fn get_tree_mut<'a>(&'a mut self) -> &'a mut BTreeInner<K, V> {
-        &mut self.inner
-    }
-
-    #[inline(always)]
-    fn get_tree_cache<'a>(&'a mut self) -> (&'a mut BTreeInner<K, V>, &'a TreeInfo<K>) {
-        (&mut self.inner, &self.stats)
-    }
-}
-
-impl<K: Ord + Clone + Sized, V: Sized> BTree<K, V, TreeInfo<K>> {
+impl<K: Key, V: Value> BTree<K, V, TreeInfo<K>> {
     /// Return the number of leaf nodes
     #[inline(always)]
     pub fn leaf_count(&self) -> usize {

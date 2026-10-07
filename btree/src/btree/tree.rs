@@ -1,6 +1,6 @@
 #[cfg(all(test, feature = "trace_log"))]
 use super::TestFlag;
-use super::{helper::*, inter::*, leaf::*, node::*, stats::*};
+use super::{helper::*, inter::*, leaf::*, node::*, stats::*, *};
 #[allow(unused_imports)]
 use crate::{print_log, trace_log};
 use core::fmt::Debug;
@@ -8,7 +8,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 /// B+Tree Map for single-threaded usage, optimized for numeric type.
-pub(super) struct BTreeInner<K: Ord + Clone + Sized, V: Sized> {
+pub(super) struct BTreeInner<K: Key, V: Value> {
     // Root node (may be None for empty tree)
     // `Option<Node>` is larger than `Option<NonNull<NodeHeader>>`
     pub root: Option<NonNull<NodeHeader>>,
@@ -19,7 +19,7 @@ pub(super) struct BTreeInner<K: Ord + Clone + Sized, V: Sized> {
     pub _phan: PhantomData<fn(&K, &V)>,
 }
 
-impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
+impl<K: Key, V: Value> BTreeInner<K, V> {
     #[inline(always)]
     pub fn get_root_unwrap(&self) -> Node<K, V> {
         Node::<K, V>::from_root_ptr(*self.root.as_ref().unwrap())
@@ -36,14 +36,14 @@ impl<K: Ord + Clone + Sized, V: Sized> BTreeInner<K, V> {
     }
 
     #[inline]
-    pub fn init_empty(&mut self, key: K, value: V) -> &mut V {
+    pub fn init_empty(&mut self, key: K, value: V) -> *mut V {
         debug_assert!(self.root.is_none());
         unsafe {
             // empty tree
             let mut leaf = LeafNode::<K, V>::alloc();
             self.root = Some(leaf.to_root_ptr());
             self.len = 1;
-            &mut *leaf.insert_no_split_with_idx(0, key, value)
+            leaf.insert_no_split_with_idx(0, key, value)
         }
     }
 
