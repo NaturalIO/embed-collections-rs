@@ -9,6 +9,7 @@ use std::vec::Vec;
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_borrow_case1_rotate_left_first_child<S: Stats<CounterI32>>(
     #[case] _s: S, setup_log: (),
 ) {
@@ -138,6 +139,7 @@ fn test_inter_borrow_case1_rotate_left_first_child<S: Stats<CounterI32>>(
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_borrow_case2_rotate_left<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -259,6 +261,7 @@ fn test_inter_borrow_case2_rotate_left<S: Stats<CounterI32>>(#[case] _s: S, setu
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_borrow_case3_rotate_right_last_child<S: Stats<CounterI32>>(
     #[case] _s: S, setup_log: (),
 ) {
@@ -387,6 +390,7 @@ fn test_inter_borrow_case3_rotate_right_last_child<S: Stats<CounterI32>>(
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_borrow_case4_rotate_right<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();

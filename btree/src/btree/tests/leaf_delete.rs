@@ -18,6 +18,7 @@ use std::println;
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_with_left_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -158,6 +159,7 @@ fn test_leaf_del_merge_with_left_height_2<S: Stats<CounterI32>>(#[case] _s: S, s
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_merge_left_with_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
 
@@ -269,6 +271,7 @@ fn test_merge_left_with_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setu
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_3_2_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -380,6 +383,7 @@ fn test_leaf_del_merge_3_2_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_l
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_leftmost_merge_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -491,6 +495,7 @@ fn test_leaf_del_leftmost_merge_right_height_2<S: Stats<CounterI32>>(#[case] _s:
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats<CounterI32>>(
     #[case] _s: S, setup_log: (),
 ) {
@@ -607,6 +612,7 @@ fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats<CounterI32>>(
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_with_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -761,6 +767,7 @@ fn test_leaf_del_merge_with_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, s
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_with_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -905,6 +912,7 @@ fn test_leaf_del_merge_with_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, 
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_merge_2_3_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -1030,6 +1038,7 @@ fn test_leaf_del_merge_2_3_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_l
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_leaf_del_remove_only_child_cascade<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();

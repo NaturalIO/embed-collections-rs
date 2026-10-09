@@ -40,6 +40,7 @@ fn seek_cache_parent<'a, K: Key, V: Value, S: Stats<K>>(
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -145,7 +146,7 @@ fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s:
         assert_eq!(map.height(), 2);
         map.assert_leaf_count(4);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
+        assert_eq!(map.inner.triggers, TestFlag::InterMergeRight as u32);
     }
     // After map is dropped, all CounterI32 should be dropped
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -168,6 +169,7 @@ fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s:
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -269,7 +271,7 @@ fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: 
 
         map.assert_leaf_count(4);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
+        assert_eq!(map.inner.triggers, TestFlag::InterMergeLeft as u32);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }
@@ -288,6 +290,7 @@ fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: 
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -414,7 +417,7 @@ fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S
             );
             map.assert_leaf_count(6);
             #[cfg(feature = "trace_log")]
-            assert_eq!(map.triggers, TestFlag::InterMergeRight as u32);
+            assert_eq!(map.inner.triggers, TestFlag::InterMergeRight as u32);
         }
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -434,6 +437,7 @@ fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -562,7 +566,7 @@ fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S,
 
             map.assert_leaf_count(6);
             #[cfg(feature = "trace_log")]
-            assert_eq!(map.triggers, TestFlag::InterMergeLeft as u32);
+            assert_eq!(map.inner.triggers, TestFlag::InterMergeLeft as u32);
         }
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
@@ -587,6 +591,7 @@ fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S,
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -644,7 +649,7 @@ fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, s
         }
         map.assert_leaf_count(1);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, 0);
+        assert_eq!(map.inner.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }
@@ -667,6 +672,7 @@ fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, s
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<CounterI32>::default())]
+#[case(Compact::<CounterI32>::default())]
 fn test_inter_underflow_single_leaf_inter_nodes_height_3<S: Stats<CounterI32>>(
     #[case] _s: S, setup_log: (),
 ) {
@@ -765,7 +771,7 @@ fn test_inter_underflow_single_leaf_inter_nodes_height_3<S: Stats<CounterI32>>(
         }
         map.assert_leaf_count(3);
         #[cfg(feature = "trace_log")]
-        assert_eq!(map.triggers, 0);
+        assert_eq!(map.inner.triggers, 0);
     }
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped after cleanup");
 }

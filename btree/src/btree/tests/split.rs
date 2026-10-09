@@ -8,6 +8,7 @@ use std::vec;
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_btree_large_tree_split_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let (inter_cap, leaf_cap) = BTree::<i32, i32, S>::cap();
@@ -69,6 +70,7 @@ fn test_node_capacity() {
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<u32>::default())]
+#[case(Compact::<u32>::default())]
 fn test_btree_split_leaf_root<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, u32, S>::new();
     let leaf_cap = LeafNode::<u32, u32>::cap() as u32;

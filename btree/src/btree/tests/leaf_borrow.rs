@@ -9,6 +9,7 @@ use std::println;
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_left_insert_first_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
 
@@ -108,6 +109,7 @@ fn test_borrow_from_left_insert_first_height_2<S: Stats<i32>>(#[case] _s: S, set
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_left_insert_mid_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -200,6 +202,7 @@ fn test_borrow_from_left_insert_mid_height_2<S: Stats<i32>>(#[case] _s: S, setup
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_right_height_2_not_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -289,6 +292,7 @@ fn test_borrow_from_right_height_2_not_last<S: Stats<i32>>(#[case] _s: S, setup_
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_right_height_2_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -381,6 +385,7 @@ fn test_borrow_from_right_height_2_last<S: Stats<i32>>(#[case] _s: S, setup_log:
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_left_insert_first_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -476,6 +481,7 @@ fn test_borrow_from_left_insert_first_height_3<S: Stats<i32>>(#[case] _s: S, set
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_left_insert_mid_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -569,6 +575,7 @@ fn test_borrow_from_left_insert_mid_height_3<S: Stats<i32>>(#[case] _s: S, setup
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_right_insert_not_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -667,6 +674,7 @@ fn test_borrow_from_right_insert_not_last_height_3<S: Stats<i32>>(#[case] _s: S,
 #[logfn]
 #[rstest]
 #[case(TreeInfo::<i32>::default())]
+#[case(Compact::<i32>::default())]
 fn test_borrow_from_right_insert_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
