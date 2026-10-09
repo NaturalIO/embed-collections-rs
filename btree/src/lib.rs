@@ -85,13 +85,13 @@
 //!   - `OccupiedEntry::alter_key()`
 //!
 //! Batch removal:
-//! - `BTree::remove_range()`
-//! - `BTree::remove_range_with()`
+//! - `BTreeMap::remove_range()`
+//! - `BTreeMap::remove_range_with()`
 //!
 //! Readonly [Cursor]:
-//! - [BTree::cursor()]
-//! - [BTree::first_cursor()]
-//! - [BTree::last_cursor()]
+//! - BTreeMap::cursor()
+//! - BTreeMap::first_cursor()
+//! - BTreeMap::last_cursor()
 //!
 //! Use case:
 //! - [range-tree-rs](https://docs.rs/range-tree-rs)
@@ -152,8 +152,11 @@ extern crate std;
 pub mod various_map;
 pub use various_map::VariousMap;
 mod btree;
+pub mod compact;
 pub mod large;
 pub use btree::{Key, Value};
+
+pub type BTreeMap<K, V> = compact::BTreeMap<K, V>;
 
 pub use embed_collections::CACHE_LINE_SIZE;
 
