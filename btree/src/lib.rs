@@ -12,20 +12,49 @@
 //!   - All page is aligned in 4*CACHE_LINE (256 bytes on x86_64).
 //!   - Use Layout API to determine the capacity, offset and alignement for the keys and values.
 //!   - Keys is a tight array to enable efficient forward search for CPU pipeline.
-//!   - No parent pointer in the page, we fill PathBuffer during descending, and pop when working upward.
+//!   - No parent pointer in the page, saving the space.
+//!     - we fill reused PathBuffer during descending, and pop when working upward.
+//!     - PathBuffer only used during ops that require mutation of the map, so it's safe for
+//!       concurent reads.
 //!   - Avoid memory fragmentation for the allocator.
 //!
 //! There tree variants:
 //! - [various_map]:
 //!   - Delay page allocation by inlining K, V with option.
-//!   - Fallback to [compact] after inserting the 2nd element
+//!   - Fallback to std BTreeMap after inserting the 2nd element
 //! - [compact]
-//!   - For short-lived small size tree.
-//!   - Avoid allocation of PathBuffer on heap, until the tree-height grows > 2.
+//!   - For short-lived, small size tree.
+//!   - Avoid allocation of PathBuffer on heap, until the tree height grows pass threshold.
+//!     (>4 for insert/remove, >2 for entry ops)
 //!   - PathBuffer allocation is reused.
 //! - [large]
-//!   - For long-lived large size tree.
-//!   - Maintain a small statistic of page counts (inter and leaves), and PathBuffer, on the heap if tree-hight grows > 1
+//!   - For long-lived, large size tree.
+//!   - after tree height grows beyond 1, allocate a small heap for PathBuffer, and page statistic (inter and
+//!   leavse).
+//!
+//! Struct size:
+//!
+//! ```text
+//! std: BTreeMap<u32, u32>: 24
+//! std: Option<BTreeMap<u32, u32>>: 32
+//! std: VacantEntry<u32, u32>: 40
+//! std: OccupiedEntry<u32, u32>: 32
+//!
+//! compact: BTreeMap<u32, u32>: 24
+//! compact: Option<BTreeMap<u32, u32>>: 24
+//! compact: Entry<u32,u32>:  32
+//! compact: Option<Entry<u32, u32>>:  40
+//! compact: VacantEntry<u32, u32>: 32
+//! compact: OccupiedEntry<u32, u32>: 24
+//!
+//! large: BTreeMap 24
+//! large: Option<BTreeMap> 24
+//! large: Entry size: 24
+//! large: Option<Entry>: 32
+//! large: VacantEntry<u32, u32>: 24
+//! large: OccupiedEntry<u32, u32>: 16
+//!
+//! ```
 //!
 //! ## Supported K, V types
 //!
@@ -102,47 +131,47 @@
 //!
 //! Measured in million ops for different size of dataset:
 //!
-//! insert_seq |btree|std
-//! -|-|-
-//! 1k|**104.68**|20.001
-//! 10k|**90.206**|16.04
-//! 1m|**50.454**|11.207
+//! insert_seq |compact|large|std
+//! -|-|-|-
+//! 1k|86.777|**91.140**|20.001
+//! 10k|78.022|**79.060**|16.04
+//! 1m|45.863|**46.200**|11.207
 //!
-//! insert_rand|btree|std|avl(box)|avl(arc)
-//! -|-|-|-|-
-//! 1k|**23.325**|17.792|11.172|9.5397
-//! 10k|**14.949**|11.587|6.3669|5.651
-//! 1M|**6.1205**|3.0691|0.78|0.732
+//! insert_rand|compact|large|std|avl(box)|avl(arc)
+//! -|-|-|-|-|-
+//! 1k|21.459|**23.325**|17.792|11.172|9.5397
+//! 10k|13.931|**14.949**|11.587|6.3669|5.651
+//! 1M|5.8124|**6.1205**|3.0691|0.78|0.732
 //!
-//! get_seq|btree|std
-//! -|-|-
-//! 1k|**56.462**|34.248
-//! 10k|**40.265**|27.571
-//! 1M|**31.384**|19.907
+//! get_seq|compact|large|std
+//! -|-|-|-
+//! 1k|**64.192**|62.891|34.248
+//! 10k|40.652|**41.823**|27.571
+//! 1M|32.163|**32.597**|19.907
 //!
-//! get_rand|btree|std|avl(box)|avl(arc)
-//! -|-|-|-|-
-//! 1k|**49.961**|27.651|24.254|23.466
-//! 10k|**20.223**|16.868|11.771|10.806
-//! 1M|**6.0508**|3.2569|1.4423|1.2712
+//! get_rand|compact|large|std|avl(box)|avl(arc)
+//! -|-|-|-|-|-
+//! 1k|47.605|**49.961**|27.651|24.254|23.466
+//! 10k|19.679|**20.223**|16.868|11.771|10.806
+//! 1M|6.1369|**6.0508**|3.2569|1.4423|1.2712
 //!
-//! remove_rand |btree|std
-//! -|-|-
-//! 1k|**19.963**|15.968
-//! 10k|**15.462**|11.701
-//! 1M|**5.4713**|3.0724
+//! remove_rand|compact|large|std
+//! -|-|-|-
+//! 1k|18.336|**19.963**|15.968
+//! 10k|14.094|**15.462**|11.701
+//! 1M|5.2262|**5.4713**|3.0724
 //!
-//! iter|btree|std
-//! -|-|-
-//! 1k|1443.2|346.8
-//! 10k|1286.9|303.83
-//! 1M|**215.95**|51.147
+//! iter|compact|large|std
+//! -|-|-|-
+//! 1k|1423,3|1443.2|346.8
+//! 10k|1226.3|1286.9|303.83
+//! 1M|**217.10**|**215.95**|51.147
 //!
-//! into_iter|btree|std
-//! -|-|-
-//! 1k|396.07|143.81
-//! 10k|410.32|81.389
-//! 1M|**360.18**|56.742
+//! into_iter|compact|large|std
+//! -|-|-|-
+//! 1k|364.14|**396.07**|143.81
+//! 10k|356.85|**410.32**|81.389
+//! 1M|327.87|**360.18**|56.742
 
 extern crate alloc;
 #[cfg(any(feature = "std", test))]
