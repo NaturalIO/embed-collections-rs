@@ -10,15 +10,46 @@ use std::vec::Vec;
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::default())]
-#[case(Compact::default())]
-fn test_size<S: Stats>(#[case] _s: S, setup_log: ()) {
+fn test_structure_size(setup_log: ()) {
+    println!("std BTreeMap size: {}", size_of::<alloc::collections::BTreeMap<u32, u32>>());
+    println!(
+        "std Option<BTreeMap> size: {}",
+        size_of::<Option<alloc::collections::BTreeMap<u32, u32>>>()
+    );
+    println!(
+        "std VacantEntry size: {}",
+        size_of::<alloc::collections::btree_map::VacantEntry<u32, u32>>()
+    );
+    println!(
+        "std OccupiedEntry size: {}",
+        size_of::<alloc::collections::btree_map::OccupiedEntry<u32, u32>>()
+    );
+
     let root = size_of::<Option<Node<u32, u32>>>();
-    println!("size: root {}", root);
-    let tree = size_of::<BTree<u32, u32, S>>();
-    println!("size: BTree {}", tree);
-    let s_tree = size_of::<alloc::collections::BTreeMap<u32, u32>>();
-    println!("size: std BTreeMap {}", s_tree);
+    println!("size: Node {}", root);
+
+    println!("compact: BTreeMap {}", size_of::<crate::compact::BTreeMap<u32, u32>>());
+    println!(
+        "compact: Option<BTreeMap> {} ",
+        size_of::<Option<crate::compact::BTreeMap<u32, u32>>>()
+    );
+    println!("compact: Entry size: {}", size_of::<crate::compact::Entry<u32, u32>>());
+    println!(
+        "compact: Option<Entry> size: {}",
+        size_of::<Option<crate::compact::Entry<u32, u32>>>()
+    );
+    println!("compact: VacantEntry size: {}", size_of::<crate::compact::VacantEntry<u32, u32>>());
+    println!(
+        "compact: OccupiedEntry size: {}",
+        size_of::<crate::compact::OccupiedEntry<u32, u32>>()
+    );
+
+    println!("large: BTreeMap {}", size_of::<crate::large::BTreeMap<u32, u32>>());
+    println!("large: Option<BTreeMap> {} ", size_of::<Option<crate::large::BTreeMap<u32, u32>>>());
+    println!("large: Entry size: {}", size_of::<crate::large::Entry<u32, u32>>());
+    println!("large: Option<Entry> size: {}", size_of::<Option<crate::large::Entry<u32, u32>>>());
+    println!("large: VacantEntry size: {}", size_of::<crate::large::VacantEntry<u32, u32>>());
+    println!("large: OccupiedEntry size: {}", size_of::<crate::large::OccupiedEntry<u32, u32>>());
 }
 
 #[logfn]
