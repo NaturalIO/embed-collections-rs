@@ -5,11 +5,11 @@ use crate::btree::{
 };
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 use core::borrow::BorrowMut;
-use core::cell::UnsafeCell;
 use core::fmt::{self, Debug};
-use core::mem::{MaybeUninit, align_of, size_of};
+use core::mem::{MaybeUninit, align_of, size_of, transmute};
+use core::num::{NonZeroU8, NonZeroU64};
 use core::ops::{Deref, DerefMut};
-use core::ptr::null_mut;
+use core::ptr::NonNull;
 
 pub type BTreeMap<K, V> = btree::BTree<K, V, Compact>;
 pub use btree::cursor::Cursor;
@@ -19,11 +19,12 @@ pub type Entry<'a, K, V> = btree::entry::Entry<'a, K, V, Compact>;
 pub type OccupiedEntry<'a, K, V> = btree::entry::OccupiedEntry<'a, K, V, Compact>;
 pub type VacantEntry<'a, K, V> = btree::entry::VacantEntry<'a, K, V, Compact>;
 
-pub struct Compact {
-    // 8B
-    header: UnsafeCell<CompactBufHeader>,
-    ptr: *mut u8,
-}
+/// Compact metadata for `BTreeMap`.
+///
+/// It's either CompactBufHeader cast as u64, or ptr for meta on heap.
+///
+/// NOTE: use NonZeroU64 to optimize `Option<BTreeMap>`
+pub struct Compact(NonZeroU64);
 
 const STACK_CAP: usize = 3;
 const ENTRY_CAP: usize = 1;
@@ -33,27 +34,18 @@ unsafe impl Sync for Compact {}
 
 impl Default for Compact {
     fn default() -> Self {
-        Self {
-            header: UnsafeCell::new(CompactBufHeader {
-                buffer_pos: 0,
-                len: 0,
-                entry_idx: 0,
-                cap: 0,
-                idxs: MaybeUninit::zeroed(),
-            }),
-            ptr: null_mut(),
-        }
+        Self(unsafe { NonZeroU64::new_unchecked(transmute(CompactBufHeader::default())) })
     }
 }
 
 impl Drop for Compact {
     fn drop(&mut self) {
-        let p = self.ptr;
-        if !p.is_null() {
+        if let Some(p) = self.try_ptr() {
             unsafe {
-                let size = Self::buf_size_from_cap(self.get_header().cap);
+                let header = p.as_ptr() as *mut CompactBufHeader;
+                let size = Self::buf_size_from_cap((*header).cap.get());
                 // InterNode does not have drop
-                dealloc(p, Self::get_layout(size));
+                dealloc(p.as_ptr(), Self::get_layout(size));
             }
         }
     }
@@ -69,14 +61,53 @@ impl Debug for Compact {
 impl Compact {
     const ITEM_SIZE: usize = size_of::<(*mut u8, u8)>();
 
+    // Offset at which items start (header size rounded up to item alignment).
+    const ITEMS_OFFSET: usize = {
+        let hs = size_of::<CompactBufHeader>();
+        let ia = align_of::<(*mut u8, u8)>();
+        let offset = (hs + ia - 1) & !(ia - 1);
+        if offset != hs {
+            panic!("TreeInfoHeader is not aligned");
+        }
+        offset
+    };
+
+    #[inline(always)]
+    fn try_ptr(&self) -> Option<NonNull<u8>> {
+        unsafe {
+            // the cap field
+            if (self.0.get() as u8) & STACK_FLAG == 0 {
+                Some(NonNull::new_unchecked(self.0.get() as *mut u8))
+            } else {
+                None
+            }
+        }
+    }
+
     #[inline(always)]
     fn get_header(&self) -> &CompactBufHeader {
-        unsafe { &*self.header.get() }
+        unsafe {
+            // the cap field
+            if (self.0.get() as u8) & STACK_FLAG > 0 {
+                transmute(&self.0)
+            } else {
+                let header = self.0.get() as *mut CompactBufHeader;
+                &*header
+            }
+        }
     }
 
     #[inline(always)]
     fn get_header_mut(&mut self) -> &mut CompactBufHeader {
-        unsafe { &mut *self.header.get() }
+        unsafe {
+            // the cap field
+            if (self.0.get() as u8) & STACK_FLAG > 0 {
+                transmute(&mut self.0)
+            } else {
+                let header = self.0.get() as *mut CompactBufHeader;
+                &mut *header
+            }
+        }
     }
 
     /// Reset the stack without freeing the buffer.
@@ -85,13 +116,22 @@ impl Compact {
         let header = self.get_header_mut();
         header.len = 0;
         header.buffer_pos = 0;
+        header.entry_idx = 0;
     }
 
+    /// the input cap is not including root, but for actual items need to store on heap.
+    ///
+    /// return (new_buf_size, cap_field)
+    ///
+    /// cap_field = actual heap cap + 1 (root)
     #[inline(always)]
     const fn cal_new_buf_size(cap: u8) -> (usize, u8) {
-        let need = cap as usize * Self::ITEM_SIZE;
+        let need = cap as usize * Self::ITEM_SIZE + Self::ITEMS_OFFSET;
+        // aligned multiple of CACHE_LINE_SIZE
         let new_size = (need + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1);
-        (new_size, (new_size / Self::ITEM_SIZE) as u8)
+        let aligned_cap = ((new_size - Self::ITEMS_OFFSET) / Self::ITEM_SIZE) as u8;
+        // one cap for root not stored on the heap
+        (new_size, aligned_cap + 1)
     }
 
     #[inline(always)]
@@ -106,12 +146,12 @@ impl Compact {
         unsafe { Layout::from_size_align_unchecked(buf_size, align) }
     }
 
+    /// the input cap is not including root, but for actual items can store on heap.
     #[inline(always)]
-    fn buf_size_from_cap(cap: u8) -> usize {
+    fn buf_size_from_cap(aligned_cap: u8) -> usize {
         // one cap for root not stored on the heap
-        let size = (cap - 1) as usize * Self::ITEM_SIZE;
-        debug_assert_eq!(size % CACHE_LINE_SIZE, 0, "size {size} cap {cap}");
-        size
+        let size = (aligned_cap - 1) as usize * Self::ITEM_SIZE + Self::ITEMS_OFFSET;
+        (size + CACHE_LINE_SIZE - 1) & !(CACHE_LINE_SIZE - 1)
     }
 
     /// height is the root.height (tree height - 1)
@@ -119,37 +159,61 @@ impl Compact {
     fn ensure_cap<const N: usize>(&mut self, root_height: u8) {
         assert!(root_height < u8::MAX);
         // cap include root although it's not stored
-        let need_cap = root_height - 1;
-        let cur_cap = self.get_header().cap;
-        if (cur_cap == 0 && need_cap as usize <= N) || need_cap <= cur_cap {
+        let cur_cap = self.get_header().cap.get();
+        let new_size: usize;
+        let new_cap: u8;
+        let new_p;
+        // STACK_FLAG == 1 can represent root, and on heap is 1 + real number
+        if root_height < (N as u8) + cur_cap {
             return;
         }
-        let (new_size, new_cap) = Self::cal_new_buf_size(need_cap);
-        let p = self.ptr;
-        let new_p = if p.is_null() {
-            crate::trace_log!("alloc pathbuf cap {need_cap}");
+        let need_cap = root_height - 1 - N as u8;
+        if cur_cap == STACK_FLAG {
+            (new_size, new_cap) = Self::cal_new_buf_size(need_cap);
+            crate::trace_log!("alloc pathbuf cap {need_cap} actual {new_cap} cap");
             let layout = Self::get_layout(new_size);
-            unsafe { alloc(layout) }
+            new_p = unsafe { alloc(layout) };
+            if !new_p.is_null() {
+                let header = new_p as *mut CompactBufHeader;
+                unsafe {
+                    (*header).entry_idx = 0;
+                    (*header).len = 0;
+                    (*header).buffer_pos = 0;
+                    (*header).cap = NonZeroU8::new_unchecked(new_cap);
+                }
+            } else {
+                handle_alloc_error(Self::get_layout(new_size));
+            }
         } else {
+            (new_size, new_cap) = Self::cal_new_buf_size(need_cap);
             crate::trace_log!("grow pathbuf cap {cur_cap}->{need_cap}");
             let old_layout = Self::get_layout(Self::buf_size_from_cap(cur_cap));
-            unsafe { realloc(p, old_layout, new_size) }
-        };
-        if !new_p.is_null() {
-            self.get_header_mut().cap = new_cap + 1;
-            self.ptr = new_p;
-        } else {
-            handle_alloc_error(Self::get_layout(new_size));
+            new_p = unsafe { realloc(self.0.get() as *mut u8, old_layout, new_size) };
+            if !new_p.is_null() {
+                let header = new_p as *mut CompactBufHeader;
+                unsafe {
+                    (*header).cap = NonZeroU8::new_unchecked(new_cap);
+                }
+            } else {
+                handle_alloc_error(Self::get_layout(new_size));
+            }
         }
+        self.0 = unsafe { NonZeroU64::new_unchecked(new_p as u64) };
+        debug_assert!(self.get_header().cap.get() != STACK_FLAG, "{}", self.get_header().cap);
     }
 
     #[inline]
     unsafe fn _item_ptr(&self, idx: u8) -> *mut (NodeBase, u8) {
-        let cap = self.get_header().cap;
-        debug_assert!(cap > 0);
-        debug_assert!(idx < cap, "idx {idx} >= cap {cap}");
-        let p = self.ptr as *mut (NodeBase, u8);
-        unsafe { p.add(idx as usize) }
+        #[cfg(debug_assertions)]
+        {
+            let cap = self.get_header().cap.get();
+            debug_assert!(cap > STACK_FLAG, "cap {cap}");
+            debug_assert!(idx < cap, "idx {idx} >= cap {cap}");
+        }
+        unsafe {
+            let p = (self.0.get() as *mut u8).add(Self::ITEMS_OFFSET) as *mut (NodeBase, u8);
+            p.add(idx as usize)
+        }
     }
 }
 
@@ -269,15 +333,51 @@ impl StatsPriv for Compact {
     fn assert_inter_count(&self, _inter_count: usize) {}
 }
 
+#[cfg(target_endian = "little")]
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub(crate) struct CompactBufHeader {
-    buffer_pos: i8,
-    len: u8,
-    entry_idx: u8,
-    // if cap > 4, on the heap, otherwise on the stack
-    cap: u8,
-    /// cap: max cap of items can be hold currently, when > 2 put in the heap
-    idxs: MaybeUninit<[u8; STACK_CAP + 1]>,
+    /// when on stack, we mark cap == 1, the lowest bit on u64 (we convert CompactBufHeader as u64,
+    /// we can determine it's not a pointer
+    pub cap: NonZeroU8,
+    /// left < 0, or right > 0, or center = 0
+    pub buffer_pos: i8,
+    /// the items stored in PathBuffer (not including the root)
+    pub len: u8,
+    /// tempoary storage for Entry.idx
+    pub entry_idx: u8,
+    pub idxs: MaybeUninit<[u8; STACK_CAP + 1]>,
+}
+
+#[cfg(target_endian = "big")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct CompactBufHeader {
+    pub idxs: MaybeUninit<[u8; STACK_CAP + 1]>,
+    /// tempoary storage for Entry.idx
+    pub entry_idx: u8,
+    /// the items stored in PathBuffer (not including the root)
+    pub len: u8,
+    /// left < 0, or right > 0, or center = 0
+    pub buffer_pos: i8,
+    /// when on stack, we mark cap == 1, the lowest bit on u64 (we convert CompactBufHeader as u64,
+    /// we can determine it's not a pointer
+    pub cap: NonZeroU8,
+}
+
+const STACK_FLAG: u8 = 1;
+
+impl Default for CompactBufHeader {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            buffer_pos: 0,
+            len: 0,
+            entry_idx: 0,
+            cap: unsafe { NonZeroU8::new_unchecked(STACK_FLAG) },
+            idxs: MaybeUninit::zeroed(),
+        }
+    }
 }
 
 impl CompactBufHeader {
@@ -378,42 +478,32 @@ impl<const N: usize, T: BorrowMut<Compact>, S: BorrowMut<CompactBufStack<N>>> Pa
     #[inline]
     fn _push(&mut self, inter: NodeBase, idx: u8) {
         let header = self.get_header_mut();
-        let cap = header.cap;
         let i = header.len;
         header.len = i + 1;
-        if i > 0 {
-            if cap == 0 {
-                debug_assert!((i as usize) < N + 1, "{i} < N {N} + 1");
-                header.put_idxs(i, idx);
+        if i < N as u8 + 1 {
+            debug_assert!((i as usize) < N + 1, "{i} < N {N} + 1");
+            header.put_idxs(i, idx);
+            if i > 0 {
                 self.stack.borrow_mut()._put(i - 1, inter);
-            } else {
-                unsafe { self._item_ptr(i - 1).write((inter, idx)) };
             }
         } else {
-            header.put_idxs(0, idx);
+            unsafe { self._item_ptr(i - N as u8 - 1).write((inter, idx)) };
         }
     }
 
     #[inline]
     unsafe fn _get_unchecked(&self, i: u8) -> (NodeBase, u8) {
         let header = self.get_header();
-        let cap = header.cap;
-        if i > 0 {
-            let idx;
-            let node;
-            if cap == 0 {
-                debug_assert!((i as usize) < N + 1);
-                idx = header.get_idxs(i);
-                node = self.stack.borrow()._get(i - 1);
+        if i < N as u8 + 1 {
+            let idx = header.get_idxs(i);
+            if i == 0 {
+                (self.root.as_ref().unwrap().clone(), idx)
             } else {
-                let p = unsafe { &*self._item_ptr(i - 1) };
-                idx = p.1;
-                node = p.0.clone();
+                (self.stack.borrow()._get(i - 1), idx)
             }
-            (node, idx)
         } else {
-            let idx = header.get_idxs(0);
-            (self.root.as_ref().unwrap().clone(), idx)
+            let p = unsafe { &*self._item_ptr(i - 1 - N as u8) };
+            (p.0.clone(), p.1)
         }
     }
 
@@ -421,27 +511,21 @@ impl<const N: usize, T: BorrowMut<Compact>, S: BorrowMut<CompactBufStack<N>>> Pa
     #[inline]
     fn _pop(&mut self) -> Option<(NodeBase, u8)> {
         let header = self.get_header_mut();
-        let cap = header.cap;
         let mut i = header.len;
         if i > 0 {
             i -= 1;
             header.len = i;
-            if i > 0 {
-                let idx;
-                let node;
-                if cap == 0 {
-                    debug_assert!((i as usize) < N + 1);
-                    idx = header.get_idxs(i);
-                    node = self.stack.borrow_mut()._get(i - 1);
+            if i < N as u8 + 1 {
+                let idx = header.get_idxs(i);
+                if i == 0 {
+                    Some((self.root.as_ref().unwrap().clone(), idx))
                 } else {
-                    let p = unsafe { &*self._item_ptr(i - 1) };
-                    idx = p.1;
-                    node = p.0.clone();
+                    let node = self.stack.borrow_mut()._get(i - 1);
+                    Some((node, idx))
                 }
-                Some((node, idx))
             } else {
-                let idx = header.get_idxs(0);
-                Some((self.root.as_ref().unwrap().clone(), idx))
+                let p = unsafe { &*self._item_ptr(i - 1 - N as u8) };
+                Some((p.0.clone(), p.1))
             }
         } else {
             None

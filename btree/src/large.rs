@@ -28,7 +28,7 @@ struct TreeInfoHeader {
     /// len=1 means root is pushed (as root idx),
     /// len-1 is the items stored in the heap.
     len: u8,
-    /// left / right
+    /// left < 0, or right > 0, or center = 0
     buffer_pos: i8,
 }
 
