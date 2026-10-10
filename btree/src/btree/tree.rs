@@ -670,6 +670,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         K: Debug,
         V: Debug,
     {
+        crate::trace_log!("validate begins");
         let root = if let Some(_root) = self.get_root() {
             _root
         } else {
@@ -769,5 +770,6 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
             "Total keys in tree ({}) doesn't match len ({})",
             total_keys, self.len
         );
+        crate::trace_log!("validate done");
     }
 }
