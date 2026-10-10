@@ -2,10 +2,11 @@
 //! to delay allocation.
 //!
 //! Initial to be Option<(K, V)>.
-//! If multi item inserted, transit from Option to std::collections::BTreeMap.
+/// If multi item inserted, transit from Option to crate::compact::BTreeMap
 
-use alloc::collections::BTreeMap;
-use alloc::collections::btree_map;
+use crate::compact as btree_map;
+use crate::compact::BTreeMap;
+use crate::{Key, Value};
 use core::borrow::Borrow;
 use core::fmt::{self, Debug};
 use core::mem::MaybeUninit;
@@ -15,13 +16,13 @@ use core::option;
 /// to delay allocation.
 ///
 /// Initial to be Option<(K, V)>.
-/// If multi item inserted, transit from Option to std::collections::BTreeMap.
+/// If multi item inserted, transit from Option to crate::compact::BTreeMap
 pub enum VariousMap<K, V> {
     One(Option<(K, V)>),
     Multi(BTreeMap<K, V>),
 }
 
-impl<K: Ord, V> VariousMap<K, V> {
+impl<K: Key, V: Value> VariousMap<K, V> {
     #[inline]
     pub fn new() -> Self {
         Self::One(None)
@@ -224,7 +225,7 @@ impl<K, V> IntoIterator for VariousMap<K, V> {
     }
 }
 
-impl<'a, K: Ord, V> IntoIterator for &'a VariousMap<K, V> {
+impl<'a, K: Key, V: Value> IntoIterator for &'a VariousMap<K, V> {
     type Item = (&'a K, &'a V);
     type IntoIter = Iter<'a, K, V>;
 
@@ -365,7 +366,7 @@ pub enum IntoIter<K, V> {
     Multi(btree_map::IntoIter<K, V>),
 }
 
-impl<K, V> Iterator for IntoIter<K, V> {
+impl<K: Key, V: Value> Iterator for IntoIter<K, V> {
     type Item = (K, V);
 
     #[inline]
@@ -377,7 +378,7 @@ impl<K, V> Iterator for IntoIter<K, V> {
     }
 }
 
-impl<K, V> ExactSizeIterator for IntoIter<K, V> {
+impl<K: Key, V: Value> ExactSizeIterator for IntoIter<K, V> {
     #[inline]
     fn len(&self) -> usize {
         match self {
@@ -393,7 +394,7 @@ impl<K, V> ExactSizeIterator for IntoIter<K, V> {
     }
 }
 
-impl<K, V> DoubleEndedIterator for IntoIter<K, V> {
+impl<K: Key, V: Value> DoubleEndedIterator for IntoIter<K, V> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         match self {
@@ -469,7 +470,7 @@ pub enum Values<'a, K, V> {
     Multi(btree_map::Values<'a, K, V>),
 }
 
-impl<'a, K, V> Clone for Values<'a, K, V> {
+impl<'a, K: Key, V: Value> Clone for Values<'a, K, V> {
     #[inline]
     fn clone(&self) -> Self {
         match self {
@@ -586,10 +587,7 @@ pub enum OccupiedEntry<'a, K: 'a, V: 'a> {
     Multi(btree_map::OccupiedEntry<'a, K, V>),
 }
 
-impl<'a, K, V> OccupiedEntry<'a, K, V>
-where
-    K: Ord,
-{
+impl<'a, K: Key, V: Value> OccupiedEntry<'a, K, V> {
     #[inline]
     pub fn get(&self) -> &V {
         match self {
@@ -654,7 +652,7 @@ where
     }
 }
 
-pub enum VacantEntry<'a, K, V> {
+pub enum VacantEntry<'a, K: 'a, V: 'a> {
     One(VacantEntryOne<'a, K, V>),
     Multi(btree_map::VacantEntry<'a, K, V>),
 }
@@ -664,10 +662,7 @@ struct VacantEntryOne<'a, K: 'a, V: 'a> {
     pub(crate) map: &'a mut VariousMap<K, V>, // Reference to the VariousMap
 }
 
-impl<'a, K, V> VacantEntry<'a, K, V>
-where
-    K: Ord,
-{
+impl<'a, K: Key, V: Value> VacantEntry<'a, K, V> {
     #[inline]
     pub fn key(&self) -> &K {
         match self {
@@ -725,10 +720,7 @@ where
     }
 }
 
-impl<'a, K, V> Entry<'a, K, V>
-where
-    K: Ord,
-{
+impl<'a, K: Key, V: Value> Entry<'a, K, V> {
     #[inline]
     pub fn or_insert(self, default: V) -> &'a mut V {
         match self {
@@ -826,7 +818,7 @@ where
     }
 }
 
-impl<K: Ord + Clone + Sized, V: Sized + PartialEq> PartialEq for VariousMap<K, V> {
+impl<K: Key, V: Value + PartialEq> PartialEq for VariousMap<K, V> {
     fn eq(&self, other: &Self) -> bool {
         let mut this_iter = self.iter();
         let mut other_iter = other.iter();
@@ -846,7 +838,7 @@ impl<K: Ord + Clone + Sized, V: Sized + PartialEq> PartialEq for VariousMap<K, V
     }
 }
 
-impl<K: Ord + Clone + Sized + Debug, V: Sized + Debug> Debug for VariousMap<K, V> {
+impl<K: Key + Debug, V: Value + Debug> Debug for VariousMap<K, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let _ = write!(f, "{{");
         let mut iter = self.iter();

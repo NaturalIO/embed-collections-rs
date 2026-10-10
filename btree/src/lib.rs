@@ -149,8 +149,8 @@ extern crate alloc;
 extern crate std;
 
 #[allow(private_interfaces)]
-pub mod various_map;
-pub use various_map::VariousMap;
+pub mod various;
+pub use various::VariousMap;
 /// generic interface of btree
 pub mod btree;
 /// BtreeMap with no stats (for many short-live dataset)
