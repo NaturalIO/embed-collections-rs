@@ -17,7 +17,7 @@ This repo consists some small crates.
 
 - [embed-constvec](https://docs.rs/embed-constvec): Fixed capacity inline vec
 - [embed-seglist](https://docs.rs/embed-seglist):  A cache aware (short-live) list to store elements with adaptive size segments
-- [embed-btree](https://docs.rs/embed-btree): A cache aware B+tree for lone-live and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
+- [embed-btree](https://docs.rs/embed-btree): A cache aware B+tree for small and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
 
 ### Intrusive collections:
 
@@ -97,7 +97,7 @@ Benchmark: append + drain (x86_64, cache line 128 bytes):
 
 crate: [embed-btree](https://docs.rs/embed-btree)
 
-We provide a `BTreeMap` for single-threaded long-term in-memory storage.
+We provide a `BTreeMap` for single-threaded either short term (`compact`), long-term (`large`) in-memory dataset.
 It's a cache aware b+tree:
 
 - Being B+Tree, the leaves are linked, provide faster iteration and teardown.
@@ -132,47 +132,48 @@ platform: intel i7-8550U, key: u32, value: u32, rust 1.97.
 
 Measured in million ops for different size of dataset:
 
-insert_seq |btree|std
--|-|-
-1k|**104.68**|20.001
-10k|**90.206**|16.04
-1m|**50.454**|11.207
+insert_seq |compact|large|std
+-|-|-|-
+1k|84.777|**91.140**|20.001
+10k|72.022|**79.060**|16.04
+1m|44.863|**46.200**|11.207
 
-insert_rand|btree|std|avl(box)|avl(arc)
--|-|-|-|-
-1k|**23.325**|17.792|11.172|9.5397
-10k|**14.949**|11.587|6.3669|5.651
-1M|**6.1205**|3.0691|0.78|0.732
+insert_rand|compact|large|std|avl(box)|avl(arc)
+-|-|-|-|-|-
+1k|21.459|**22.284**|17.792|11.172|9.5397
+10k|13.931|**14.319**|11.587|6.3669|5.651
+1M|5.8124|**5.9710**|3.0691|0.78|0.732
 
-get_seq|btree|std
--|-|-
-1k|**56.462**|34.248
-10k|**40.265**|27.571
-1M|**31.384**|19.907
+get_seq|compact|large|std
+-|-|-|-
+1k|59.214|**62.891**|34.248
+10k|40.652|**41.823**|27.571
+1M|30.640|**32.597**|19.907
 
-get_rand|btree|std|avl(box)|avl(arc)
--|-|-|-|-
-1k|**48.125**|27.651|24.254|23.466
-10k|**20.223**|16.868|11.771|10.806
-1M|**6.0508**|3.2569|1.4423|1.2712
+get_rand|compact|large|std|avl(box)|avl(arc)
+-|-|-|-|-|-
+1k|**52.213**|51.230|27.651|24.254|23.466
+10k|**22.117**|20.894|16.868|11.771|10.806
+1M|6.1369|**6.2403**|3.2569|1.4423|1.2712
 
-remove_rand |btree|std
--|-|-
-1k|**19.963**|15.968
-10k|**15.462**|11.701
-1M|**5.4713**|3.0724
+remove_rand|compact|large|std
+-|-|-|-
+1k|18.336|**19.963**|15.968
+10k|14.094|**15.462**|11.701
+1M|5.2262|**5.4713**|3.0724
 
-iter|btree|std
--|-|-
-1k|1443.2|346.8
-10k|1286.9|303.83
-1M|**215.95**|51.147
+iter|compact|large|std
+-|-|-|-
+1k|1423,3|1443.2|346.8
+10k|1226.3|1286.9|303.83
+1M|**217.10**|**215.95**|51.147
 
-into_iter|btree|std
--|-|-
-1k|396.07|143.81
-10k|410.32|81.389
-1M|**360.18**|56.742
+into_iter|compact|large|std
+-|-|-|-
+1k|364.14|**396.07**|143.81
+10k|356.85|**410.32**|81.389
+1M|327.87|**360.18**|56.742
+
 
 #### instrusive link list example
 

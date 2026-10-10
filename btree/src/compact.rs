@@ -272,7 +272,7 @@ impl StatsPriv for Compact {
                 Node::Leaf(leaf) => leaf,
             };
             let (idx, is_equal) = leaf.search_smart(&key, is_seq);
-            // use cache' header ptr to accellerate
+            // use cache' header ptr to accelerate
             cache.set_entry_idx(idx);
             if is_equal {
                 Entry::Occupied(OccupiedEntry { inner, leaf })
@@ -306,7 +306,7 @@ impl StatsPriv for Compact {
             let count = leaf.key_count();
             if count > 0 {
                 let idx = if FIRST { 0 } else { count - 1 };
-                // use cache' header ptr to accellerate
+                // use cache' header ptr to accelerate
                 cache.set_entry_idx(idx);
                 return Some(OccupiedEntry { inner, leaf });
             }
@@ -577,7 +577,7 @@ impl<T: CompactBufCommon> PathBuffer for T {
 
     // --- stats method ends ---
 
-    /// The count of current level items cotains by the PathBuffer
+    /// The count of current level items contains by the PathBuffer
     #[inline]
     fn buffer_len(&self) -> u8 {
         self.header().len

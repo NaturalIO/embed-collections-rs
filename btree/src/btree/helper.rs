@@ -35,7 +35,7 @@ pub(crate) trait PathBuffer: Sized {
 
     // --- stats method ends ---
 
-    /// The count of current level items cotains by the PathBuffer
+    /// The count of current level items contains by the PathBuffer
     fn buffer_len(&self) -> u8;
 
     fn buffer_pos(&self) -> i8;

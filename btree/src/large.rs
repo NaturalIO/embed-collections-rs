@@ -503,7 +503,7 @@ impl PathBuffer for TreeInfo {
 
     // --- stats method ends ---
 
-    /// The count of current level items cotains by the PathBuffer
+    /// The count of current level items contains by the PathBuffer
     fn buffer_len(&self) -> u8 {
         if let Some(header) = self.header() { header.len } else { 0 }
     }
@@ -593,7 +593,7 @@ impl PathBuffer for &mut TreeInfo {
 
     // --- stats method ends ---
 
-    /// The count of current level items cotains by the PathBuffer
+    /// The count of current level items contains by the PathBuffer
     #[inline]
     fn buffer_len(&self) -> u8 {
         PathBuffer::buffer_len(*self)

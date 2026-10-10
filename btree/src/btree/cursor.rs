@@ -257,8 +257,8 @@ impl<'a, K: Ord + Clone + Sized, V: Sized> Cursor<'a, K, V> {
     /// // existing key
     /// let cursor = map.cursor(&1);
     /// assert_eq!(cursor.peek_forward(), Some((&3, &"b")));
-    ///
-    ///    #[inline]
+    /// ```
+    #[inline]
     pub fn peek_forward(&self) -> Option<(&K, &V)> {
         let leaf = self.leaf.as_ref()?;
         unsafe {
