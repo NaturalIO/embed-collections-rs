@@ -151,7 +151,7 @@ extern crate std;
 #[allow(private_interfaces)]
 pub mod various_map;
 pub use various_map::VariousMap;
-mod btree;
+pub mod btree;
 pub mod compact;
 pub mod large;
 pub use btree::{Key, Value};

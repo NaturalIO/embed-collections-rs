@@ -59,7 +59,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     /// return Some(leaf)
     #[inline(always)]
-    pub fn search_leaf_with_cache<'a, S: Stats<K>, F>(
+    pub fn search_leaf_with_cache<'a, S: Stats, F>(
         &self, stack: &'a mut S::BufferStack, stats: &'a mut S, search: F,
     ) -> (Option<LeafNode<K, V>>, S::PathBufferRef<'a>)
     where
@@ -68,13 +68,13 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         if let Some(root) = self.root {
             if !Node::<K, V>::root_is_leaf(root) {
                 let _root = InterNode::<K>::from(root);
-                let mut cache = stats.get_cache(stack, Some(_root.clone()));
+                let mut cache = stats.get_cache::<K>(stack, Some(_root.clone()));
                 (Some(search(_root, &mut cache)), cache)
             } else {
-                (Some(LeafNode::<K, V>::from_root_ptr(root)), stats.get_cache(stack, None))
+                (Some(LeafNode::<K, V>::from_root_ptr(root)), stats.get_cache::<K>(stack, None))
             }
         } else {
-            (None, stats.get_cache(stack, None))
+            (None, stats.get_cache::<K>(stack, None))
         }
     }
 
@@ -99,7 +99,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// - Try merge with left sibling (if left + current <= cap)
     /// - Try merge with right sibling (if current + right <= cap)
     /// - Try 3-node merge (if left + current + right <= 2 * cap)
-    pub fn handle_leaf_underflow<C: PathBuffer<K>>(
+    pub fn handle_leaf_underflow<C: PathBuffer>(
         &mut self, cache: &mut C, mut leaf: LeafNode<K, V>, try_merge: bool,
     ) {
         debug_assert!(!self.get_root_unwrap().is_leaf());
@@ -186,7 +186,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         };
         let no_right = leaf.unlink().is_null();
         leaf.dealloc::<false>();
-        let (mut parent, mut idx) = cache.pop_path().unwrap();
+        let (mut parent, mut idx) = cache.pop_path::<K>().unwrap();
         trace_log!("handle_leaf_underflow pop parent {parent:?}:{idx}");
         if parent.key_count() == 0 {
             if let Some((grand, grand_idx)) = self.remove_only_child(cache, parent) {
@@ -213,7 +213,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     ///
     /// XXX due to borrow issue, we use &self here
     #[inline(always)]
-    fn propagate_split<C: PathBuffer<K>>(
+    fn propagate_split<C: PathBuffer>(
         &mut self, cache: &mut C, mut promote_key: K, mut left_ptr: *mut NodeHeader,
         mut right_ptr: *mut NodeHeader,
     ) -> Result<u32, InterNode<K>> {
@@ -221,7 +221,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
         #[allow(unused_mut)]
         let mut flags = 0;
         // If we have parent nodes in cache, process them iteratively
-        while let Some((mut parent, idx)) = cache.pop_path() {
+        while let Some((mut parent, idx)) = cache.pop_path::<K>() {
             if !parent.is_full() {
                 trace_log!("propagate_split normal {parent:?}:{idx} insert {right_ptr:p}");
                 // should insert next to left_ptr
@@ -335,7 +335,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     /// To simplify the logic, we perform delete first.
     /// return the Some(node) when need to rebalance
     #[inline]
-    fn remove_child_from_inter<C: PathBuffer<K>>(
+    fn remove_child_from_inter<C: PathBuffer>(
         &mut self, cache: &mut C, node: &mut InterNode<K>, delete_idx: u8, right_sep: Option<K>,
         _no_right: bool,
     ) {
@@ -394,7 +394,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     }
 
     #[inline]
-    pub(crate) fn handle_inter_underflow<C: PathBuffer<K>>(
+    pub(crate) fn handle_inter_underflow<C: PathBuffer>(
         &mut self, cache: &mut C, mut node: InterNode<K>,
     ) {
         let cap = InterNode::<K>::cap();
@@ -431,7 +431,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
                     let _old_root = self.root.replace(root);
                     debug_assert!(_old_root.is_some());
 
-                    while let Some((parent, _)) = cache.pop_path() {
+                    while let Some((parent, _)) = cache.pop_path::<K>() {
                         parent.dealloc::<false>();
                         cache.dec_inter_count();
                     }
@@ -440,7 +440,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
                 }
                 break;
             } else {
-                if let Some((mut grand, grand_idx)) = cache.pop_path() {
+                if let Some((mut grand, grand_idx)) = cache.pop_path::<K>() {
                     if grand_idx > 0 {
                         let mut left = grand.get_child_as_inter(grand_idx - 1);
                         // the sep key should pull down,  key+1 + key + 1 > cap + 1
@@ -486,7 +486,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     }
 
     #[inline]
-    fn remove_only_child<C: PathBuffer<K>>(
+    fn remove_only_child<C: PathBuffer>(
         &mut self, cache: &mut C, node: InterNode<K>,
     ) -> Option<(InterNode<K>, u8)> {
         debug_assert_eq!(node.key_count(), 0);
@@ -512,7 +512,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     /// update the separate_key in parent after borrowing space from left/right node
     #[inline(always)]
-    pub fn update_ancestor_sep_key<const MOVE: bool, C: PathBuffer<K>>(
+    pub fn update_ancestor_sep_key<const MOVE: bool, C: PathBuffer>(
         &mut self, cache: &mut C, sep_key: K,
     ) {
         // if idx == 0, this is the leftmost ptr in the InterNode, we go up until finding a
@@ -536,7 +536,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
     }
 
     /// Insert with split handling - called when leaf is full
-    pub fn insert_with_split<C: PathBuffer<K>>(
+    pub fn insert_with_split<C: PathBuffer>(
         &mut self, cache: &mut C, key: K, value: V, mut leaf: LeafNode<K, V>, idx: u8,
     ) -> *mut V {
         debug_assert!(leaf.is_full());
@@ -580,7 +580,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
             {
                 self.triggers |= TestFlag::LeafMoveRight as u32;
             }
-            cache.move_path_right();
+            cache.move_path_right::<K>();
             self.update_ancestor_sep_key::<true, C>(cache, right_node.clone_first_key());
             return val_p;
         }
@@ -665,7 +665,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
     /// Validate the entire tree structure
     /// Uses the same traversal logic as Drop to avoid recursion
-    pub fn validate<S: Stats<K>>(&self)
+    pub fn validate<S: Stats>(&self)
     where
         K: Debug,
         V: Debug,

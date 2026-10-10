@@ -266,8 +266,9 @@ fn test_leaf_node_split_insert_at_end() {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-fn test_btree_split_leaf_simple<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_btree_split_leaf_simple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
@@ -299,8 +300,9 @@ fn test_btree_split_leaf_simple<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-fn test_btree_split_leaf_insert_at_beginning<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_btree_split_leaf_insert_at_beginning<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
@@ -325,8 +327,9 @@ fn test_btree_split_leaf_insert_at_beginning<S: Stats<i32>>(#[case] _s: S, setup
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-fn test_btree_split_leaf_insert_in_middle<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_btree_split_leaf_insert_in_middle<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
@@ -353,8 +356,9 @@ fn test_btree_split_leaf_insert_in_middle<S: Stats<i32>>(#[case] _s: S, setup_lo
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-fn test_btree_split_leaf_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_btree_split_leaf_seq<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 
@@ -368,8 +372,9 @@ fn test_btree_split_leaf_seq<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-fn test_btree_split_leaf_verify_structure<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_btree_split_leaf_verify_structure<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap() as usize;
 

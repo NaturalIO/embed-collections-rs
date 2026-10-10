@@ -17,9 +17,9 @@ use std::println;
 /// - change_key skip as right node does not change
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_with_left_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_with_left_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -158,9 +158,9 @@ fn test_leaf_del_merge_with_left_height_2<S: Stats<CounterI32>>(#[case] _s: S, s
 /// - Change sep key of right leaf after shifting left
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_merge_left_with_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_merge_left_with_right_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
 
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -270,9 +270,9 @@ fn test_merge_left_with_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setu
 /// - change_key for right leaf after shifting left
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_3_2_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_3_2_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -382,9 +382,9 @@ fn test_leaf_del_merge_3_2_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_l
 /// - downgrade root to the only leaf
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_leftmost_merge_right_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_leftmost_merge_right_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -494,11 +494,9 @@ fn test_leaf_del_leftmost_merge_right_height_2<S: Stats<CounterI32>>(#[case] _s:
 /// - downgrade root to the only leaf
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats<CounterI32>>(
-    #[case] _s: S, setup_log: (),
-) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -611,9 +609,9 @@ fn test_leaf_del_merge_left_with_rightmost_height_2<S: Stats<CounterI32>>(
 /// - merge with left brother, right is not touch
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_with_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_with_left_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -766,9 +764,9 @@ fn test_leaf_del_merge_with_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, s
 /// - Update root sep key of right after merge
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_with_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_with_right_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -911,9 +909,9 @@ fn test_leaf_del_merge_with_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, 
 /// - change leaf_3 sep key at root level
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_merge_2_3_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_merge_2_3_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -1037,9 +1035,9 @@ fn test_leaf_del_merge_2_3_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_l
 /// - Cascade removal of single-child internal nodes up the tree
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_leaf_del_remove_only_child_cascade<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_leaf_del_remove_only_child_cascade<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();

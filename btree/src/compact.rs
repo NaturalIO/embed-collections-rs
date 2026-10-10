@@ -1,6 +1,7 @@
 use crate::CACHE_LINE_SIZE;
 use crate::btree::{
-    self, BTree, entry::*, helper::PathBuffer, inter::*, leaf::*, node::*, tree::BTreeInner, *,
+    self, BTree, entry::EntryInner, helper::PathBuffer, inter::*, leaf::*, node::*,
+    tree::BTreeInner, *,
 };
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 use core::borrow::BorrowMut;
@@ -10,26 +11,27 @@ use core::mem::{MaybeUninit, align_of, size_of};
 use core::ops::{Deref, DerefMut};
 use core::ptr::null_mut;
 
-pub type BTreeMap<K, V> = btree::BTree<K, V, Compact<K>>;
+pub type BTreeMap<K, V> = btree::BTree<K, V, Compact>;
 pub use btree::cursor::Cursor;
 pub use btree::iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
-pub type IntoIter<K, V> = btree::iter::IntoIter<K, V, Compact<K>>;
-pub type Entry<'a, K, V> = btree::entry::Entry<'a, K, V, Compact<K>>;
-pub type OccupiedEntry<'a, K, V> = btree::entry::OccupiedEntry<'a, K, V, Compact<K>>;
-pub type VacantEntry<'a, K, V> = btree::entry::VacantEntry<'a, K, V, Compact<K>>;
+pub type IntoIter<K, V> = btree::iter::IntoIter<K, V, Compact>;
+pub type Entry<'a, K, V> = btree::entry::Entry<'a, K, V, Compact>;
+pub type OccupiedEntry<'a, K, V> = btree::entry::OccupiedEntry<'a, K, V, Compact>;
+pub type VacantEntry<'a, K, V> = btree::entry::VacantEntry<'a, K, V, Compact>;
 
-pub struct Compact<K> {
+pub struct Compact {
     // 8B
     header: UnsafeCell<CompactBufHeader>,
-    ptr: *mut (InterNode<K>, u8),
+    ptr: *mut u8,
 }
 
 const STACK_CAP: usize = 3;
 const ENTRY_CAP: usize = 1;
 
-unsafe impl<K> Send for Compact<K> {}
+unsafe impl Send for Compact {}
+unsafe impl Sync for Compact {}
 
-impl<K> Default for Compact<K> {
+impl Default for Compact {
     fn default() -> Self {
         Self {
             header: UnsafeCell::new(CompactBufHeader {
@@ -44,7 +46,7 @@ impl<K> Default for Compact<K> {
     }
 }
 
-impl<K> Drop for Compact<K> {
+impl Drop for Compact {
     fn drop(&mut self) {
         let p = self.ptr;
         if !p.is_null() {
@@ -58,14 +60,14 @@ impl<K> Drop for Compact<K> {
 }
 
 // for log
-impl<K> Debug for Compact<K> {
+impl Debug for Compact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Compact")
     }
 }
 
-impl<K> Compact<K> {
-    const ITEM_SIZE: usize = size_of::<(InterNode<K>, u8)>();
+impl Compact {
+    const ITEM_SIZE: usize = size_of::<(*mut u8, u8)>();
 
     #[inline(always)]
     fn get_header(&self) -> &CompactBufHeader {
@@ -75,6 +77,14 @@ impl<K> Compact<K> {
     #[inline(always)]
     fn get_header_mut(&mut self) -> &mut CompactBufHeader {
         unsafe { &mut *self.header.get() }
+    }
+
+    /// Reset the stack without freeing the buffer.
+    #[inline]
+    fn clear_cache(&mut self) {
+        let header = self.get_header_mut();
+        header.len = 0;
+        header.buffer_pos = 0;
     }
 
     #[inline(always)]
@@ -89,7 +99,7 @@ impl<K> Compact<K> {
         let align = align_of::<usize>();
         #[cfg(debug_assertions)]
         {
-            if align_of::<(InterNode<K>, u8)>() != align {
+            if align_of::<(*mut u8, u8)>() != align {
                 panic!("TreeInfoHeader is not aligned");
             }
         }
@@ -123,71 +133,68 @@ impl<K> Compact<K> {
         } else {
             crate::trace_log!("grow pathbuf cap {cur_cap}->{need_cap}");
             let old_layout = Self::get_layout(Self::buf_size_from_cap(cur_cap));
-            unsafe { realloc(p as *mut u8, old_layout, new_size) }
+            unsafe { realloc(p, old_layout, new_size) }
         };
         if !new_p.is_null() {
             self.get_header_mut().cap = new_cap + 1;
-            self.ptr = new_p as *mut (InterNode<K>, u8);
+            self.ptr = new_p;
         } else {
             handle_alloc_error(Self::get_layout(new_size));
         }
     }
 
     #[inline]
-    unsafe fn _item_ptr(&self, idx: u8) -> *mut (InterNode<K>, u8) {
+    unsafe fn _item_ptr(&self, idx: u8) -> *mut (NodeBase, u8) {
         let cap = self.get_header().cap;
         debug_assert!(cap > 0);
         debug_assert!(idx < cap, "idx {idx} >= cap {cap}");
-        let p = self.ptr;
+        let p = self.ptr as *mut (NodeBase, u8);
         unsafe { p.add(idx as usize) }
     }
 }
 
-impl<K: Key> Stats<K> for Compact<K> {
-    type EntryInner<'a, V>
+impl Stats for Compact {}
+
+impl StatsPriv for Compact {
+    type EntryInner<'a, K, V>
         = CompactEntry<'a, K, V>
     where
+        K: Key + 'a,
         V: Value + 'a;
 
     type PathBufferRef<'a>
-        = CompactBuf<K, STACK_CAP, &'a mut Compact<K>, &'a mut CompactBufStack<K, STACK_CAP>>
+        = CompactBuf<STACK_CAP, &'a mut Compact, &'a mut CompactBufStack<STACK_CAP>>
     where
         Self: 'a;
 
-    type PathBuffer = CompactBuf<K, STACK_CAP, Self, CompactBufStack<K, STACK_CAP>>;
+    type PathBuffer = CompactBuf<STACK_CAP, Self, CompactBufStack<STACK_CAP>>;
 
-    type BufferStack = CompactBufStack<K, STACK_CAP>;
+    type BufferStack = CompactBufStack<STACK_CAP>;
 
     #[inline]
-    fn get_cache<'a>(
+    fn get_cache<'a, K>(
         &'a mut self, stack: &'a mut Self::BufferStack, root: Option<InterNode<K>>,
     ) -> Self::PathBufferRef<'a> {
         self.clear_cache();
         if let Some(root) = root.as_ref() {
             self.ensure_cap::<STACK_CAP>(root.height());
         }
-        CompactBuf { root, stats: self, stack }
+        CompactBuf { root: root.map(|n| n.into()), stats: self, stack }
     }
 
     #[inline]
-    fn take_cache(mut self, root: Option<InterNode<K>>) -> Self::PathBuffer {
+    fn take_cache<K>(mut self, root: Option<InterNode<K>>) -> Self::PathBuffer {
         self.clear_cache();
         if let Some(root) = root.as_ref() {
             self.ensure_cap::<STACK_CAP>(root.height());
         }
-        CompactBuf { root, stats: self, stack: CompactBufStack::default() }
-    }
-
-    /// Reset the stack without freeing the buffer.
-    #[inline]
-    fn clear_cache(&mut self) {
-        let header = self.get_header_mut();
-        header.len = 0;
-        header.buffer_pos = 0;
+        CompactBuf { root: root.map(|n| n.into()), stats: self, stack: CompactBufStack::default() }
     }
 
     #[inline]
-    fn search_entry<'a, V: Value>(tree: &'a mut BTree<K, V, Self>, key: K) -> Entry<'a, K, V> {
+    fn search_entry<'a, K: Key, V: Value>(
+        tree: &'a mut BTree<K, V, Self>, key: K,
+    ) -> Entry<'a, K, V> {
         let mut inner = CompactEntry { tree, stack: Default::default() };
         let idx;
         let mut is_equal = false;
@@ -223,7 +230,7 @@ impl<K: Key> Stats<K> for Compact<K> {
 
     /// seek first or last entry
     #[inline]
-    fn seek_entry<'a, V: Value, const FIRST: bool>(
+    fn seek_entry<'a, K: Key, V: Value, const FIRST: bool>(
         tree: &'a mut BTree<K, V, Self>,
     ) -> Option<OccupiedEntry<'a, K, V>> {
         let mut inner = CompactEntry { tree, stack: Default::default() };
@@ -284,56 +291,56 @@ impl CompactBufHeader {
     }
 }
 
-pub(crate) struct CompactBufStack<K, const N: usize>(MaybeUninit<[InterNode<K>; N]>);
+pub(crate) struct CompactBufStack<const N: usize>(MaybeUninit<[NodeBase; N]>);
 
-impl<K, const N: usize> Default for CompactBufStack<K, N> {
+impl<const N: usize> Default for CompactBufStack<N> {
     #[inline]
     fn default() -> Self {
         Self(MaybeUninit::zeroed())
     }
 }
 
-impl<K, const N: usize> CompactBufStack<K, N> {
+impl<const N: usize> CompactBufStack<N> {
     #[inline(always)]
-    fn _get(&self, i: u8) -> InterNode<K> {
+    fn _get(&self, i: u8) -> NodeBase {
         debug_assert!((i as usize) < N);
         unsafe { self.0.assume_init_ref()[i as usize].clone() }
     }
 
     #[inline(always)]
-    fn _put(&mut self, i: u8, inter: InterNode<K>) {
+    fn _put(&mut self, i: u8, inter: NodeBase) {
         debug_assert!((i as usize) < N);
         unsafe { self.0.assume_init_mut()[i as usize] = inter };
     }
 }
 
-pub(crate) struct CompactBuf<K, const N: usize, T, S: BorrowMut<CompactBufStack<K, N>>> {
-    root: Option<InterNode<K>>,
+pub(crate) struct CompactBuf<const N: usize, T, S: BorrowMut<CompactBufStack<N>>> {
+    root: Option<NodeBase>,
     stats: T,
     stack: S,
 }
 
-impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufStack<K, N>>> Deref
-    for CompactBuf<K, N, T, S>
+impl<const N: usize, T: BorrowMut<Compact>, S: BorrowMut<CompactBufStack<N>>> Deref
+    for CompactBuf<N, T, S>
 {
-    type Target = Compact<K>;
+    type Target = Compact;
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.stats.borrow()
     }
 }
 
-impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufStack<K, N>>> DerefMut
-    for CompactBuf<K, N, T, S>
+impl<const N: usize, T: BorrowMut<Compact>, S: BorrowMut<CompactBufStack<N>>> DerefMut
+    for CompactBuf<N, T, S>
 {
     #[inline]
-    fn deref_mut(&mut self) -> &mut Compact<K> {
+    fn deref_mut(&mut self) -> &mut Compact {
         self.stats.borrow_mut()
     }
 }
 
-impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufStack<K, N>>>
-    PathBuffer<K> for CompactBuf<K, N, T, S>
+impl<const N: usize, T: BorrowMut<Compact>, S: BorrowMut<CompactBufStack<N>>> PathBuffer
+    for CompactBuf<N, T, S>
 {
     // --- stats method begins ---
 
@@ -369,7 +376,7 @@ impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufSt
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
     #[inline]
-    fn _push(&mut self, inter: InterNode<K>, idx: u8) {
+    fn _push(&mut self, inter: NodeBase, idx: u8) {
         let header = self.get_header_mut();
         let cap = header.cap;
         let i = header.len;
@@ -388,7 +395,7 @@ impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufSt
     }
 
     #[inline]
-    unsafe fn _get_unchecked(&self, i: u8) -> (InterNode<K>, u8) {
+    unsafe fn _get_unchecked(&self, i: u8) -> (NodeBase, u8) {
         let header = self.get_header();
         let cap = header.cap;
         if i > 0 {
@@ -412,7 +419,7 @@ impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufSt
 
     /// Pop the top entry from the cache stack.
     #[inline]
-    fn _pop(&mut self) -> Option<(InterNode<K>, u8)> {
+    fn _pop(&mut self) -> Option<(NodeBase, u8)> {
         let header = self.get_header_mut();
         let cap = header.cap;
         let mut i = header.len;
@@ -442,16 +449,16 @@ impl<K: Ord, const N: usize, T: BorrowMut<Compact<K>>, S: BorrowMut<CompactBufSt
     }
 }
 
-type CompactBufEntry<'a, K> =
-    CompactBuf<K, ENTRY_CAP, &'a mut Compact<K>, &'a mut CompactBufStack<K, ENTRY_CAP>>;
+type CompactBufEntry<'a> =
+    CompactBuf<ENTRY_CAP, &'a mut Compact, &'a mut CompactBufStack<ENTRY_CAP>>;
 
 pub(crate) struct CompactEntry<'a, K: Key, V: Value> {
-    tree: &'a mut BTree<K, V, Compact<K>>,
-    stack: CompactBufStack<K, ENTRY_CAP>,
+    tree: &'a mut BTree<K, V, Compact>,
+    stack: CompactBufStack<ENTRY_CAP>,
 }
 
 impl<'a, K: Key, V: Value> CompactEntry<'a, K, V> {
-    fn init_cache(&mut self) -> (&BTreeInner<K, V>, CompactBufEntry<'_, K>) {
+    fn init_cache(&mut self) -> (&BTreeInner<K, V>, CompactBufEntry<'_>) {
         self.tree.stats.clear_cache();
         let root = if let Some(inter) = self.tree.inner.root_as_inter() {
             self.tree.stats.ensure_cap::<ENTRY_CAP>(inter.height());
@@ -460,14 +467,14 @@ impl<'a, K: Key, V: Value> CompactEntry<'a, K, V> {
             None
         };
         let (tree, stats, stack) = (&self.tree.inner, &mut self.tree.stats, &mut self.stack);
-        (tree, CompactBufEntry { root, stats, stack })
+        (tree, CompactBufEntry { root: root.map(|n| n.into()), stats, stack })
     }
 }
 
 impl<'a, K: Key, V: Value> EntryInner<K, V> for CompactEntry<'a, K, V> {
     #[inline(always)]
-    fn get_cache<'b>(&'b mut self) -> impl PathBuffer<K> {
-        let root = self.tree.inner.root_as_inter();
+    fn get_cache<'b>(&'b mut self) -> impl PathBuffer {
+        let root = self.tree.inner.root_as_inter().map(|_node| _node.into());
         CompactBufEntry { root, stats: &mut self.tree.stats, stack: &mut self.stack }
     }
 
@@ -478,10 +485,10 @@ impl<'a, K: Key, V: Value> EntryInner<K, V> for CompactEntry<'a, K, V> {
     }
 
     #[inline(always)]
-    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, impl PathBuffer<K>) {
+    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, impl PathBuffer) {
         let (tree, stats) = (&mut self.tree.inner, &mut self.tree.stats);
         let root = tree.root_as_inter();
-        (tree, CompactBuf { root, stats, stack: &mut self.stack })
+        (tree, CompactBuf { root: root.map(|n| n.into()), stats, stack: &mut self.stack })
     }
 
     #[inline(always)]
@@ -503,11 +510,11 @@ mod tests {
 
     #[test]
     fn test_compact_buf_size() {
-        type StackBuf<'a, K> =
-            CompactBuf<K, STACK_CAP, &'a mut Compact<K>, &'a mut CompactBufStack<K, STACK_CAP>>;
-        type OwnedBuf<'a, K> = CompactBuf<K, STACK_CAP, Compact<K>, CompactBufStack<K, STACK_CAP>>;
-        println!("stack buf size: {}", size_of::<StackBuf::<u32>>());
-        println!("owned buf size: {}", size_of::<OwnedBuf::<u32>>());
+        type StackBuf<'a> =
+            CompactBuf<STACK_CAP, &'a mut Compact, &'a mut CompactBufStack<STACK_CAP>>;
+        type OwnedBuf<'a> = CompactBuf<STACK_CAP, Compact, CompactBufStack<STACK_CAP>>;
+        println!("stack buf size: {}", size_of::<StackBuf>());
+        println!("owned buf size: {}", size_of::<OwnedBuf>());
         //        println!("CompactBufferStack {}", size_of::<CompactBufferStack>());
         println!("CompactEntry {}", size_of::<CompactEntry::<u32, u32>>());
     }

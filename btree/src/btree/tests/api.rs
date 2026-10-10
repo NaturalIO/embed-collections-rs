@@ -10,9 +10,9 @@ use std::vec::Vec;
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_size<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_size<S: Stats>(#[case] _s: S, setup_log: ()) {
     let root = size_of::<Option<Node<u32, u32>>>();
     println!("size: root {}", root);
     let tree = size_of::<BTree<u32, u32, S>>();
@@ -23,9 +23,9 @@ fn test_size<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_simple<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_simple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let (inter_cap, leaf_cap) = BTree::<i32, &'static str, S>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
     let mut map: BTree<i32, &'static str, S> = BTree::new();
@@ -80,9 +80,9 @@ fn test_unblanced_cap(setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u8>::default())]
-#[case(Compact::<u8>::default())]
-fn test_zero_size<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_zero_size<S: Stats>(#[case] _s: S, setup_log: ()) {
     let (inter_cap, leaf_cap) = BTree::<u8, (), S>::cap();
     println!("cap: inter {inter_cap} leaf {leaf_cap}");
 
@@ -107,9 +107,9 @@ fn test_zero_size<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_multiple_inserts<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_multiple_inserts<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(3, "c");
     map.validate();
@@ -125,9 +125,9 @@ fn test_multiple_inserts<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_entry_occupied<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_entry_occupied<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.validate();
@@ -141,9 +141,9 @@ fn test_entry_occupied<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_occupied_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_entry_remove<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.validate();
@@ -159,9 +159,9 @@ fn test_occupied_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_entry_vacant<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_entry_vacant<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     match map.entry(1) {
         Entry::Vacant(entry) => {
@@ -173,9 +173,9 @@ fn test_entry_vacant<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_entry_or_insert<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_entry_or_insert<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     let val = map.entry(1).or_insert("a");
     assert_eq!(*val, "a");
@@ -187,9 +187,9 @@ fn test_entry_or_insert<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_entry_and_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_entry_and_modify<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, u32, S>::new();
     map.insert(1, 10);
     map.validate();
@@ -200,9 +200,9 @@ fn test_entry_and_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_remove<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.validate();
@@ -219,9 +219,9 @@ fn test_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_first_last_key_value_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_first_last_key_value_multiple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     assert_eq!(map.first_key_value(), None);
     assert_eq!(map.last_key_value(), None);
@@ -241,9 +241,9 @@ fn test_first_last_key_value_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: (
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_first_last_entry_single<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_first_last_entry_single<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.validate();
@@ -263,9 +263,9 @@ fn test_first_last_entry_single<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_first_last_entry_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_first_last_entry_multiple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(3, "c");
     map.insert(1, "a");
@@ -289,9 +289,9 @@ fn test_first_last_entry_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_first_entry_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_first_entry_modify<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -306,9 +306,9 @@ fn test_first_entry_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_last_entry_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_last_entry_modify<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -323,9 +323,9 @@ fn test_last_entry_modify<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_first_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_first_entry_remove<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -342,9 +342,9 @@ fn test_first_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_last_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_last_entry_remove<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(1, "a");
     map.insert(2, "b");
@@ -359,7 +359,7 @@ fn test_last_entry_remove<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
     assert_eq!(map.last_key_value(), Some((&2, &"b")));
 }
 
-fn _test_large_tree_ops<S: Stats<u32>>(map: &mut BTree<u32, u32, S>) {
+fn _test_large_tree_ops<S: Stats>(map: &mut BTree<u32, u32, S>) {
     // Insert enough elements to trigger splits (leaf capacity is typically small)
     for i in 0..1000 {
         map.insert(i, i * 2);
@@ -410,7 +410,7 @@ fn _test_large_tree_ops<S: Stats<u32>>(map: &mut BTree<u32, u32, S>) {
 #[rstest]
 fn test_large_tree_operations(setup_log: ()) {
     {
-        let mut map = BTree::<u32, u32, TreeInfo<u32>>::new();
+        let mut map = BTree::<u32, u32, TreeInfo>::new();
         _test_large_tree_ops(&mut map);
         println!(
             "height: {} inter: {}, leaf: {}",
@@ -423,16 +423,16 @@ fn test_large_tree_operations(setup_log: ()) {
         println!("memory: {}", map.memory_used());
     }
     {
-        let mut map = BTree::<u32, u32, Compact<u32>>::new();
+        let mut map = BTree::<u32, u32, Compact>::new();
         _test_large_tree_ops(&mut map);
     }
 }
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_pop_first_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_pop_first_multiple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     assert_eq!(map.pop_last(), None);
     assert_eq!(map.pop_first(), None);
@@ -449,9 +449,9 @@ fn test_pop_first_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_pop_last_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_pop_last_multiple<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.insert(3, "c");
     map.insert(1, "a");
@@ -466,9 +466,9 @@ fn test_pop_last_multiple<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_pop_first_all<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_pop_first_all<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.assert_leaf_count(0);
     map.insert(1, "a");
@@ -489,9 +489,9 @@ fn test_pop_first_all<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_pop_last_all<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_pop_last_all<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u32, &str, S>::new();
     map.assert_leaf_count(0);
     map.insert(1, "a");
@@ -512,9 +512,9 @@ fn test_pop_last_all<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<String>::default())]
-#[case(Compact::<String>::default())]
-fn test_borrow_string_str<S: Stats<String>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_string_str<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<String, i32, S>::new();
     map.insert("hello".to_string(), 1);
     map.insert("world".to_string(), 2);
@@ -548,9 +548,9 @@ fn test_borrow_string_str<S: Stats<String>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<Vec<u8>>::default())]
-#[case(Compact::<Vec<u8>>::default())]
-fn test_borrow_vec_slice<S: Stats<Vec<u8>>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_vec_slice<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<Vec<u8>, i32, S>::new();
     map.insert(vec![1, 2, 3], 1);
     map.insert(vec![4, 5, 6], 2);
@@ -573,9 +573,9 @@ fn test_borrow_vec_slice<S: Stats<Vec<u8>>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_remove_range_api<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_remove_range_api<S: Stats>(#[case] _s: S, setup_log: ()) {
     use core::ops::Bound;
     let mut map = BTree::<i32, i32, S>::new();
     for i in 1..=10 {
@@ -640,9 +640,9 @@ fn test_remove_range_api<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_remove_range_large<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_remove_range_large<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     let (_, leaf_cap) = BTree::<i32, i32, S>::cap();
     let count = leaf_cap * 5; // multiple leaves
