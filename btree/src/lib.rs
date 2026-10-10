@@ -69,29 +69,29 @@
 //!
 //! Entries:
 //! - Adjacent `Entry` (for iter and modification).
-//!   - `Entry::peek_forward()`
-//!   - `Entry::peek_backward()`
-//!   - `Entry::move_forward()`
-//!   - `Entry::move_backward()`
-//!   - `VacantEntry::peek_forward()`
-//!   - `VacantEntry::peek_backward()`
-//!   - `VacantEntry::move_forward()`
-//!   - `VacantEntry::move_backward()`
-//!   - `OccupiedEntry::peek_forward()`
-//!   - `OccupiedEntry::peek_backward()`
-//!   - `OccupiedEntry::move_forward()`
-//!   - `OccupiedEntry::move_backward()`
+//!   - [btree::Entry::peek_forward()]
+//!   - [btree::Entry::peek_backward()]
+//!   - [btree::Entry::move_forward()]
+//!   - [btree::Entry::move_backward()]
+//!   - [btree::VacantEntry::peek_forward()]
+//!   - [btree::VacantEntry::peek_backward()]
+//!   - [btree::VacantEntry::move_forward()]
+//!   - [btree::VacantEntry::move_backward()]
+//!   - [btree::OccupiedEntry::peek_forward()]
+//!   - [btree::OccupiedEntry::peek_backward()]
+//!   - [btree::OccupiedEntry::move_forward()]
+//!   - [btree::OccupiedEntry::move_backward()]
 //! - Alter key of an OccupiedEntry.
-//!   - `OccupiedEntry::alter_key()`
+//!   - [btree::OccupiedEntry::alter_key()]
 //!
 //! Batch removal:
-//! - `BTreeMap::remove_range()`
-//! - `BTreeMap::remove_range_with()`
+//! - [BTree::remove_range()](btree::BTree::remove_range)
+//! - [BTree::remove_range_with()(btree::Btree::remove_range_with)]
 //!
-//! Readonly [Cursor]:
-//! - BTreeMap::cursor()
-//! - BTreeMap::first_cursor()
-//! - BTreeMap::last_cursor()
+//! Readonly [Cursor](btree::Cursor):
+//! - [BTree::cursor()](btree::BTree::cursor)
+//! - [BTree::first_cursor()](btree::BTree::first_cursor)
+//! - [BTree::last_cursor()](btree::BTree::last_cursor)
 //!
 //! Use case:
 //! - [range-tree-rs](https://docs.rs/range-tree-rs)
@@ -151,8 +151,11 @@ extern crate std;
 #[allow(private_interfaces)]
 pub mod various_map;
 pub use various_map::VariousMap;
+/// generic interface of btree
 pub mod btree;
+/// BtreeMap with no stats (for many short-live dataset)
 pub mod compact;
+/// BtreeMap with stats (for large love-live dataset)
 pub mod large;
 pub use btree::{Key, Value};
 
