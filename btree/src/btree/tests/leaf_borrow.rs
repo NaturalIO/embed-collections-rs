@@ -8,9 +8,9 @@ use std::println;
 /// middle_leaf[0], the original middle_leaf[0] is moved to left
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_left_insert_first_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_left_insert_first_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
 
     let leaf_cap = builder.leaf_cap();
@@ -108,9 +108,9 @@ fn test_borrow_from_left_insert_first_height_2<S: Stats<i32>>(#[case] _s: S, set
 /// insert to the middle of middle_leaf, with middle_leaf.keys[0] moved to the left.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_left_insert_mid_height_2<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_left_insert_mid_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     assert!(leaf_cap > 5);
@@ -201,9 +201,9 @@ fn test_borrow_from_left_insert_mid_height_2<S: Stats<i32>>(#[case] _s: S, setup
 /// The insert pos is at middle_leaf, the last node from middle_leaf should move to right_leaf.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_right_height_2_not_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_right_height_2_not_last<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     println!("cap {}", leaf_cap);
@@ -291,9 +291,9 @@ fn test_borrow_from_right_height_2_not_last<S: Stats<i32>>(#[case] _s: S, setup_
 /// The insert pos is beyond middle_leaf, but still < right_leaf.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_right_height_2_last<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_right_height_2_last<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     println!("cap {}", leaf_cap);
@@ -384,9 +384,9 @@ fn test_borrow_from_right_height_2_last<S: Stats<i32>>(#[case] _s: S, setup_log:
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_left_insert_first_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_left_insert_first_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
@@ -480,9 +480,9 @@ fn test_borrow_from_left_insert_first_height_3<S: Stats<i32>>(#[case] _s: S, set
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_left_insert_mid_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_left_insert_mid_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
@@ -574,9 +574,9 @@ fn test_borrow_from_left_insert_mid_height_3<S: Stats<i32>>(#[case] _s: S, setup
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_right_insert_not_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_right_insert_not_last_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch
@@ -673,9 +673,9 @@ fn test_borrow_from_right_insert_not_last_height_3<S: Stats<i32>>(#[case] _s: S,
 /// Test update_parent_key of leaf_2, which is the first node of internal_right.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_borrow_from_right_insert_last_height_3<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_borrow_from_right_insert_last_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<i32, i32, S>::default();
     let leaf_cap = builder.leaf_cap();
     // Create leaf nodes for left branch

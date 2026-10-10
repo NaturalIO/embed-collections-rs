@@ -529,7 +529,7 @@ impl<'a, K: 'a, V: 'a> DoubleEndedIterator for RangeMut<'a, K, V> {
     }
 }
 
-struct IntoIterBase<K: Key, V: Value, S: Stats<K>> {
+struct IntoIterBase<K: Key, V: Value, S: Stats> {
     /// Path cache for deallocating internal nodes after iteration
     cache: S::PathBuffer,
     /// Current leaf being iterated
@@ -541,7 +541,7 @@ struct IntoIterBase<K: Key, V: Value, S: Stats<K>> {
     is_forward: bool,
 }
 
-impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
+impl<K: Key, V: Value, S: Stats> IntoIterBase<K, V, S> {
     #[inline]
     fn new(mut tree: BTree<K, V, S>, is_forward: bool) -> Self {
         let mut stats = S::default();
@@ -552,7 +552,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
         if let Some(root_p) = root {
             // Move TreeInfo out of BTreeMap, leave a fresh empty one as placeholder.
             let (cache, leaf) = match Node::from_root_ptr(root_p) {
-                Node::Leaf(leaf) => (stats.take_cache(None), leaf),
+                Node::Leaf(leaf) => (stats.take_cache::<K>(None), leaf),
                 Node::Inter(inter) => {
                     let mut cache = stats.take_cache(Some(inter.clone()));
                     let leaf = if is_forward {
@@ -571,7 +571,13 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
                 is_forward,
             }
         } else {
-            Self { cache: stats.take_cache(None), leaf: None, idx: 0, remaining: 0, is_forward }
+            Self {
+                cache: stats.take_cache::<K>(None),
+                leaf: None,
+                idx: 0,
+                remaining: 0,
+                is_forward,
+            }
         }
     }
 
@@ -581,7 +587,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self
             .cache
-            .move_path_right_and_pop_l1(|_cache, node| {
+            .move_path_right_and_pop_l1::<K, _>(|_cache, node| {
                 node.dealloc::<true>();
             })
             .unwrap();
@@ -595,8 +601,10 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
     fn advance_backward(&mut self) -> LeafNode<K, V> {
         let _leaf = self.leaf.take().unwrap();
         _leaf.dealloc::<false>();
-        let (parent, idx) =
-            self.cache.move_path_left_and_pop_l1(|_cache, node| node.dealloc::<true>()).unwrap();
+        let (parent, idx) = self
+            .cache
+            .move_path_left_and_pop_l1::<K, _>(|_cache, node| node.dealloc::<true>())
+            .unwrap();
         self.cache.push_path(parent.clone(), idx);
         let new_leaf = parent.get_child_as_leaf(idx);
         self.idx = new_leaf.key_count();
@@ -653,7 +661,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIterBase<K, V, S> {
     }
 }
 
-impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
+impl<K: Key, V: Value, S: Stats> Drop for IntoIterBase<K, V, S> {
     fn drop(&mut self) {
         let is_forward = self.is_forward;
         // NOTE: if the original tree has root, then self.leaf always exists after iteration done
@@ -686,7 +694,7 @@ impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
             // We should free the rest internal nodes even after leaf iteration done
             if is_forward {
                 while let Some((parent, idx)) =
-                    self.cache.move_path_right_and_pop_l1(|_cache, _node| {
+                    self.cache.move_path_right_and_pop_l1::<K, _>(|_cache, _node| {
                         _node.dealloc::<true>();
                     })
                 {
@@ -697,7 +705,7 @@ impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
                 }
             } else {
                 while let Some((parent, idx)) =
-                    self.cache.move_path_left_and_pop_l1(|_cache, _node| {
+                    self.cache.move_path_left_and_pop_l1::<K, _>(|_cache, _node| {
                         _node.dealloc::<true>();
                     })
                 {
@@ -715,12 +723,12 @@ impl<K: Key, V: Value, S: Stats<K>> Drop for IntoIterBase<K, V, S> {
 /// Uses PathBuffer to manage tree traversal and safe deallocation
 ///
 /// NOTE: In order to keep the logic simple, we does not implement `DoubleEndedIterator` here
-pub struct IntoIter<K: Key, V: Value, S: Stats<K>> {
+pub struct IntoIter<K: Key, V: Value, S: Stats> {
     /// If true, iterate in reverse order
     base: Result<IntoIterBase<K, V, S>, (BTree<K, V, S>, bool)>,
 }
 
-impl<K: Key, V: Value, S: Stats<K>> IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats> IntoIter<K, V, S> {
     #[inline]
     pub(super) fn new(tree: BTree<K, V, S>, is_forward: bool) -> Self {
         Self { base: Err((tree, is_forward)) }
@@ -744,7 +752,7 @@ impl<K: Key, V: Value, S: Stats<K>> IntoIter<K, V, S> {
     }
 }
 
-impl<K: Key, V: Value, S: Stats<K>> Iterator for IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats> Iterator for IntoIter<K, V, S> {
     type Item = (K, V);
 
     #[inline]
@@ -774,7 +782,7 @@ impl<K: Key, V: Value, S: Stats<K>> Iterator for IntoIter<K, V, S> {
     }
 }
 
-impl<K: Key, V: Value, S: Stats<K>> ExactSizeIterator for IntoIter<K, V, S> {
+impl<K: Key, V: Value, S: Stats> ExactSizeIterator for IntoIter<K, V, S> {
     #[inline]
     fn len(&self) -> usize {
         match &self.base {

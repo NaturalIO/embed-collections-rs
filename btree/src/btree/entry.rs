@@ -3,38 +3,38 @@ use super::*;
 use core::fmt::{self, Debug};
 
 /// Entry for an existing key-value pair in the tree
-pub struct OccupiedEntry<'a, K: Key, V: Value, S: Stats<K>> {
-    pub(crate) inner: S::EntryInner<'a, V>,
+pub struct OccupiedEntry<'a, K: Key, V: Value, S: Stats> {
+    pub(crate) inner: S::EntryInner<'a, K, V>,
     pub(crate) leaf: LeafNode<K, V>,
 }
 
 /// Entry for a vacant key position in the tree
-pub struct VacantEntry<'a, K: Key, V: Value, S: Stats<K>> {
-    pub(crate) inner: S::EntryInner<'a, V>,
+pub struct VacantEntry<'a, K: Key, V: Value, S: Stats> {
+    pub(crate) inner: S::EntryInner<'a, K, V>,
     pub(crate) leaf: Option<LeafNode<K, V>>,
     pub(crate) key: K,
 }
 
 /// Entry into a BTreeMap for in-place manipulation
-pub enum Entry<'a, K: Key, V: Value, S: Stats<K>> {
+pub enum Entry<'a, K: Key, V: Value, S: Stats> {
     Occupied(OccupiedEntry<'a, K, V, S>),
     Vacant(VacantEntry<'a, K, V, S>),
 }
 
 pub(crate) trait EntryInner<K: Key, V: Value> {
-    fn get_cache<'a>(&'a mut self) -> impl PathBuffer<K> + 'a;
+    fn get_cache<'a>(&'a mut self) -> impl PathBuffer + 'a;
 
     #[cfg(test)]
     fn get_tree(&self) -> &BTreeInner<K, V>;
 
-    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, impl PathBuffer<K>);
+    fn get_tree_cache(&mut self) -> (&mut BTreeInner<K, V>, impl PathBuffer);
 
     fn set_idx(&mut self, idx: u8);
 
     fn get_idx(&self) -> u8;
 }
 
-impl<'a, K: Key, V: Value, S: Stats<K>> Entry<'a, K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats> Entry<'a, K, V, S> {
     #[inline]
     pub fn exists(&self) -> bool {
         matches!(self, Entry::Occupied(_))
@@ -149,19 +149,19 @@ impl<'a, K: Key, V: Value, S: Stats<K>> Entry<'a, K, V, S> {
     }
 }
 
-impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for OccupiedEntry<'a, K, V, S> {
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats> Debug for OccupiedEntry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("OccupiedEntry").field("key", self.key()).field("value", self.get()).finish()
     }
 }
 
-impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for VacantEntry<'a, K, V, S> {
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats> Debug for VacantEntry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VacantEntry").field("key", &self.key).finish()
     }
 }
 
-impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for Entry<'a, K, V, S> {
+impl<'a, K: Key + Debug, V: Value + Debug, S: Stats> Debug for Entry<'a, K, V, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Entry::Occupied(ent) => f.debug_tuple("Occupied").field(ent).finish(),
@@ -170,7 +170,7 @@ impl<'a, K: Key + Debug, V: Value + Debug, S: Stats<K>> Debug for Entry<'a, K, V
     }
 }
 
-impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats> OccupiedEntry<'a, K, V, S> {
     /// Get a reference to the key
     #[inline]
     pub fn key(&self) -> &K {
@@ -280,7 +280,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
             self.inner.set_idx(idx - 1);
             Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(leaf) = self.leaf.get_left_node() {
-            self.inner.get_cache().move_path_left();
+            self.inner.get_cache().move_path_left::<K>();
             let count = leaf.key_count();
             debug_assert!(count > 0);
             self.inner.set_idx(count - 1);
@@ -300,7 +300,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
             self.inner.set_idx(next_idx);
             Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(right) = self.leaf.get_right_node() {
-            self.inner.get_cache().move_path_right();
+            self.inner.get_cache().move_path_right::<K>();
             debug_assert!(right.key_count() > 0);
             self.inner.set_idx(0);
             Ok(Self { inner: self.inner, leaf: right })
@@ -345,7 +345,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
         if let Some(root) = self.inner.get_tree().root_as_inter() {
             let backup = {
                 let mut cache = self.inner.get_cache();
-                cache.fix_path_center();
+                cache.fix_path_center::<K>();
                 cache.to_vec()
             };
             // new cache, don't mix with original
@@ -358,12 +358,12 @@ impl<'a, K: Key, V: Value, S: Stats<K>> OccupiedEntry<'a, K, V, S> {
                 .search_leaf_with(|inter| inter.find_leaf_with_cache::<V, _, _>(&mut cache, &k))
                 .unwrap();
             assert_eq!(self.leaf, _leaf);
-            assert_eq!(backup, cache.to_vec());
+            assert_eq!(backup, cache.to_vec::<K>());
         }
     }
 }
 
-impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
+impl<'a, K: Key, V: Value, S: Stats> VacantEntry<'a, K, V, S> {
     /// Get a reference to the key
     #[inline]
     pub fn key(&self) -> &K {
@@ -462,7 +462,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
             if let Some(left) = leaf.get_left_node() {
                 let count = left.key_count();
                 debug_assert!(count > 0);
-                self.inner.get_cache().move_path_left();
+                self.inner.get_cache().move_path_left::<K>();
                 self.inner.set_idx(count - 1);
                 return Ok(OccupiedEntry { inner: self.inner, leaf: left });
             }
@@ -482,7 +482,7 @@ impl<'a, K: Key, V: Value, S: Stats<K>> VacantEntry<'a, K, V, S> {
                 return Ok(OccupiedEntry { inner: self.inner, leaf: leaf.clone() });
             } else if let Some(right) = leaf.get_right_node() {
                 debug_assert!(right.key_count() > 0);
-                self.inner.get_cache().move_path_right();
+                self.inner.get_cache().move_path_right::<K>();
                 self.inner.set_idx(0);
                 return Ok(OccupiedEntry { inner: self.inner, leaf: right });
             }

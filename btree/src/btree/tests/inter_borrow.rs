@@ -8,11 +8,9 @@ use std::vec::Vec;
 /// When the first child of parent splits, and left sibling has space
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_borrow_case1_rotate_left_first_child<S: Stats<CounterI32>>(
-    #[case] _s: S, setup_log: (),
-) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_borrow_case1_rotate_left_first_child<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -138,9 +136,9 @@ fn test_inter_borrow_case1_rotate_left_first_child<S: Stats<CounterI32>>(
 /// Test Case 2: idx == 2, borrow from left sibling
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_borrow_case2_rotate_left<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_borrow_case2_rotate_left<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -260,11 +258,9 @@ fn test_inter_borrow_case2_rotate_left<S: Stats<CounterI32>>(#[case] _s: S, setu
 /// - right_inter: has space (can receive rotated key)
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_borrow_case3_rotate_right_last_child<S: Stats<CounterI32>>(
-    #[case] _s: S, setup_log: (),
-) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_borrow_case3_rotate_right_last_child<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();
@@ -389,9 +385,9 @@ fn test_inter_borrow_case3_rotate_right_last_child<S: Stats<CounterI32>>(
 /// - right_inter: has space (can receive rotated key)
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_borrow_case4_rotate_right<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_borrow_case4_rotate_right<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     let leaf_cap = builder.leaf_cap();

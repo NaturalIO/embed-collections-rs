@@ -3,7 +3,7 @@ use captains_log::logfn;
 use rstest::rstest;
 use std::println;
 
-fn seek_cache_parent<'a, K: Key, V: Value, S: Stats<K>>(
+fn seek_cache_parent<'a, K: Key, V: Value, S: Stats>(
     map: &'a mut BTree<K, V, S>, stack: &'a mut S::BufferStack, key: &K,
 ) -> (&'a mut BTreeInner<K, V>, S::PathBufferRef<'a>, InterNode<K>, u8) {
     let (tree, stats) = (&mut map.inner, &mut map.stats);
@@ -39,9 +39,9 @@ fn seek_cache_parent<'a, K: Key, V: Value, S: Stats<K>>(
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_merge_right_height_3_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {
@@ -168,9 +168,9 @@ fn test_inter_underflow_merge_right_height_3_2<S: Stats<CounterI32>>(#[case] _s:
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_merge_left_height_3_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {
@@ -289,9 +289,9 @@ fn test_inter_underflow_merge_left_height_3_2<S: Stats<CounterI32>>(#[case] _s: 
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_merge_right_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {
@@ -436,9 +436,9 @@ fn test_inter_underflow_merge_right_height_3<S: Stats<CounterI32>>(#[case] _s: S
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_merge_left_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {
@@ -590,9 +590,9 @@ fn test_inter_underflow_merge_left_height_3<S: Stats<CounterI32>>(#[case] _s: S,
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_root_becomes_leaf<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {
@@ -671,11 +671,9 @@ fn test_inter_underflow_root_becomes_leaf<S: Stats<CounterI32>>(#[case] _s: S, s
 /// Uses CounterI32 to verify key memory management.
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_inter_underflow_single_leaf_inter_nodes_height_3<S: Stats<CounterI32>>(
-    #[case] _s: S, setup_log: (),
-) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_inter_underflow_single_leaf_inter_nodes_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
     {

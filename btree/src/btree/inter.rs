@@ -46,6 +46,20 @@ impl<K> From<NonNull<NodeHeader>> for InterNode<K> {
     }
 }
 
+impl<K> From<NodeBase> for InterNode<K> {
+    #[inline(always)]
+    fn from(base: NodeBase) -> Self {
+        Self { base, _phan: Default::default() }
+    }
+}
+
+impl<K> From<InterNode<K>> for NodeBase {
+    #[inline(always)]
+    fn from(node: InterNode<K>) -> Self {
+        node.base
+    }
+}
+
 // pub for test
 pub(crate) struct InterLayout {
     pub key_cap: u8,
@@ -320,7 +334,7 @@ impl<K: Ord> InterNode<K> {
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
-        C: PathBuffer<K>,
+        C: PathBuffer,
     {
         let mut height = self.height();
         let mut cur = self;
@@ -346,7 +360,7 @@ impl<K: Ord> InterNode<K> {
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
-        C: PathBuffer<K>,
+        C: PathBuffer,
     {
         let mut height = self.height();
         let mut cur = self;
@@ -369,7 +383,7 @@ impl<K: Ord> InterNode<K> {
     ///
     /// If cache is Some, will the cache
     #[inline]
-    pub fn find_first_leaf_with_cache<V, C: PathBuffer<K>>(self, cache: &mut C) -> LeafNode<K, V> {
+    pub fn find_first_leaf_with_cache<V, C: PathBuffer>(self, cache: &mut C) -> LeafNode<K, V> {
         let mut cur = self;
         let mut height = cur.height();
         loop {
@@ -404,7 +418,7 @@ impl<K: Ord> InterNode<K> {
     ///
     /// If cache is Some, will the cache
     #[inline]
-    pub fn find_last_leaf_with_cache<V, C: PathBuffer<K>>(self, cache: &mut C) -> LeafNode<K, V> {
+    pub fn find_last_leaf_with_cache<V, C: PathBuffer>(self, cache: &mut C) -> LeafNode<K, V> {
         let mut cur = self;
         let mut height = cur.height();
         loop {
@@ -607,7 +621,7 @@ impl<K: Ord> InterNode<K> {
     }
 
     #[inline]
-    pub fn find_child_branch<C: PathBuffer<K>>(
+    pub fn find_child_branch<C: PathBuffer>(
         &self, height: u8, mut idx: u8, left: bool, mut cache: Option<&mut C>,
     ) -> (Self, u8) {
         debug_assert!(height > 0);

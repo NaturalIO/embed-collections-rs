@@ -6,9 +6,9 @@ use rstest::*;
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_occupied_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_move_forward_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
@@ -63,9 +63,9 @@ fn test_occupied_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: 
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_occupied_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_move_backward_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
@@ -124,9 +124,9 @@ fn test_occupied_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log:
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_occupied_forward_same_leaf_height1<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_forward_same_leaf_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<u32, u32, S>::new();
     map.insert(10u32, 100u32);
@@ -153,9 +153,9 @@ fn test_occupied_forward_same_leaf_height1<S: Stats<u32>>(#[case] _s: S, setup_l
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_occupied_forward_cross_leaf_height1<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_forward_cross_leaf_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<u32, u32, S>::new();
     let cap = LeafNode::<u32, u32>::cap();
@@ -182,9 +182,9 @@ fn test_occupied_forward_cross_leaf_height1<S: Stats<u32>>(#[case] _s: S, setup_
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacent_move_forward_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
@@ -243,9 +243,9 @@ fn test_vacent_move_forward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u32>::default())]
-#[case(Compact::<u32>::default())]
-fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacent_move_backward_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut builder = TreeBuilder::<u32, u32, S>::default();
     let leaf_cap = builder.leaf_cap() as u32;
     // Construct Root -> [leaf0 | sep1 | leaf1]
@@ -308,9 +308,9 @@ fn test_vacent_move_backward_height_2<S: Stats<u32>>(#[case] _s: S, setup_log: (
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u8>::default())]
-#[case(Compact::<u8>::default())]
-fn test_vacant_forward_point_to_element_height1<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacant_forward_point_to_element_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<u8, u8, S>::new();
     map.insert(10, 100);
@@ -329,9 +329,9 @@ fn test_vacant_forward_point_to_element_height1<S: Stats<u8>>(#[case] _s: S, set
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_vacant_forward_at_leaf_end_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacant_forward_at_leaf_end_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -373,9 +373,9 @@ fn test_vacant_forward_at_leaf_end_height1<S: Stats<i32>>(#[case] _s: S, setup_l
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_occupied_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_backward_same_leaf_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
@@ -402,9 +402,9 @@ fn test_occupied_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_occupied_backward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_occupied_backward_cross_leaf_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -430,9 +430,9 @@ fn test_occupied_backward_cross_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_vacant_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacant_backward_same_leaf_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
@@ -449,9 +449,9 @@ fn test_vacant_backward_same_leaf_height1<S: Stats<i32>>(#[case] _s: S, setup_lo
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_vacant_backward_at_leaf_start_height1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_vacant_backward_at_leaf_start_height1<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     let mut map = BTree::<i32, i32, S>::new();
     let cap = LeafNode::<i32, i32>::cap();
@@ -478,9 +478,9 @@ fn test_vacant_backward_at_leaf_start_height1<S: Stats<i32>>(#[case] _s: S, setu
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<i32>::default())]
-#[case(Compact::<i32>::default())]
-fn test_alter_key_height_1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_alter_key_height_1<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<i32, i32, S>::new();
     map.insert(10, 100);
     map.insert(20, 200);
@@ -515,9 +515,9 @@ fn test_alter_key_height_1<S: Stats<i32>>(#[case] _s: S, setup_log: ()) {
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_alter_key_update_sep_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_alter_key_update_sep_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     {
         let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -553,11 +553,9 @@ fn test_alter_key_update_sep_height_2<S: Stats<CounterI32>>(#[case] _s: S, setup
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_alter_key_after_move_update_sep_height_2<S: Stats<CounterI32>>(
-    #[case] _s: S, setup_log: (),
-) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_alter_key_after_move_update_sep_height_2<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     {
         let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -603,9 +601,9 @@ fn test_alter_key_after_move_update_sep_height_2<S: Stats<CounterI32>>(
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<CounterI32>::default())]
-#[case(Compact::<CounterI32>::default())]
-fn test_alter_key_update_sep_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_alter_key_update_sep_height_3<S: Stats>(#[case] _s: S, setup_log: ()) {
     reset_alive_count();
     {
         let mut builder = TreeBuilder::<CounterI32, CounterI32, S>::default();
@@ -659,9 +657,9 @@ fn test_alter_key_update_sep_height_3<S: Stats<CounterI32>>(#[case] _s: S, setup
 
 #[logfn]
 #[rstest]
-#[case(TreeInfo::<u8>::default())]
-#[case(Compact::<u8>::default())]
-fn test_rangetree_swallow_forward<S: Stats<u8>>(#[case] _s: S, setup_log: ()) {
+#[case(TreeInfo::default())]
+#[case(Compact::default())]
+fn test_rangetree_swallow_forward<S: Stats>(#[case] _s: S, setup_log: ()) {
     let mut map = BTree::<u8, u8, S>::new();
 
     // Mimic RangeTree segments: [10, 20], [30, 10], [50, 10]

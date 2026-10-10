@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use std::println;
 use std::vec::Vec;
 
-fn _test_delete_all_seq<S: Stats<CounterI32>, F>(
+fn _test_delete_all_seq<S: Stats, F>(
     mut map: BTree<CounterI32, CounterI32, S>, count: u32, height: u8, print_f: F,
 ) where
     F: Fn(&BTree<CounterI32, CounterI32, S>),
@@ -174,13 +174,7 @@ fn test_large_mixed_random_batch_insert_delete(
     assert_eq!(alive_count(), 0, "All CounterI32 should be dropped");
 }
 
-fn _test_large_mixed_random_batch_insert_delete<
-    K: Key + Debug,
-    V: Key + Debug,
-    S: Stats<K>,
-    F,
-    FR,
->(
+fn _test_large_mixed_random_batch_insert_delete<K: Key + Debug, V: Key + Debug, S: Stats, F, FR>(
     batch_size: usize, iterations: usize, map: &mut BTree<K, V, S>, print_func: F, randf: FR,
     use_entry: bool,
 ) where
@@ -317,7 +311,7 @@ fn test_large_mix_remove_range_random(
         Err(_) => fastrand::u64(..),
     };
 
-    fn run_test<S: Stats<CounterI32>>(
+    fn run_test<S: Stats>(
         mut map: BTree<CounterI32, CounterI32, S>, count: usize, iterations: usize, seed: u64,
     ) {
         reset_alive_count();

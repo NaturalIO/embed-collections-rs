@@ -17,7 +17,7 @@ pub(super) use crate::compact::Compact;
 pub(super) use crate::large::TreeInfo;
 pub(super) use embed_collections_test::*;
 
-pub struct TreeBuilder<K: Key, V: Value, S: Stats<K>> {
+pub struct TreeBuilder<K: Key, V: Value, S: Stats> {
     leaf_count: usize,
     inter_count: u32,
     stats: S,
@@ -25,13 +25,13 @@ pub struct TreeBuilder<K: Key, V: Value, S: Stats<K>> {
     prev: Option<LeafNode<K, V>>,
 }
 
-impl<K: Key, V: Value, S: Stats<K>> Default for TreeBuilder<K, V, S> {
+impl<K: Key, V: Value, S: Stats> Default for TreeBuilder<K, V, S> {
     fn default() -> Self {
         Self { leaf_count: 0, inter_count: 0, len: 0, prev: None, stats: S::default() }
     }
 }
 
-impl<K: Key, V: Value, S: Stats<K>> TreeBuilder<K, V, S> {
+impl<K: Key, V: Value, S: Stats> TreeBuilder<K, V, S> {
     pub fn leaf_cap(&self) -> u8 {
         LeafNode::<K, V>::cap()
     }
