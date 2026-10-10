@@ -321,75 +321,11 @@ pub(crate) trait PathBuffer: Sized {
     }
 }
 
-impl<T: PathBuffer + Sized> PathBuffer for &mut T {
-    // --- stats method begins ---
-    // methods should belong to Stats, but we put here due to borrow checker issues
-
-    fn inc_leaf_count(&mut self) {
-        T::inc_leaf_count(self)
-    }
-
-    fn dec_leaf_count(&mut self) {
-        T::dec_leaf_count(self)
-    }
-
-    fn inc_inter_count(&mut self) {
-        T::inc_inter_count(self)
-    }
-
-    fn dec_inter_count(&mut self) {
-        T::dec_inter_count(self)
-    }
-
-    // --- stats method ends ---
-
-    /// The count of current level items cotains by the PathBuffer
-    fn buffer_len(&self) -> u8 {
-        T::buffer_len(self)
-    }
-
-    fn buffer_pos(&self) -> i8 {
-        T::buffer_pos(self)
-    }
-
-    /// The delta position of current entry to the PathBuffer.
-    /// < 0 for left, > 0 for right, ==0 for center
-    fn move_pos(&mut self, delta: i8) {
-        T::move_pos(self, delta)
-    }
-
-    /// Push one entry onto the cache stack, growing the buffer if needed.
-    fn _push(&mut self, inter: NodeBase, idx: u8) {
-        T::_push(self, inter, idx)
-    }
-
-    /// Pop the top entry from the cache stack.
-    fn _pop(&mut self) -> Option<(NodeBase, u8)> {
-        T::_pop(self)
-    }
-
-    #[inline]
-    unsafe fn _get_unchecked(&self, idx: u8) -> (NodeBase, u8) {
-        unsafe { T::_get_unchecked(self, idx) }
-    }
-
-    /// Reverse (bottom->top) iterator over the stack without consuming it.
-    #[inline]
-    fn iter<'a, K>(&'a self) -> PathBufferIter<'a, K, Self> {
-        PathBufferIter { idx: self.buffer_len(), buf: self, _phan: Default::default() }
-    }
-
-    /// Peek at the top of the stack (equivalent to `Various::last`).
-    fn last<K>(&self) -> Option<(InterNode<K>, u8)> {
-        T::last(self)
-    }
-}
-
 /// Reverse (top-of-stack → bottom) iterator produced by [`TreeInfo::_iter`].
 pub(crate) struct PathBufferIter<'a, K, T: PathBuffer> {
-    buf: &'a T,
-    idx: u8,
-    _phan: PhantomData<fn(&K)>,
+    pub buf: &'a T,
+    pub idx: u8,
+    pub _phan: PhantomData<fn(&K)>,
 }
 
 impl<'a, K, T: PathBuffer> Iterator for PathBufferIter<'a, K, T> {
