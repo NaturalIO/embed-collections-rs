@@ -13,9 +13,9 @@ mod leaf_delete;
 mod split;
 
 use super::{helper::*, inter::*, leaf::*, node::*, *};
-pub(super) use crate::compact::Compact;
-pub(super) use crate::large::TreeInfo;
-pub(super) use embed_collections_test::*;
+pub(crate) use crate::compact::Compact;
+pub(crate) use crate::large::TreeInfo;
+pub(crate) use embed_collections_test::*;
 
 pub struct TreeBuilder<K: Key, V: Value, S: Stats> {
     leaf_count: usize,

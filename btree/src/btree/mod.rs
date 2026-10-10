@@ -72,7 +72,7 @@ pub use iter::{IntoIter, Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut
 use tree::BTreeInner;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub trait Value: Sized + 'static {}
 

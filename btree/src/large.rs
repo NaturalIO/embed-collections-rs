@@ -5,7 +5,7 @@ use crate::btree::{
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 use core::fmt::{self, Debug};
 use core::mem::{align_of, size_of};
-use core::ptr::null_mut;
+use core::num::NonZeroUsize;
 
 pub type BTreeMap<K, V> = btree::BTree<K, V, TreeInfo>;
 pub use btree::cursor::Cursor;
@@ -24,7 +24,7 @@ struct TreeInfoHeader {
     inter_count: u32,
     /// Capacity of items can be stored except root
     cap: u8,
-    _padding: u8,
+    entry_idx: u8,
     /// len=1 means root is pushed (as root idx),
     /// len-1 is the items stored in the heap.
     len: u8,
@@ -37,21 +37,33 @@ struct TreeInfoHeader {
 /// Holds `leaf_count`, `inter_count`, and a growable path-cache stack in one
 /// contiguous allocation, decoupled from the `BTreeMap` struct itself.
 ///
-/// # Memory layout
+/// # Heap memory layout
+///
 /// `[TreeInfoHeader | (InterNode<K,V>, u32) × cap]`
 ///
 /// Initial buffer = one `CACHE_LINE_SIZE` block; grows by one block per overflow.
-pub struct TreeInfo {
-    // because PathBuffer should support mut during query tree, we need inner muttabilty
-    ptr: *mut TreeInfoHeader,
-}
+///
+/// # Stack memory layout
+///
+/// TreeInfo store either point, or ((entry_idx) << 8) | EMPTY_FLAG.
+///
+/// Because in our scenario iteration with `Entry` is hot path, to reduce moving cost, we pack
+/// entry_idx inside TreeInfo stack or Heap (`TreeInfoHeader`)
+///
+/// NOTE: we tried enum u8 and NonNull, but rustc does not pack it to usize.
+///
+/// Using NonZeroUsize will optimize `Option<BTreeMap>`
+pub struct TreeInfo(NonZeroUsize);
+
+const EMPTY_FLAG: usize = 1;
 
 unsafe impl Send for TreeInfo {}
 unsafe impl Sync for TreeInfo {}
 
 impl Default for TreeInfo {
+    #[inline]
     fn default() -> Self {
-        Self { ptr: null_mut() }
+        Self(unsafe { NonZeroUsize::new_unchecked(EMPTY_FLAG) })
     }
 }
 
@@ -97,11 +109,11 @@ impl StatsPriv for TreeInfo {
 
     #[cfg(test)]
     fn init_count(&mut self, leaf_count: usize, inter_count: u32) {
-        if let Some(header) = self.header_mut() {
+        if let Ok(header) = self.header_mut() {
             header.leaf_count = leaf_count;
             header.inter_count = inter_count;
         } else {
-            self._alloc(leaf_count, inter_count);
+            self._alloc(leaf_count, inter_count, 0);
         }
     }
 
@@ -123,18 +135,17 @@ impl StatsPriv for TreeInfo {
                 }
             };
             let (idx, is_equal) = leaf.search_smart(&key, is_seq);
-            let inner = TreeInfoEntry { tree, entry_idx: idx };
+            let mut inner = TreeInfoEntry { tree };
+            inner.set_idx(idx);
             if is_equal {
                 Entry::Occupied(OccupiedEntry { inner, leaf })
             } else {
                 Entry::Vacant(VacantEntry { inner, key, leaf: Some(leaf) })
             }
         } else {
-            Entry::Vacant(VacantEntry {
-                inner: TreeInfoEntry { tree, entry_idx: 0 },
-                key,
-                leaf: None,
-            })
+            let mut inner = TreeInfoEntry { tree };
+            inner.set_idx(0);
+            Entry::Vacant(VacantEntry { inner, key, leaf: None })
         }
     }
 
@@ -162,10 +173,11 @@ impl StatsPriv for TreeInfo {
             };
             let count = leaf.key_count();
             if count > 0 {
-                let inner = if FIRST {
-                    TreeInfoEntry { tree, entry_idx: 0 }
+                let mut inner = TreeInfoEntry { tree };
+                if FIRST {
+                    inner.set_idx(0);
                 } else {
-                    TreeInfoEntry { tree, entry_idx: count - 1 }
+                    inner.set_idx(count - 1);
                 };
                 return Some(OccupiedEntry { inner, leaf });
             }
@@ -190,7 +202,6 @@ where
     V: Value,
 {
     tree: &'a mut BTree<K, V, TreeInfo>,
-    entry_idx: u8,
 }
 
 impl<'a, K: Key, V: Value> EntryInner<K, V> for TreeInfoEntry<'a, K, V> {
@@ -213,12 +224,15 @@ impl<'a, K: Key, V: Value> EntryInner<K, V> for TreeInfoEntry<'a, K, V> {
 
     #[inline(always)]
     fn set_idx(&mut self, idx: u8) {
-        self.entry_idx = idx;
+        self.tree.stats.set_entry_idx(idx);
     }
 
     #[inline(always)]
     fn get_idx(&self) -> u8 {
-        self.entry_idx
+        match self.tree.stats.header() {
+            Ok(header) => header.entry_idx,
+            Err(entry_idx) => entry_idx,
+        }
     }
 }
 
@@ -239,9 +253,22 @@ impl TreeInfo {
     /// Reset the stack without freeing the buffer.
     #[inline]
     fn clear_cache(&mut self) {
-        if let Some(header) = self.header_mut() {
+        if self.0.get() & EMPTY_FLAG == 0 {
+            let header = self.header_mut_unwrap();
             header.len = 0;
             header.buffer_pos = 0;
+            header.entry_idx = 0;
+        } else {
+            *self = Self::default();
+        }
+    }
+
+    #[inline]
+    fn set_entry_idx(&mut self, entry_idx: u8) {
+        if self.0.get() & EMPTY_FLAG == 0 {
+            self.header_mut_unwrap().entry_idx = entry_idx;
+        } else {
+            self.0 = unsafe { NonZeroUsize::new_unchecked((entry_idx as usize) << 8 | EMPTY_FLAG) };
         }
     }
 
@@ -249,46 +276,47 @@ impl TreeInfo {
     #[inline]
     fn ensure_cap(&mut self, height: u8) {
         assert!(height < u8::MAX);
-        if height == 0 {
-            return;
-        }
-        let header = self.ptr;
-        if !header.is_null() {
-            unsafe {
-                if height <= (*header).cap {
+        match self.header() {
+            Ok(header) => {
+                if height <= header.cap {
                 } else {
-                    let old_cap = (*header).cap;
+                    let old_cap = header.cap;
                     // grow one CACHE_LINE_SIZE each time
                     let old_size = Self::buf_size_from_cap(old_cap);
                     // because the tree only insert with PathBuffer, it should grow one height at a time
                     let new_size = old_size + CACHE_LINE_SIZE;
                     let new_cap = Self::cal_cap(new_size);
                     let old_layout = Self::get_layout(old_size);
-                    let p = realloc(header as *mut u8, old_layout, new_size);
-                    if !p.is_null() {
-                        crate::trace_log!("grow pathbuf cap {old_cap}->{new_cap}");
-                        let header = p as *mut TreeInfoHeader;
-                        (*header).cap = new_cap;
-                        self.ptr = header;
-                    } else {
-                        handle_alloc_error(Self::get_layout(new_size));
+                    unsafe {
+                        let p = realloc(self.0.get() as *mut u8, old_layout, new_size);
+                        if !p.is_null() {
+                            crate::trace_log!("grow pathbuf cap {old_cap}->{new_cap}");
+                            let header = p as *mut TreeInfoHeader;
+                            (*header).cap = new_cap;
+                            self.0 = NonZeroUsize::new_unchecked(p as usize);
+                        } else {
+                            handle_alloc_error(Self::get_layout(new_size));
+                        }
                     }
                 }
             }
-        } else {
-            // assume current height = 1 and previously root=leaf
-            self._alloc(2, 1);
+            Err(entry_idx) => {
+                if height > 0 {
+                    // assume current height = 1 and previously root=leaf
+                    self._alloc(2, 1, entry_idx);
+                }
+            }
         }
     }
 
     #[inline]
     fn leaf_count(&self) -> usize {
-        if let Some(header) = self.header() { header.leaf_count } else { 1 }
+        if let Ok(header) = self.header() { header.leaf_count } else { 1 }
     }
 
     #[inline(always)]
     fn inter_count(&self) -> u32 {
-        if let Some(header) = self.header() { header.inter_count } else { 0 }
+        if let Ok(header) = self.header() { header.inter_count } else { 0 }
     }
 
     #[inline(always)]
@@ -321,7 +349,8 @@ impl TreeInfo {
     }
 
     #[inline]
-    fn _alloc(&mut self, leaf_count: usize, inter_count: u32) {
+    fn _alloc(&mut self, leaf_count: usize, inter_count: u32, entry_idx: u8) {
+        debug_assert!(self.header().is_err());
         unsafe {
             let layout = Self::get_layout(CACHE_LINE_SIZE);
             let cap = Self::cal_cap(CACHE_LINE_SIZE);
@@ -332,13 +361,12 @@ impl TreeInfo {
                 header.write(TreeInfoHeader {
                     leaf_count,
                     inter_count,
-                    _padding: 0,
+                    entry_idx,
                     cap,
                     len: 0,
                     buffer_pos: 0,
                 });
-                debug_assert!(self.ptr.is_null());
-                self.ptr = header;
+                self.0 = NonZeroUsize::new_unchecked(p as usize);
             } else {
                 handle_alloc_error(layout);
             }
@@ -346,47 +374,58 @@ impl TreeInfo {
     }
 
     #[inline]
-    fn header(&self) -> Option<&TreeInfoHeader> {
-        let p = self.ptr;
-        if !p.is_null() { Some(unsafe { &*p }) } else { None }
+    fn header(&self) -> Result<&TreeInfoHeader, u8> {
+        if self.0.get() & EMPTY_FLAG == 0 {
+            let p = self.0.get() as *mut TreeInfoHeader;
+            Ok(unsafe { &*p })
+        } else {
+            Err((self.0.get() >> 8) as u8)
+        }
     }
 
     #[inline]
-    fn header_mut(&mut self) -> Option<&mut TreeInfoHeader> {
-        let p = self.ptr;
-        if !p.is_null() { Some(unsafe { &mut *p }) } else { None }
+    fn header_mut(&mut self) -> Result<&mut TreeInfoHeader, u8> {
+        if self.0.get() & EMPTY_FLAG == 0 {
+            let p = self.0.get() as *mut TreeInfoHeader;
+            Ok(unsafe { &mut *p })
+        } else {
+            Err((self.0.get() >> 8) as u8)
+        }
     }
 
     #[inline]
-    fn header_mut_unwrap(&self) -> &mut TreeInfoHeader {
-        let p = self.ptr;
-        debug_assert!(!p.is_null());
+    fn header_mut_unwrap(&mut self) -> &mut TreeInfoHeader {
+        debug_assert_eq!(self.0.get() & EMPTY_FLAG, 0);
+        let p = self.0.get() as *mut TreeInfoHeader;
         unsafe { &mut *p }
     }
 
     #[inline]
     unsafe fn item_ptr(&self, idx: u8) -> *const (NodeBase, u8) {
-        let p = self.ptr;
+        debug_assert_eq!(self.0.get() & EMPTY_FLAG, 0);
         unsafe {
-            (p as *const u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE) as *const _
+            (self.0.get() as *const u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE)
+                as *const _
         }
     }
 
     #[inline]
     unsafe fn item_ptr_mut(&self, idx: u8) -> *mut (NodeBase, u8) {
-        let p = self.ptr;
-        unsafe { (p as *mut u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE) as *mut _ }
+        debug_assert_eq!(self.0.get() & EMPTY_FLAG, 0);
+        unsafe {
+            (self.0.get() as *mut u8).add(Self::ITEMS_OFFSET + idx as usize * Self::ITEM_SIZE)
+                as *mut _
+        }
     }
 }
 
 impl Drop for TreeInfo {
     #[inline]
     fn drop(&mut self) {
-        let p = self.ptr;
-        if !p.is_null() {
+        if self.0.get() & EMPTY_FLAG == 0 {
+            let p = self.0.get() as *mut TreeInfoHeader;
             unsafe {
                 let size = Self::buf_size_from_cap((*p).cap);
-                // InterNode does not have drop
                 dealloc(p as *mut u8, Self::get_layout(size));
             }
         }
@@ -398,10 +437,14 @@ impl PathBuffer for TreeInfo {
 
     #[inline(always)]
     fn inc_leaf_count(&mut self) {
-        if let Some(header) = self.header_mut() {
-            header.leaf_count += 1;
-        } else {
-            self._alloc(2, 1);
+        match self.header_mut() {
+            Ok(header) => {
+                header.leaf_count += 1;
+                crate::trace_log!("inc_leaf_count {}", header.leaf_count);
+            }
+            Err(entry_idx) => {
+                self._alloc(2, 1, entry_idx);
+            }
         }
     }
 
@@ -409,37 +452,48 @@ impl PathBuffer for TreeInfo {
     fn dec_leaf_count(&mut self) {
         self.header_mut_unwrap().leaf_count -= 1;
     }
+
+    /// # Safety
+    ///
+    /// on (height=1) root creation, caller should not call this function (inter_count init within
+    /// inc_leaf_count)
     #[inline(always)]
     fn inc_inter_count(&mut self) {
-        if let Some(header) = self.header_mut() {
-            header.inter_count += 1;
-        } else {
-            self._alloc(2, 1);
+        match self.header_mut() {
+            Ok(header) => {
+                header.inter_count += 1;
+                crate::trace_log!("inc inter_count {}", header.inter_count);
+            }
+            Err(_entry_idx) => {
+                unreachable!();
+            }
         }
     }
 
     #[inline(always)]
     fn dec_inter_count(&mut self) {
         self.header_mut_unwrap().inter_count -= 1;
+        crate::trace_log!("dec inter_count {}", self.header_mut_unwrap().inter_count);
     }
 
     // --- stats method ends ---
 
     /// The count of current level items cotains by the PathBuffer
     fn buffer_len(&self) -> u8 {
-        if let Some(header) = self.header() { header.len } else { 0 }
+        if let Ok(header) = self.header() { header.len } else { 0 }
     }
 
     /// The delta position of current entry to the PathBuffer.
     /// < 0 for left, > 0 for right, ==0 for center
     #[inline]
     fn buffer_pos(&self) -> i8 {
-        if let Some(header) = self.header() { header.buffer_pos } else { 0 }
+        if let Ok(header) = self.header() { header.buffer_pos } else { 0 }
     }
 
     #[inline]
     fn move_pos(&mut self, delta: i8) {
-        if let Some(header) = self.header_mut() {
+        // XXX should we keep the pos pack when heap is not alloced?
+        if let Ok(header) = self.header_mut() {
             header.buffer_pos += delta;
         }
     }
@@ -447,11 +501,13 @@ impl PathBuffer for TreeInfo {
     /// Push one entry onto the cache stack, growing the buffer if needed.
     #[inline]
     fn _push(&mut self, inter: NodeBase, idx: u8) {
-        if let Some(header) = self.header_mut() {
+        if let Ok(header) = self.header_mut() {
             let wi = header.len;
             header.len = wi + 1;
             debug_assert!(wi < header.cap, "{wi} {}", header.cap);
             unsafe { self.item_ptr_mut(wi).write((inter, idx)) };
+        } else {
+            unreachable!();
         }
     }
 
@@ -466,15 +522,15 @@ impl PathBuffer for TreeInfo {
     /// Pop the top entry from the cache stack.
     #[inline]
     fn _pop(&mut self) -> Option<(NodeBase, u8)> {
-        let header = self.header_mut()?;
-        let mut wi = header.len;
-        if wi > 0 {
-            wi -= 1;
-            header.len = wi;
-            unsafe { Some(self.item_ptr(wi).read()) }
-        } else {
-            None
+        if let Ok(header) = self.header_mut() {
+            let mut wi = header.len;
+            if wi > 0 {
+                wi -= 1;
+                header.len = wi;
+                return unsafe { Some(self.item_ptr(wi).read()) };
+            }
         }
+        None
     }
 }
 
@@ -507,5 +563,24 @@ impl<K: Key, V: Value> BTree<K, V, TreeInfo> {
             let cap = LeafNode::<K, V>::cap() as usize * self.leaf_count();
             self.inner.len as f32 / cap as f32 * 100.0
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::btree::tests::*;
+    use captains_log::logfn;
+    use rstest::*;
+
+    #[logfn]
+    #[rstest]
+    fn test_tree_info_path_buffer(setup_log: ()) {
+        let mut info = TreeInfo::default();
+        assert!(info.header().is_err());
+        info.ensure_cap(3);
+        assert!(info.header().ok().unwrap().cap >= 3);
+        info.ensure_cap(3);
     }
 }
