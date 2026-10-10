@@ -12,20 +12,49 @@
 //!   - All page is aligned in 4*CACHE_LINE (256 bytes on x86_64).
 //!   - Use Layout API to determine the capacity, offset and alignement for the keys and values.
 //!   - Keys is a tight array to enable efficient forward search for CPU pipeline.
-//!   - No parent pointer in the page, we fill PathBuffer during descending, and pop when working upward.
+//!   - No parent pointer in the page, saving the space.
+//!     - we fill reused PathBuffer during descending, and pop when working upward.
+//!     - PathBuffer only used during ops that require mutation of the map, so it's safe for
+//!       concurent reads.
 //!   - Avoid memory fragmentation for the allocator.
 //!
 //! There tree variants:
 //! - [various_map]:
 //!   - Delay page allocation by inlining K, V with option.
-//!   - Fallback to [compact] after inserting the 2nd element
+//!   - Fallback to std BTreeMap after inserting the 2nd element
 //! - [compact]
-//!   - For short-lived small size tree.
-//!   - Avoid allocation of PathBuffer on heap, until the tree-height grows > 2.
+//!   - For short-lived, small size tree.
+//!   - Avoid allocation of PathBuffer on heap, until the tree height grows pass threshold.
+//!     (>4 for insert/remove, >2 for entry ops)
 //!   - PathBuffer allocation is reused.
 //! - [large]
-//!   - For long-lived large size tree.
-//!   - Maintain a small statistic of page counts (inter and leaves), and PathBuffer, on the heap if tree-hight grows > 1
+//!   - For long-lived, large size tree.
+//!   - after tree height grows beyond 1, allocate a small heap for PathBuffer, and page statistic (inter and
+//!   leavse).
+//!
+//! Struct size:
+//!
+//! ```text
+//! std: BTreeMap<u32, u32>: 24
+//! std: Option<BTreeMap<u32, u32>>: 32
+//! std: VacantEntry<u32, u32>: 40
+//! std: OccupiedEntry<u32, u32>: 32
+//!
+//! compact: BTreeMap<u32, u32>: 24
+//! compact: Option<BTreeMap<u32, u32>>: 24
+//! compact: Entry<u32,u32>:  32
+//! compact: Option<Entry<u32, u32>>:  40
+//! compact: VacantEntry<u32, u32>: 32
+//! compact: OccupiedEntry<u32, u32>: 24
+//!
+//! large: BTreeMap 24
+//! large: Option<BTreeMap> 24
+//! large: Entry size: 24
+//! large: Option<Entry>: 32
+//! large: VacantEntry<u32, u32>: 24
+//! large: OccupiedEntry<u32, u32>: 16
+//!   
+//! ```
 //!
 //! ## Supported K, V types
 //!
