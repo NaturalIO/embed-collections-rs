@@ -86,7 +86,7 @@
 //! - each page has keys, values, pointers. the section of pointers may be wasted for leaves.
 //! - cursor API is still unstable, need nightly.
 //!
-//! embed-btree:
+//! crate::bptree:
 //! - faster sequential get & insert
 //! - faster iteration
 //! - faster teardown
@@ -98,29 +98,29 @@
 //!
 //! Entries:
 //! - Adjacent `Entry` (for iter and modification).
-//!   - [btree::Entry::peek_forward()]
-//!   - [btree::Entry::peek_backward()]
-//!   - [btree::Entry::move_forward()]
-//!   - [btree::Entry::move_backward()]
-//!   - [btree::VacantEntry::peek_forward()]
-//!   - [btree::VacantEntry::peek_backward()]
-//!   - [btree::VacantEntry::move_forward()]
-//!   - [btree::VacantEntry::move_backward()]
-//!   - [btree::OccupiedEntry::peek_forward()]
-//!   - [btree::OccupiedEntry::peek_backward()]
-//!   - [btree::OccupiedEntry::move_forward()]
-//!   - [btree::OccupiedEntry::move_backward()]
+//!   - [bptree::Entry::peek_forward()]
+//!   - [bptree::Entry::peek_backward()]
+//!   - [bptree::Entry::move_forward()]
+//!   - [bptree::Entry::move_backward()]
+//!   - [bptree::VacantEntry::peek_forward()]
+//!   - [bptree::VacantEntry::peek_backward()]
+//!   - [bptree::VacantEntry::move_forward()]
+//!   - [bptree::VacantEntry::move_backward()]
+//!   - [bptree::OccupiedEntry::peek_forward()]
+//!   - [bptree::OccupiedEntry::peek_backward()]
+//!   - [bptree::OccupiedEntry::move_forward()]
+//!   - [bptree::OccupiedEntry::move_backward()]
 //! - Alter key of an OccupiedEntry.
-//!   - [btree::OccupiedEntry::alter_key()]
+//!   - [bptree::OccupiedEntry::alter_key()]
 //!
 //! Batch removal:
-//! - [BTree::remove_range()](btree::BTree::remove_range)
-//! - [BTree::remove_range_with()](btree::BTree::remove_range_with)
+//! - [bptree::BTree::remove_range()](btree::BTree::remove_range)
+//! - [bptree::BTree::remove_range_with()](btree::BTree::remove_range_with)
 //!
 //! Readonly [Cursor](btree::Cursor):
-//! - [BTree::cursor()](btree::BTree::cursor)
-//! - [BTree::first_cursor()](btree::BTree::first_cursor)
-//! - [BTree::last_cursor()](btree::BTree::last_cursor)
+//! - [bptree::BTree::cursor()](btree::BTree::cursor)
+//! - [bptree::BTree::first_cursor()](btree::BTree::first_cursor)
+//! - [bptree::BTree::last_cursor()](btree::BTree::last_cursor)
 //!
 //! Use case:
 //! - [range-tree-rs](https://docs.rs/range-tree-rs)
@@ -180,13 +180,13 @@ extern crate std;
 #[allow(private_interfaces)]
 pub mod various_map;
 pub use various_map::VariousMap;
-/// generic interface of btree
-pub mod btree;
+/// generic interface of b+tree
+pub mod bptree;
 /// BtreeMap with no stats (for many short-live dataset)
 pub mod compact;
 /// BtreeMap with stats (for large love-live dataset)
 pub mod large;
-pub use btree::{Key, Value};
+pub use bptree::{Key, Value};
 
 pub type BTreeMap<K, V> = compact::BTreeMap<K, V>;
 

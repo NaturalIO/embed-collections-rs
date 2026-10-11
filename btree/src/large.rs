@@ -1,5 +1,5 @@
 use crate::CACHE_LINE_SIZE;
-use crate::btree::{
+use crate::bptree::{
     self, BTree, entry::*, helper::PathBuffer, inter::*, leaf::*, node::*, tree::BTreeInner, *,
 };
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
@@ -7,13 +7,13 @@ use core::fmt::{self, Debug};
 use core::mem::{align_of, size_of};
 use core::num::NonZeroUsize;
 
-pub type BTreeMap<K, V> = btree::BTree<K, V, TreeInfo>;
-pub use btree::cursor::Cursor;
-pub use btree::iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
-pub type IntoIter<K, V> = btree::iter::IntoIter<K, V, TreeInfo>;
-pub type Entry<'a, K, V> = btree::entry::Entry<'a, K, V, TreeInfo>;
-pub type OccupiedEntry<'a, K, V> = btree::entry::OccupiedEntry<'a, K, V, TreeInfo>;
-pub type VacantEntry<'a, K, V> = btree::entry::VacantEntry<'a, K, V, TreeInfo>;
+pub type BTreeMap<K, V> = bptree::BTree<K, V, TreeInfo>;
+pub use bptree::cursor::Cursor;
+pub use bptree::iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
+pub type IntoIter<K, V> = bptree::iter::IntoIter<K, V, TreeInfo>;
+pub type Entry<'a, K, V> = bptree::entry::Entry<'a, K, V, TreeInfo>;
+pub type OccupiedEntry<'a, K, V> = bptree::entry::OccupiedEntry<'a, K, V, TreeInfo>;
+pub type VacantEntry<'a, K, V> = bptree::entry::VacantEntry<'a, K, V, TreeInfo>;
 
 /// Compact heap-allocated metadata for `BTreeMap`.
 ///
@@ -668,7 +668,7 @@ impl<K: Key, V: Value> BTree<K, V, TreeInfo> {
 #[cfg(test)]
 mod tests {
 
-    use crate::btree::tests::*;
+    use crate::bptree::tests::*;
     use captains_log::logfn;
     use rstest::*;
 

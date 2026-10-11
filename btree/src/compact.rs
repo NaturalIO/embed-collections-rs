@@ -1,5 +1,5 @@
 use crate::CACHE_LINE_SIZE;
-use crate::btree::{
+use crate::bptree::{
     self, BTree, entry::EntryInner, helper::PathBuffer, inter::*, node::*, tree::BTreeInner, *,
 };
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
@@ -10,13 +10,13 @@ use core::mem::{MaybeUninit, align_of, size_of, transmute};
 use core::num::{NonZeroU8, NonZeroU64};
 use core::ptr::null_mut;
 
-pub type BTreeMap<K, V> = btree::BTree<K, V, Compact>;
-pub use btree::cursor::Cursor;
-pub use btree::iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
-pub type IntoIter<K, V> = btree::iter::IntoIter<K, V, Compact>;
-pub type Entry<'a, K, V> = btree::entry::Entry<'a, K, V, Compact>;
-pub type OccupiedEntry<'a, K, V> = btree::entry::OccupiedEntry<'a, K, V, Compact>;
-pub type VacantEntry<'a, K, V> = btree::entry::VacantEntry<'a, K, V, Compact>;
+pub type BTreeMap<K, V> = bptree::BTree<K, V, Compact>;
+pub use bptree::cursor::Cursor;
+pub use bptree::iter::{Iter, IterMut, Keys, Range, RangeMut, Values, ValuesMut};
+pub type IntoIter<K, V> = bptree::iter::IntoIter<K, V, Compact>;
+pub type Entry<'a, K, V> = bptree::entry::Entry<'a, K, V, Compact>;
+pub type OccupiedEntry<'a, K, V> = bptree::entry::OccupiedEntry<'a, K, V, Compact>;
+pub type VacantEntry<'a, K, V> = bptree::entry::VacantEntry<'a, K, V, Compact>;
 
 /// Compact metadata for `BTreeMap`.
 ///
