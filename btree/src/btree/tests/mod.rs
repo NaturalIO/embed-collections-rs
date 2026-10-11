@@ -12,7 +12,7 @@ mod leaf_borrow;
 mod leaf_delete;
 mod split;
 
-use super::{helper::*, inter::*, leaf::*, node::*, *};
+use super::*;
 pub(crate) use crate::compact::Compact;
 pub(crate) use crate::large::TreeInfo;
 pub(crate) use embed_collections_test::*;

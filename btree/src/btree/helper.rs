@@ -82,7 +82,7 @@ pub(crate) trait PathBuffer: Sized {
                 debug_assert!(pos < 0);
                 let move_step = (-pos) as u8;
                 if idx > 0 {
-                    if move_step as u8 <= idx {
+                    if move_step <= idx {
                         // 0 < (-pos) <= idx
                         return Some((parent, idx - move_step)); // have common parent
                     } else {

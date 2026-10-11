@@ -548,7 +548,7 @@ impl PathBuffer for TreeInfo {
         if wi > 0 {
             wi -= 1;
             header.len = wi;
-            return unsafe { Some(self.item_ptr(wi).read()) };
+            unsafe { Some(self.item_ptr(wi).read()) }
         } else {
             None
         }
@@ -560,7 +560,7 @@ impl PathBuffer for TreeInfo {
         let mut wi = header.len;
         if wi > 0 {
             wi -= 1;
-            return unsafe { Some(self.item_ptr(wi).read()) };
+            unsafe { Some(self.item_ptr(wi).read()) }
         } else {
             None
         }
@@ -668,7 +668,6 @@ impl<K: Key, V: Value> BTree<K, V, TreeInfo> {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
     use crate::btree::tests::*;
     use captains_log::logfn;
     use rstest::*;

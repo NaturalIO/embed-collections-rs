@@ -307,7 +307,7 @@ impl<K, V> LeafNode<K, V> {
             }
             self.base._search::<K, Q>(Self::key_offset(), count, key)
         } else {
-            return (0, false);
+            (0, false)
         }
     }
 

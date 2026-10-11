@@ -33,7 +33,11 @@ unsafe impl Sync for Compact {}
 
 impl Default for Compact {
     fn default() -> Self {
-        Self(unsafe { NonZeroU64::new_unchecked(transmute(CompactBufHeader::default())) })
+        Self(unsafe {
+            NonZeroU64::new_unchecked(transmute::<CompactBufHeader, u64>(
+                CompactBufHeader::default(),
+            ))
+        })
     }
 }
 
@@ -240,10 +244,10 @@ impl StatsPriv for Compact {
             if this & (STACK_FLAG as u64) > 0 {
                 heap_ptr = null_mut();
                 let _header: &CompactBufHeader = transmute(&self.0);
-                header = _header.clone();
+                header = *_header;
             } else {
                 heap_ptr = this as *mut CompactBufHeader;
-                header = (*heap_ptr).clone();
+                header = *heap_ptr;
             }
         }
         header.clear();
@@ -527,7 +531,7 @@ impl<const N: usize> CompactBufCommon for CompactBufIntoIter<N> {
             debug_assert!(i < cap, "i {i} >= cap {cap}");
         }
         unsafe {
-            let p = (ptr as *mut u8).add(Compact::ITEMS_OFFSET) as *mut (NodeBase, u8);
+            let p = ptr.add(Compact::ITEMS_OFFSET) as *mut (NodeBase, u8);
             p.add(i as usize)
         }
     }
