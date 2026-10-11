@@ -40,15 +40,13 @@ pub(crate) trait PathBuffer: Sized {
 
     fn buffer_pos(&self) -> i8;
 
-    /// The delta position of current entry to the PathBuffer.
-    /// < 0 for left, > 0 for right, ==0 for center
-    fn move_pos(&mut self, delta: i8);
-
     /// Push one entry onto the cache stack, growing the buffer if needed.
     fn _push(&mut self, inter: NodeBase, idx: u8);
 
     /// Pop the top entry from the cache stack.
     fn _pop(&mut self) -> Option<(NodeBase, u8)>;
+
+    fn _set_pos(&mut self, buffer_pos: i8);
 
     unsafe fn _get_unchecked(&self, idx: u8) -> (NodeBase, u8);
 
@@ -76,42 +74,49 @@ pub(crate) trait PathBuffer: Sized {
     }
 
     #[inline]
-    fn _move_left_and_pop<K: Ord, F>(&mut self, mut post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn _move_left_and_pop<K: Ord, F>(
+        &mut self, mut pos: i8, mut post_callback: F,
+    ) -> Option<(InterNode<K>, u8)>
     where
         F: FnMut(&mut Self, InterNode<K>),
     {
-        while let Some((_parent, idx)) = self._pop() {
-            let parent = InterNode::<K>::from(_parent);
-            let pos = self.buffer_pos();
-            debug_assert!(pos < 0);
-            let move_step = (-pos) as u8;
-            if idx > 0 {
-                if move_step > idx {
-                    self.move_pos(idx as i8);
+        if let Some((_parent, mut idx)) = self._pop() {
+            let mut parent = InterNode::<K>::from(_parent);
+            loop {
+                debug_assert!(pos < 0);
+                let move_step = (-pos) as u8;
+                if idx > 0 {
+                    if move_step as u8 <= idx {
+                        // 0 < (-pos) <= idx
+                        return Some((parent, idx - move_step)); // have common parent
+                    } else {
+                        // idx < (-pos) <= i8::MAX
+                        pos += idx as i8 + 1
+                    }
                 } else {
-                    self.move_pos(move_step as i8);
-                    return Some((parent, idx - move_step)); // have common parent
+                    pos += 1;
                 }
-            }
-            // only move 1 since we change the branch, leave the rest to the loop
-            self.move_pos(1);
-            let pre_height = parent.height();
-            post_callback(self, parent);
-            let cond = |_node: &InterNode<K>, idx: u8| -> bool { idx > 0 };
-            // this is for entry API, we already know there is a previous node
-            if let Some((grand_parent, grand_idx)) =
-                _move_to_ancestor!(self, _pop, cond, post_callback)
-            {
-                let (parent, idx) =
-                    grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
-                if self.buffer_pos() == 0 {
-                    return Some((parent, idx));
-                } else {
+                // the parent of this leaf reach the left-most idx, jump to the left through ancestor
+                let pre_height = parent.height();
+                post_callback(self, parent);
+                let cond = |_node: &InterNode<K>, idx: u8| -> bool { idx > 0 };
+                // this is for entry API, we already know there is a previous node
+                if let Some((grand_parent, grand_idx)) =
+                    _move_to_ancestor!(self, _pop, cond, post_callback)
+                {
+                    // find right-most branch
+                    (parent, idx) = grand_parent.find_child_branch::<false, Self>(
+                        pre_height,
+                        grand_idx - 1,
+                        self,
+                    );
+                    if pos == 0 {
+                        return Some((parent, idx));
+                    }
                     // continue to move left
-                    self._push(parent.into(), idx);
+                } else {
+                    return None;
                 }
-            } else {
-                return None;
             }
         }
         None
@@ -119,46 +124,53 @@ pub(crate) trait PathBuffer: Sized {
 
     /// Return the last parent
     #[inline]
-    fn _move_right_and_pop<K: Ord, F>(&mut self, mut post_callback: F) -> Option<(InterNode<K>, u8)>
+    fn _move_right_and_pop<K: Ord, F>(
+        &mut self, mut pos: i8, mut post_callback: F,
+    ) -> Option<(InterNode<K>, u8)>
     where
         F: FnMut(&mut Self, InterNode<K>),
     {
         // move of the time move_step is just 1
-        while let Some((_parent, idx)) = self._pop() {
-            let parent = InterNode::<K>::from(_parent);
-            let move_step = self.buffer_pos();
-            debug_assert!(move_step > 0);
-            let right_count = parent.key_count() - idx;
-            if right_count > 0 {
-                if right_count < move_step as u8 {
-                    self.move_pos(-(right_count as i8));
+        if let Some((_parent, mut idx)) = self._pop() {
+            let mut parent = InterNode::<K>::from(_parent);
+            loop {
+                debug_assert!(pos > 0);
+                let right_count = parent.key_count() - idx;
+                if right_count > 0 {
+                    if right_count >= pos as u8 {
+                        // pos: (0, right_count]
+                        idx += pos as u8;
+                        return Some((parent, idx)); // have common parent
+                    } else {
+                        // pos: (right_count, i8::MAX]
+                        pos -= right_count as i8 - 1;
+                    }
                 } else {
-                    self.move_pos(-move_step);
-                    debug_assert_eq!(self.buffer_pos(), 0);
-                    return Some((parent, idx + move_step as u8)); // have common parent
+                    pos -= 1;
                 }
-            }
-            // parent idx reach the end, will not visit again
-            let pre_height = parent.height();
-            self.move_pos(-1);
-            post_callback(self, parent);
-            // only move 1 since we change the branch, leave the rest to the loop
-            if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
-                self,
-                _pop,
-                |node: &InterNode<K>, idx: u8| -> bool { node.key_count() > idx },
-                post_callback
-            ) {
-                let (parent, idx) =
-                    grand_parent.find_child_branch(pre_height, grand_idx + 1, true, Some(self));
-                if self.buffer_pos() == 0 {
-                    return Some((parent, idx));
-                } else {
+
+                // the parent of this leaf reach the right most idx, jump to the right through ancestor
+                let pre_height = parent.height();
+                post_callback(self, parent);
+                if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
+                    self,
+                    _pop,
+                    |node: &InterNode<K>, idx: u8| -> bool { node.key_count() > idx },
+                    post_callback
+                ) {
+                    // find left-most branch
+                    (parent, idx) = grand_parent.find_child_branch::<true, Self>(
+                        pre_height,
+                        grand_idx + 1,
+                        self,
+                    );
+                    if pos == 0 {
+                        return Some((parent, idx));
+                    }
                     // continue to move right
-                    self._push(parent.into(), idx);
+                } else {
+                    return None;
                 }
-            } else {
-                return None;
             }
         }
         None
@@ -207,56 +219,69 @@ pub(crate) trait PathBuffer: Sized {
     /// For moving the Entry position
     #[inline(always)]
     fn move_path_left<K: Ord>(&mut self) {
+        let mut pos = self.buffer_pos();
         // We delay the cache adjustment until pop because may not need to visit the parent
-        if self.buffer_pos() > i8::MIN {
+        if pos > i8::MIN {
         } else {
-            self._fix_center_from_left::<K>();
+            self._fix_center_from_left::<K>(pos);
+            pos = 0;
         }
-        self.move_pos(-1);
+        pos -= 1;
+        self._set_pos(pos);
     }
 
     /// For moving the Entry position
     #[inline(always)]
     fn move_path_right<K: Ord>(&mut self) {
+        let mut pos = self.buffer_pos();
         // We delay the cache adjustment until pop because may not need to visit the parent
-        if self.buffer_pos() < i8::MAX {
+        if pos < i8::MAX {
         } else {
-            self._fix_center_from_right::<K>();
+            self._fix_center_from_right::<K>(pos);
+            pos = 0;
         }
-        self.move_pos(1);
+        pos += 1;
+        self._set_pos(pos);
     }
 
+    // NOTE: should reset pos=0 to header after this
     #[inline(always)]
-    fn _fix_center_from_left<K: Ord>(&mut self) {
-        debug_assert!(self.buffer_pos() < 0);
-        if let Some((parent, idx)) = self._move_left_and_pop::<K, _>(dummy_post_callback::<K, Self>)
-        {
-            self._push(parent.into(), idx);
-        }
-        debug_assert_eq!(self.buffer_pos(), 0);
-    }
-
-    #[inline(always)]
-    fn _fix_center_from_right<K: Ord>(&mut self) {
-        debug_assert!(self.buffer_pos() > 0);
+    fn _fix_center_from_left<K: Ord>(&mut self, pos: i8) {
+        debug_assert_eq!(self.buffer_pos(), pos);
+        debug_assert!(pos < 0);
         if let Some((parent, idx)) =
-            self._move_right_and_pop::<K, _>(dummy_post_callback::<K, Self>)
+            self._move_left_and_pop::<K, _>(pos, dummy_post_callback::<K, Self>)
         {
             self._push(parent.into(), idx);
         }
-        debug_assert_eq!(self.buffer_pos(), 0);
+    }
+
+    // NOTE: should reset pos=0 to header after this
+    #[inline(always)]
+    fn _fix_center_from_right<K: Ord>(&mut self, pos: i8) {
+        debug_assert_eq!(self.buffer_pos(), pos);
+        debug_assert!(pos > 0);
+        if let Some((parent, idx)) =
+            self._move_right_and_pop::<K, _>(pos, dummy_post_callback::<K, Self>)
+        {
+            self._push(parent.into(), idx);
+        }
     }
 
     #[inline(always)]
     fn fix_path_center<K: Ord>(&mut self) {
         let pos = self.buffer_pos();
-        if pos == 0 { // most frequent path
-        } else if pos > 0 {
-            self._fix_center_from_right::<K>();
+        if pos == 0 {
+            // most frequent path
+            return;
+        }
+        if pos > 0 {
+            self._fix_center_from_right::<K>(pos);
         } else {
             debug_assert!(pos < 0);
-            self._fix_center_from_left::<K>();
+            self._fix_center_from_left::<K>(pos);
         }
+        self._set_pos(0);
     }
 
     #[inline(always)]
@@ -269,14 +294,16 @@ pub(crate) trait PathBuffer: Sized {
     #[inline(always)]
     fn pop_path<K: Ord>(&mut self) -> Option<(InterNode<K>, u8)> {
         let pos = self.buffer_pos();
-        if pos == 0 {
-            self._pop().map(|(node, idx)| (InterNode::from(node), idx))
+        let r = if pos == 0 {
+            return self._pop().map(|(node, idx)| (InterNode::from(node), idx));
         } else if pos > 0 {
-            self._move_right_and_pop::<K, _>(dummy_post_callback::<K, Self>)
+            self._move_right_and_pop::<K, _>(pos, dummy_post_callback::<K, Self>)
         } else {
             debug_assert!(pos < 0);
-            self._move_left_and_pop::<K, _>(dummy_post_callback::<K, Self>)
-        }
+            self._move_left_and_pop::<K, _>(pos, dummy_post_callback::<K, Self>)
+        };
+        self._set_pos(0);
+        r
     }
 
     // for dropping the tree, post order visit, `post_callback` should dealloc on the node
@@ -287,15 +314,24 @@ pub(crate) trait PathBuffer: Sized {
     where
         F: FnMut(&mut Self, InterNode<K>) + Clone,
     {
-        if self.buffer_pos() < i8::MAX {
+        let old_pos = self.buffer_pos();
+        let mut pos = old_pos;
+        if pos < i8::MAX {
         } else {
-            self._fix_center_from_right::<K>();
+            self._fix_center_from_right::<K>(pos);
+            pos = 0;
         }
-        self.move_pos(1);
-        self._move_right_and_pop::<K, F>(post_callback)
+        pos += 1;
+        let r = self._move_right_and_pop::<K, F>(pos, post_callback);
+        if old_pos == 0 {
+            r
+        } else {
+            self._set_pos(0);
+            r
+        }
     }
 
-    // for dropping the tree, post order visit in reversed order, `post_callback` should dealloc on the node
+    // for backward IntoIter the tree, post order visit in reversed order, `post_callback` should dealloc on the node
     #[inline(always)]
     fn move_path_left_and_pop_l1<K: Ord, F>(
         &mut self, post_callback: F,
@@ -303,12 +339,21 @@ pub(crate) trait PathBuffer: Sized {
     where
         F: Fn(&mut Self, InterNode<K>) + Clone,
     {
-        if self.buffer_pos() > i8::MIN {
+        let old_pos = self.buffer_pos();
+        let mut pos = old_pos;
+        if pos > i8::MIN {
         } else {
-            self._fix_center_from_left::<K>();
+            self._fix_center_from_left::<K>(pos);
+            pos = 0;
         }
-        self.move_pos(-1);
-        self._move_left_and_pop::<K, F>(post_callback)
+        pos -= 1;
+        let r = self._move_left_and_pop::<K, F>(pos, post_callback);
+        if old_pos == 0 {
+            r
+        } else {
+            self._set_pos(0);
+            r
+        }
     }
 
     #[cfg(test)]
