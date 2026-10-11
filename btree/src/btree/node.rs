@@ -202,17 +202,21 @@ impl NodeBase {
         let count = self.key_count();
         unsafe {
             let key_p = self.item_ptr_mut::<K>(key_header_offset, idx);
-            if idx < count {
+            let value_p = self.item_ptr_mut::<V>(value_header_offset, idx);
+            if idx == count {
+            } else {
+                debug_assert!(idx < count);
                 ptr::copy(key_p, key_p.add(1), (count - idx) as usize);
+                if size_of::<V>() > 0 {
+                    ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
+                }
             }
             key_p.write(key);
-            let value_p = self.item_ptr_mut::<V>(value_header_offset, idx);
             // if V is ZST, value_p will overlap with key space,
-            // don't worry, ptr write with ZST will do nothing
-            if idx < count && size_of::<V>() > 0 {
-                ptr::copy(value_p, value_p.add(1), (count - idx) as usize);
+            // ptr write with ZST will do nothing ?.
+            if size_of::<V>() > 0 {
+                value_p.write(value);
             }
-            value_p.write(value);
             self.set_count(count + 1);
             value_p
         }
