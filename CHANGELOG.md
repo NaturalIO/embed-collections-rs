@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- btree: Add `compart` module for short-term dataset and `large` module for long-term dataset with statistics
-         Optimize struct size for `Option`. `embed_btree::BTreeMap` now alias to `embed_btree::compact::BTreeMap`.
+- btree: Add `compact` module for short-term dataset and `large` module for long-term dataset with statistics
+         Optimize struct size for `Option`. `embed_btree::BTreeMap` now aliases to `embed_btree::compact::BTreeMap`.
 
 ## [embed-slist 0.1.1] - 2026-09-24
 
