@@ -162,7 +162,7 @@ impl Compact {
         let new_cap: u8;
         let new_p;
         // STACK_FLAG == 1 can represent root, and on heap is 1 + real number
-        if root_height < (N as u8) + cur_cap {
+        if root_height <= (N as u8) + cur_cap {
             return header;
         }
         let need_cap = root_height - 1 - N as u8;
@@ -753,8 +753,12 @@ impl<'a, K: Key, V: Value> EntryInner<K, V> for CompactEntry<'a, K, V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bptree::tests::*;
+    use captains_log::logfn;
     use core::mem::size_of;
+    use rstest::*;
     use std::println;
+    use std::vec::Vec;
 
     #[test]
     fn test_compact_buf_size() {
@@ -764,5 +768,61 @@ mod tests {
         println!("owned buf size: {}", size_of::<OwnedBuf>());
         //        println!("CompactBufferStack {}", size_of::<CompactBufferStack>());
         println!("CompactEntry {}", size_of::<CompactEntry::<u32, u32>>());
+    }
+
+    #[logfn]
+    #[rstest]
+    fn test_compact_buf_path_buffer(setup_log: ()) {
+        fn test_push_pop(info: &mut Compact, height: u8) {
+            let mut nodes: Vec<InterNode<u32>> = Vec::new();
+            let root = unsafe { InterNode::<u32>::alloc(height) };
+            let mut stack = CompactBufStack::<STACK_CAP>::default();
+            let mut cache = info.get_cache(&mut stack, Some(root.clone()));
+            cache.push_path(root.clone(), height);
+            nodes.push(root);
+            for i in 1..height {
+                let node = unsafe { InterNode::<u32>::alloc(height - i) };
+                cache.push_path(node.clone(), height - i);
+                nodes.push(node);
+            }
+            let mut _nodes = Vec::new();
+            let mut i = 0;
+            while let Some((node, idx)) = cache.pop_path() {
+                i += 1;
+                assert_eq!(idx, i);
+                _nodes.insert(0, node);
+            }
+            assert_eq!(i, height);
+            assert_eq!(nodes, _nodes);
+            for node in nodes {
+                node.dealloc::<false>();
+            }
+        }
+        {
+            let mut info = Compact::default();
+            assert!(info.try_heap_ptr().is_null());
+            let inner0 = info.0.get();
+            assert_eq!(inner0 & (STACK_FLAG as u64), STACK_FLAG as u64);
+            assert_eq!(info.get_header().cap.get(), STACK_FLAG);
+            assert_eq!(STACK_CAP, 3);
+
+            info.ensure_cap::<STACK_CAP>(4);
+            let inner1 = info.0.get();
+            assert_eq!(inner0 & (STACK_FLAG as u64), STACK_FLAG as u64);
+            assert_eq!(info.get_header().cap.get(), STACK_FLAG);
+            info.ensure_cap::<STACK_CAP>(4);
+            assert_eq!(info.0.get(), inner1); // not changed
+            test_push_pop(&mut info, 4);
+
+            info.ensure_cap::<STACK_CAP>(7);
+            assert_eq!(info.get_header().cap.get(), 3 + 1); // heap + 1
+            assert!(info.0.get() != inner1); // re-alloc
+            test_push_pop(&mut info, 7);
+            info.ensure_cap::<STACK_CAP>(9);
+            // round up
+            assert_eq!(info.get_header().cap.get(), 3 + 4 + 1);
+            test_push_pop(&mut info, 10);
+            test_push_pop(&mut info, 3 + 4 + 1 + STACK_CAP as u8);
+        }
     }
 }
