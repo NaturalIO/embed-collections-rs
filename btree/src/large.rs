@@ -668,17 +668,59 @@ impl<K: Key, V: Value> BTree<K, V, TreeInfo> {
 #[cfg(test)]
 mod tests {
 
+    use super::*;
     use crate::bptree::tests::*;
     use captains_log::logfn;
     use rstest::*;
+    use std::vec::Vec;
 
     #[logfn]
     #[rstest]
     fn test_tree_info_path_buffer(setup_log: ()) {
-        let mut info = TreeInfo::default();
-        assert!(info.header().is_none());
-        info.ensure_cap(3);
-        assert!(info.header().unwrap().cap >= 3);
-        info.ensure_cap(3);
+        fn test_push_pop(info: &mut TreeInfo, height: u8) {
+            let mut nodes: Vec<InterNode<u32>> = Vec::new();
+            let root = unsafe { InterNode::<u32>::alloc(height) };
+            let mut _temp = ();
+            let cache = info.get_cache(&mut _temp, Some(root.clone()));
+            cache.push_path(root.clone(), height);
+            nodes.push(root);
+            for i in 1..height {
+                let node = unsafe { InterNode::<u32>::alloc(height - i) };
+                cache.push_path(node.clone(), height - i);
+                nodes.push(node);
+            }
+            let mut _nodes = Vec::new();
+            let mut i = 0;
+            while let Some((node, idx)) = cache.pop_path() {
+                i += 1;
+                assert_eq!(idx, i);
+                _nodes.insert(0, node);
+            }
+            assert_eq!(i, height);
+            assert_eq!(nodes, _nodes);
+            for node in nodes {
+                node.dealloc::<false>();
+            }
+        }
+        {
+            let mut info = TreeInfo::default();
+            assert!(info.header().is_none());
+            let inner0 = info.0.get();
+            assert_eq!(inner0 & EMPTY_FLAG, EMPTY_FLAG);
+            info.ensure_cap(3);
+            let inner1 = info.0.get();
+            assert_eq!(inner1 & EMPTY_FLAG, 0);
+            assert_eq!(info.header().unwrap().cap, 3);
+            info.ensure_cap(3);
+            assert_eq!(info.0.get(), inner1); // not changed
+            test_push_pop(&mut info, 3);
+
+            assert_eq!(info.header().unwrap().cap, 3);
+            info.ensure_cap(7);
+            assert!(info.0.get() != inner1); // re-alloc
+            assert_eq!(info.header().unwrap().cap, 7);
+
+            test_push_pop(&mut info, 7);
+        }
     }
 }
