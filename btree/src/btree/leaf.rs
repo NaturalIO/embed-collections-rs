@@ -297,17 +297,18 @@ impl<K, V> LeafNode<K, V> {
         Q: Ord + ?Sized,
     {
         let count = self.key_count();
-        if is_seq {
-            if count > 0 {
+        if count > 0 {
+            if !is_seq {
+            } else {
                 let key_ref: &Q = unsafe { (*self.key_ptr(count - 1)).assume_init_ref().borrow() };
                 if key_ref < key {
                     return (count, false);
                 }
-            } else {
-                return (0, false);
             }
+            self.base._search::<K, Q>(Self::key_offset(), count, key)
+        } else {
+            return (0, false);
         }
-        self.base._search::<K, Q>(Self::key_offset(), count, key)
     }
 
     /// Insert key-value at index (assuming there is space)

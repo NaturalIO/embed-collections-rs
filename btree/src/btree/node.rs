@@ -114,8 +114,7 @@ impl NodeBase {
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr<T>(&self, start_offset: usize, idx: u8) -> *const T {
-        let v_size = size_of::<T>();
-        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
+        unsafe { NodeHeader::get_field::<T>(self.header, start_offset).add(idx as usize) }
     }
 
     /// Get pointer to key at index with given header offset
@@ -125,8 +124,7 @@ impl NodeBase {
     /// we should enough item_size has a minminum value aligned to PTR_ALIGN during cal_layout
     #[inline(always)]
     pub unsafe fn item_ptr_mut<T>(&mut self, start_offset: usize, idx: u8) -> *mut T {
-        let v_size = size_of::<T>();
-        unsafe { NodeHeader::get_field::<T>(self.header, start_offset + idx as usize * v_size) }
+        unsafe { NodeHeader::get_field::<T>(self.header, start_offset).add(idx as usize) }
     }
 
     /// Get count of items in the node
