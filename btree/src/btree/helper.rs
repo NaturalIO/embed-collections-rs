@@ -255,7 +255,6 @@ pub(crate) trait PathBuffer: Sized {
         if let Some((parent, idx)) =
             self._move_right_and_pop::<K, _>(pos, dummy_post_callback::<K, Self>)
         {
-            // XXX? push back?
             self._push(parent.into(), idx);
         }
         debug_assert_eq!(*pos, 0);
@@ -267,14 +266,15 @@ pub(crate) trait PathBuffer: Sized {
         if pos == 0 {
             // most frequent path
             return;
-        } else if pos > 0 {
+        }
+        if pos > 0 {
             self._fix_center_from_right::<K>(&mut pos);
         } else {
             debug_assert!(pos < 0);
             self._fix_center_from_left::<K>(&mut pos);
         }
         debug_assert_eq!(pos, 0);
-        self._set_pos(pos);
+        self._set_pos(0);
     }
 
     #[inline(always)]
@@ -295,7 +295,8 @@ pub(crate) trait PathBuffer: Sized {
             debug_assert!(pos < 0);
             self._move_left_and_pop::<K, _>(&mut pos, dummy_post_callback::<K, Self>)
         };
-        self._set_pos(pos);
+        debug_assert_eq!(pos, 0);
+        self._set_pos(0);
         r
     }
 
@@ -307,18 +308,24 @@ pub(crate) trait PathBuffer: Sized {
     where
         F: FnMut(&mut Self, InterNode<K>) + Clone,
     {
-        let mut pos = self.buffer_pos();
+        let old_pos = self.buffer_pos();
+        let mut pos = old_pos;
         if pos < i8::MAX {
         } else {
             self._fix_center_from_right::<K>(&mut pos);
         }
         pos += 1;
         let r = self._move_right_and_pop::<K, F>(&mut pos, post_callback);
-        self._set_pos(pos);
-        r
+        debug_assert_eq!(pos, 0);
+        if old_pos == 0 {
+            r
+        } else {
+            self._set_pos(0);
+            r
+        }
     }
 
-    // for dropping the tree, post order visit in reversed order, `post_callback` should dealloc on the node
+    // for backward IntoIter the tree, post order visit in reversed order, `post_callback` should dealloc on the node
     #[inline(always)]
     fn move_path_left_and_pop_l1<K: Ord, F>(
         &mut self, post_callback: F,
@@ -326,15 +333,21 @@ pub(crate) trait PathBuffer: Sized {
     where
         F: Fn(&mut Self, InterNode<K>) + Clone,
     {
-        let mut pos = self.buffer_pos();
+        let old_pos = self.buffer_pos();
+        let mut pos = old_pos;
         if pos > i8::MIN {
         } else {
             self._fix_center_from_left::<K>(&mut pos);
         }
         pos -= 1;
         let r = self._move_left_and_pop::<K, F>(&mut pos, post_callback);
-        self._set_pos(pos);
-        r
+        debug_assert_eq!(pos, 0);
+        if old_pos == 0 {
+            r
+        } else {
+            self._set_pos(0);
+            r
+        }
     }
 
     #[cfg(test)]
