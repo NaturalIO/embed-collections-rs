@@ -46,6 +46,8 @@ pub(crate) trait PathBuffer: Sized {
     /// Pop the top entry from the cache stack.
     fn _pop(&mut self) -> Option<(NodeBase, u8)>;
 
+    fn _last(&self) -> Option<(NodeBase, u8)>;
+
     fn _set_pos(&mut self, buffer_pos: i8);
 
     unsafe fn _get_unchecked(&self, idx: u8) -> (NodeBase, u8);
@@ -59,13 +61,7 @@ pub(crate) trait PathBuffer: Sized {
     /// Peek at the last item (parent)
     #[inline]
     fn last<K>(&self) -> Option<(InterNode<K>, u8)> {
-        let i = self.buffer_len();
-        if i > 0 {
-            let (node, idx) = unsafe { self._get_unchecked(i - 1) };
-            Some((InterNode::<K>::from(node), idx))
-        } else {
-            None
-        }
+        self._last().map(|(n, idx)| (InterNode::<K>::from(n), idx))
     }
 
     #[inline(always)]

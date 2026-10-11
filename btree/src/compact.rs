@@ -639,6 +639,30 @@ impl<T: CompactBufCommon> PathBuffer for T {
             None
         }
     }
+
+    /// Peek the top entry from the cache stack.
+    #[inline]
+    fn _last(&self) -> Option<(NodeBase, u8)> {
+        let header = self.header();
+        let mut i = header.len;
+        if i > 0 {
+            i -= 1;
+            if i < Self::STACK_N as u8 + 1 {
+                let idx = header.get_idxs(i);
+                if i == 0 {
+                    Some((self.get_root(), idx))
+                } else {
+                    let node = self.stack_get(i - 1);
+                    Some((node, idx))
+                }
+            } else {
+                let p = unsafe { &*self.heap_item_ptr(i - 1 - Self::STACK_N as u8) };
+                Some((p.0.clone(), p.1))
+            }
+        } else {
+            None
+        }
+    }
 }
 
 type CompactBufEntry<'a> = CompactBufRef<'a, ENTRY_CAP, &'a mut CompactBufStack<ENTRY_CAP>>;
