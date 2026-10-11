@@ -621,19 +621,15 @@ impl<K: Ord> InterNode<K> {
     }
 
     #[inline]
-    pub fn find_child_branch<C: PathBuffer>(
-        &self, height: u8, mut idx: u8, left: bool, mut cache: Option<&mut C>,
+    pub fn find_child_branch<const LEFT: bool, C: PathBuffer>(
+        &self, height: u8, mut idx: u8, cache: &mut C,
     ) -> (Self, u8) {
         debug_assert!(height > 0);
         let mut child = self.get_child_as_inter(idx);
-        if let Some(ref mut _cache) = cache {
-            _cache.push_path(self.clone(), idx);
-        }
-        idx = if left { 0 } else { child.key_count() };
+        cache.push_path(self.clone(), idx);
+        idx = if LEFT { 0 } else { child.key_count() };
         while child.height() > height {
-            if let Some(ref mut _cache) = cache {
-                _cache.push_path(child.clone(), idx);
-            }
+            cache.push_path(child.clone(), idx);
             child = child.get_child_as_inter(idx);
         }
         (child, idx)
