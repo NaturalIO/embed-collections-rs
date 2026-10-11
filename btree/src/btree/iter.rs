@@ -543,12 +543,11 @@ struct IntoIterBase<K: Key, V: Value, S: Stats> {
 
 impl<K: Key, V: Value, S: Stats> IntoIterBase<K, V, S> {
     #[inline]
-    fn new(mut tree: BTree<K, V, S>, is_forward: bool) -> Self {
+    fn new(tree: &mut BTree<K, V, S>, is_forward: bool) -> Self {
         let mut stats = S::default();
         let len = tree.inner.len;
         core::mem::swap(&mut stats, &mut tree.stats);
         let root = tree.inner.root.take();
-        core::mem::forget(tree);
         if let Some(root_p) = root {
             // Move TreeInfo out of BTreeMap, leave a fresh empty one as placeholder.
             let (cache, leaf) = match Node::from_root_ptr(root_p) {
@@ -760,9 +759,7 @@ impl<K: Key, V: Value, S: Stats> Iterator for IntoIter<K, V, S> {
         match &mut self.base {
             Ok(base) => base.next(),
             Err((tree, is_forward)) => {
-                let mut temp = BTree::new();
-                core::mem::swap(&mut temp, tree);
-                self.base = Ok(IntoIterBase::new(temp, *is_forward));
+                self.base = Ok(IntoIterBase::new(tree, *is_forward));
                 if let Ok(base) = &mut self.base {
                     base.next()
                 } else {
