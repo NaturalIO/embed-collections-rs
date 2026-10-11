@@ -282,7 +282,6 @@ pub(crate) trait PathBuffer: Sized {
 
     #[inline(always)]
     fn push_path<K>(&mut self, inter: InterNode<K>, idx: u8) {
-        self.assert_center();
         self._push(inter.into(), idx);
     }
 
