@@ -1,13 +1,6 @@
 use crate::CACHE_LINE_SIZE;
 use crate::btree::{
-    self, BTree,
-    entry::*,
-    helper::{PathBuffer, PathBufferIter},
-    inter::*,
-    leaf::*,
-    node::*,
-    tree::BTreeInner,
-    *,
+    self, BTree, entry::*, helper::PathBuffer, inter::*, leaf::*, node::*, tree::BTreeInner, *,
 };
 use alloc::alloc::{Layout, alloc, dealloc, handle_alloc_error, realloc};
 use core::fmt::{self, Debug};
@@ -558,6 +551,18 @@ impl PathBuffer for TreeInfo {
             None
         }
     }
+
+    #[inline]
+    fn _last(&self) -> Option<(NodeBase, u8)> {
+        let header = self.header()?;
+        let mut wi = header.len;
+        if wi > 0 {
+            wi -= 1;
+            return unsafe { Some(self.item_ptr(wi).read()) };
+        } else {
+            None
+        }
+    }
 }
 
 impl PathBuffer for &mut TreeInfo {
@@ -619,16 +624,10 @@ impl PathBuffer for &mut TreeInfo {
         unsafe { PathBuffer::_get_unchecked(*self, idx) }
     }
 
-    /// Reverse (bottom->top) iterator over the stack without consuming it.
-    #[inline]
-    fn iter<'a, K>(&'a self) -> PathBufferIter<'a, K, Self> {
-        PathBufferIter { idx: self.buffer_len(), buf: self, _phan: Default::default() }
-    }
-
     /// Peek at the top of the stack (equivalent to `Various::last`).
     #[inline]
-    fn last<K>(&self) -> Option<(InterNode<K>, u8)> {
-        PathBuffer::last(*self)
+    fn _last(&self) -> Option<(NodeBase, u8)> {
+        PathBuffer::_last(*self)
     }
 }
 
