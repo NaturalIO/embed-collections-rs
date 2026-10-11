@@ -265,7 +265,7 @@ impl<K: Ord> InterNode<K> {
     {
         let key_count = self.key_count();
         let (idx, is_equal) = self.base._search::<K, Q>(Self::key_offset(), key_count, key);
-        if is_equal { idx + 1 } else { idx }
+        idx + (is_equal as u8)
     }
 
     /// search the position to insert
@@ -277,24 +277,21 @@ impl<K: Ord> InterNode<K> {
         Q: Ord + ?Sized,
     {
         let key_count = self.key_count();
-        let (idx, is_equal) = if !*is_seq {
-            // random is more likely
-            self.base._search::<K, Q>(Self::key_offset(), key_count, key)
-        } else {
-            if key_count > 0 {
+        if key_count > 0 {
+            if !*is_seq {
+            } else {
                 let key_ref: &Q =
                     unsafe { (*self.key_ptr(key_count - 1)).assume_init_ref().borrow() };
                 if key_ref <= key {
                     return key_count;
-                } else {
-                    *is_seq = false;
-                    self.base._search::<K, Q>(Self::key_offset(), key_count, key)
                 }
-            } else {
-                return 0;
+                *is_seq = false;
             }
-        };
-        if is_equal { idx + 1 } else { idx }
+            let (idx, is_equal) = self.base._search::<K, Q>(Self::key_offset(), key_count, key);
+            idx + (is_equal as u8)
+        } else {
+            0
+        }
     }
 
     /// search the position to insert
@@ -576,7 +573,8 @@ impl<K: Ord> InterNode<K> {
         }
         let split_idx = cap >> 1;
         unsafe {
-            if idx == split_idx {
+            if idx != split_idx {
+            } else {
                 trace_log!(
                     "{self:?} insert_split new_node {new_node:?} at split_idx=idx {idx} {child_ptr:p}"
                 );

@@ -266,7 +266,6 @@ impl<K: Key, V: Value, S: Stats> BTree<K, V, S> {
     #[inline]
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         let mut is_seq = true;
-
         let mut stack = S::BufferStack::default();
         let (o_leaf, mut cache) =
             self.inner.search_leaf_with_cache(&mut stack, &mut self.stats, |inter, _cache| {
@@ -274,9 +273,7 @@ impl<K: Key, V: Value, S: Stats> BTree<K, V, S> {
             });
         if let Some(mut leaf) = o_leaf {
             let (idx, is_equal) = leaf.search_smart(&key, is_seq);
-            if is_equal {
-                Some(leaf.replace(idx, value))
-            } else {
+            if !is_equal {
                 self.inner.len += 1;
                 // Get the leaf node where we should insert
                 let count = leaf.key_count();
@@ -288,6 +285,8 @@ impl<K: Key, V: Value, S: Stats> BTree<K, V, S> {
                     self.inner.insert_with_split(&mut cache, key, value, leaf, idx);
                 }
                 None
+            } else {
+                Some(leaf.replace(idx, value))
             }
         } else {
             self.inner.init_empty(key, value);
