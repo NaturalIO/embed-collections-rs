@@ -76,39 +76,42 @@ pub(crate) trait PathBuffer: Sized {
     where
         F: FnMut(&mut Self, InterNode<K>),
     {
-        while let Some((_parent, idx)) = self._pop() {
-            let parent = InterNode::<K>::from(_parent);
-            debug_assert!(*pos < 0);
-            let move_step = (-*pos) as u8;
-            if idx > 0 {
-                if move_step as u8 > idx {
-                    // pos within (i8::min, 0)
-                    *pos += idx as i8
-                } else {
-                    *pos = 0;
-                    // XXX overflow?
-                    return Some((parent, idx - move_step)); // have common parent
+        if let Some((_parent, mut idx)) = self._pop() {
+            let mut parent = InterNode::<K>::from(_parent);
+            loop {
+                debug_assert!(*pos < 0);
+                let move_step = (-*pos) as u8;
+                if idx > 0 {
+                    if move_step as u8 <= idx {
+                        *pos = 0;
+                        return Some((parent, idx - move_step)); // have common parent
+                    } else {
+                        // -pos: (idx, i8::MAX]
+                        *pos += idx as i8
+                    }
                 }
-            }
-            // only move 1 since we change the branch, leave the rest to the loop
-            *pos += 1;
-            let pre_height = parent.height();
-            post_callback(self, parent);
-            let cond = |_node: &InterNode<K>, idx: u8| -> bool { idx > 0 };
-            // this is for entry API, we already know there is a previous node
-            if let Some((grand_parent, grand_idx)) =
-                _move_to_ancestor!(self, _pop, cond, post_callback)
-            {
-                let (parent, idx) =
-                    grand_parent.find_child_branch(pre_height, grand_idx - 1, false, Some(self));
-                if *pos == 0 {
-                    return Some((parent, idx));
-                } else {
+                // the parent of this leaf reach the left-most idx, jump to the left through ancestor
+                *pos += 1;
+                let pre_height = parent.height();
+                post_callback(self, parent);
+                let cond = |_node: &InterNode<K>, idx: u8| -> bool { idx > 0 };
+                // this is for entry API, we already know there is a previous node
+                if let Some((grand_parent, grand_idx)) =
+                    _move_to_ancestor!(self, _pop, cond, post_callback)
+                {
+                    // find right-most branch
+                    (parent, idx) = grand_parent.find_child_branch::<false, Self>(
+                        pre_height,
+                        grand_idx - 1,
+                        self,
+                    );
+                    if *pos == 0 {
+                        return Some((parent, idx));
+                    }
                     // continue to move left
-                    self._push(parent.into(), idx);
+                } else {
+                    return None;
                 }
-            } else {
-                return None;
             }
         }
         None
@@ -123,42 +126,45 @@ pub(crate) trait PathBuffer: Sized {
         F: FnMut(&mut Self, InterNode<K>),
     {
         // move of the time move_step is just 1
-        while let Some((_parent, idx)) = self._pop() {
-            let parent = InterNode::<K>::from(_parent);
-            debug_assert!(*pos > 0);
-            let right_count = parent.key_count() - idx;
-            if right_count > 0 {
-                if right_count < *pos as u8 {
-                    // pos within (right_count, i8::MAX)
-                    *pos -= right_count as i8;
-                } else {
-                    // XXX overflow ?
-                    let move_step = *pos;
-                    *pos = 0;
-                    return Some((parent, idx + move_step as u8)); // have common parent
+        if let Some((_parent, mut idx)) = self._pop() {
+            let mut parent = InterNode::<K>::from(_parent);
+            loop {
+                debug_assert!(*pos > 0);
+                let right_count = parent.key_count() - idx;
+                if right_count > 0 {
+                    if right_count >= *pos as u8 {
+                        // pos: (0, right_count]
+                        let move_step = *pos;
+                        *pos = 0;
+                        return Some((parent, idx + move_step as u8)); // have common parent
+                    } else {
+                        // pos: (right_count, i8::MAX]
+                        *pos -= right_count as i8;
+                    }
                 }
-            }
-            // parent idx reach the end, will not visit again
-            let pre_height = parent.height();
-            *pos -= 1;
-            post_callback(self, parent);
-            // only move 1 since we change the branch, leave the rest to the loop
-            if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
-                self,
-                _pop,
-                |node: &InterNode<K>, idx: u8| -> bool { node.key_count() > idx },
-                post_callback
-            ) {
-                let (parent, idx) =
-                    grand_parent.find_child_branch(pre_height, grand_idx + 1, true, Some(self));
-                if *pos == 0 {
-                    return Some((parent, idx));
-                } else {
+                // the parent of this leaf reach the right most idx, jump to the right through ancestor
+                *pos -= 1;
+                let pre_height = parent.height();
+                post_callback(self, parent);
+                if let Some((grand_parent, grand_idx)) = _move_to_ancestor!(
+                    self,
+                    _pop,
+                    |node: &InterNode<K>, idx: u8| -> bool { node.key_count() > idx },
+                    post_callback
+                ) {
+                    // find left-most branch
+                    (parent, idx) = grand_parent.find_child_branch::<true, Self>(
+                        pre_height,
+                        grand_idx + 1,
+                        self,
+                    );
+                    if *pos == 0 {
+                        return Some((parent, idx));
+                    }
                     // continue to move right
-                    self._push(parent.into(), idx);
+                } else {
+                    return None;
                 }
-            } else {
-                return None;
             }
         }
         None
