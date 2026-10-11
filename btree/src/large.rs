@@ -523,11 +523,8 @@ impl PathBuffer for TreeInfo {
     }
 
     #[inline]
-    fn move_pos(&mut self, delta: i8) {
-        // XXX should we keep the pos pack when heap is not alloced?
-        if let Some(header) = self.header_mut() {
-            header.buffer_pos += delta;
-        }
+    fn _set_pos(&mut self, buffer_pos: i8) {
+        self.header_mut_unwrap().buffer_pos = buffer_pos;
     }
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
@@ -567,18 +564,22 @@ impl PathBuffer for &mut TreeInfo {
     // --- stats method begins ---
     // methods should belong to Stats, but we put here due to borrow checker issues
 
+    #[inline]
     fn inc_leaf_count(&mut self) {
         PathBuffer::inc_leaf_count(*self)
     }
 
+    #[inline]
     fn dec_leaf_count(&mut self) {
         PathBuffer::dec_leaf_count(*self)
     }
 
+    #[inline]
     fn inc_inter_count(&mut self) {
         PathBuffer::inc_inter_count(*self)
     }
 
+    #[inline]
     fn dec_inter_count(&mut self) {
         PathBuffer::dec_inter_count(*self)
     }
@@ -586,26 +587,29 @@ impl PathBuffer for &mut TreeInfo {
     // --- stats method ends ---
 
     /// The count of current level items cotains by the PathBuffer
+    #[inline]
     fn buffer_len(&self) -> u8 {
         PathBuffer::buffer_len(*self)
     }
 
+    #[inline]
     fn buffer_pos(&self) -> i8 {
         PathBuffer::buffer_pos(*self)
     }
 
-    /// The delta position of current entry to the PathBuffer.
-    /// < 0 for left, > 0 for right, ==0 for center
-    fn move_pos(&mut self, delta: i8) {
-        PathBuffer::move_pos(*self, delta)
+    #[inline]
+    fn _set_pos(&mut self, buffer_pos: i8) {
+        PathBuffer::_set_pos(*self, buffer_pos);
     }
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
+    #[inline]
     fn _push(&mut self, inter: NodeBase, idx: u8) {
         PathBuffer::_push(*self, inter, idx)
     }
 
     /// Pop the top entry from the cache stack.
+    #[inline]
     fn _pop(&mut self) -> Option<(NodeBase, u8)> {
         PathBuffer::_pop(*self)
     }
@@ -622,6 +626,7 @@ impl PathBuffer for &mut TreeInfo {
     }
 
     /// Peek at the top of the stack (equivalent to `Various::last`).
+    #[inline]
     fn last<K>(&self) -> Option<(InterNode<K>, u8)> {
         PathBuffer::last(*self)
     }

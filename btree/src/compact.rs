@@ -593,8 +593,8 @@ impl<T: CompactBufCommon> PathBuffer for T {
     }
 
     #[inline]
-    fn move_pos(&mut self, delta: i8) {
-        self.header_mut().buffer_pos += delta;
+    fn _set_pos(&mut self, buffer_pos: i8) {
+        self.header_mut().buffer_pos = buffer_pos;
     }
 
     /// Push one entry onto the cache stack, growing the buffer if needed.
