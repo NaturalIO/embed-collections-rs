@@ -472,7 +472,6 @@ where
 
     /// Adds a new element to the tree， takes the ownership of P.
     ///
-    /// The `cmp_func` should compare two elements to determine their relative order.
     /// Returns `true` if the element was added, `false` if an equivalent element
     /// already exists (in which case the provided `node` is dropped).
     #[inline]
@@ -982,7 +981,6 @@ where
 
     /// Removes a node from the tree by key.
     ///
-    /// The `cmp_func` should compare the key `K` with the elements in the tree.
     /// Returns `Some(P)` if an exact match was found and removed, `None` otherwise.
     #[inline]
     pub fn remove_by_key(&mut self, val: &'_ as_avlitem!(P, Tag, Key)) -> Option<P> {
