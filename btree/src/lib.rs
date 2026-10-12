@@ -32,6 +32,48 @@
 //!   - after tree height grows beyond 1, allocate a small heap for PathBuffer, and page statistic (inter and
 //!     leavse).
 //!
+//! ## Supported K, V types
+//!
+//! **Optimised for numeric key**
+//!   - Respecting numeric space, more compact tree when doing sequential insertion
+//!   - Reduce latency for sequential get and insertion.
+//!
+//! Optimised for unbalanced size K / V, and specially 0-size V, for most capacity.
+//!
+//! Bytes keys on the heap are supported, but we will not do prefix compress.
+//!   (You may look for other structures with prefix compression: Art, Masstree)
+//!
+//! **Limits**:
+//!   - K should have `Clone` (for propagate into the InterNode during split)
+//!   - K + V should < 2 * CACHE_LINE_SIZE
+//!     - compile error will be raised if size requirement not met.
+//!     - It make sure InterNode can hold at least two children.
+//!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
+//!   - **K should not contains and reference**.
+//!     - Although our `BTreeMap<K, ()>` will act like a btree set, it should only work for integer and string
+//!       (or composite) keys.
+//!     - **DO NOT use `Arc<T>`** as K, it might still keep the reference after value
+//!       is removed from the map (only can ganrantee release until all InterNode is destroy).
+//!
+//! ## Compared to std btree_map
+//!
+//! (Analyse based on source of rust 1.94)
+//!
+//! std:
+//! - pure btree (without horizontal links).
+//! - Each key store only once at either leaf and inter nodes, don't require key to be `Clone`.
+//! - good for point lookup (value may be at top level)
+//! - has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
+//! - the size of page varies for different type of K / V, might not perfectly aligned for the cache and allocator.
+//! - each page has keys, values, pointers. the section of pointers may be wasted for leaves.
+//! - cursor API is still unstable, need nightly.
+//!
+//! crate::bptree:
+//! - faster sequential get & insert
+//! - faster iteration
+//! - faster teardown
+//! - higher fan-out, reduction in height
+//!
 //! Struct size:
 //!
 //! ```text
@@ -56,71 +98,35 @@
 //!
 //! ```
 //!
-//! ## Supported K, V types
-//!
-//! **Optimised for numeric key**
-//!   - Respecting numeric space, more compact tree when doing sequential insertion
-//!   - Reduce latency for sequential get and insertion.
-//!
-//! Optimised for unbalanced size K / V, and specially 0-size V, for most capacity.
-//!
-//! Bytes keys on the heap are supported, but we will not do prefix compress.
-//!   (You may look for other structures with prefix compression: Art, Masstree)
-//!
-//! Limits:
-//!   - K should have `Clone` (for propagate into the InterNode during split)
-//!   - K + V should < 2 * CACHE_LINE_SIZE
-//!     - It make sure InterNode can hold at least two children.
-//!     - If K & V is large you should put into `Box`, for room saving, and for the speed to move value
-//!
-//! ## Compared to std btree_map
-//!
-//! (Analyse based on source of rust 1.94)
-//!
-//! std:
-//! - pure btree (without horizontal links).
-//! - Each key store only once at either leaf and inter nodes, don't require key to be `Clone`.
-//! - good for point lookup (value may be at top level)
-//! - has fixed Cap=11, node size varies according to T. (For T=U64, size is 288B for InterNode and 192B for LeafNode)
-//! - the size of page varies for different type of K / V, might not perfectly aligned for the cache and allocator.
-//! - each page has keys, values, pointers. the section of pointers may be wasted for leaves.
-//! - cursor API is still unstable, need nightly.
-//!
-//! crate::bptree:
-//! - faster sequential get & insert
-//! - faster iteration
-//! - faster teardown
-//! - higher fan-out, reduction in height
-//!
 //! ## Special API and Scenario
 //!
 //! statistic (node count and memory usage) in [large] variant
 //!
 //! Entries:
 //! - Adjacent `Entry` (for iter and modification).
-//!   - [bptree::Entry::peek_forward()]
-//!   - [bptree::Entry::peek_backward()]
-//!   - [bptree::Entry::move_forward()]
-//!   - [bptree::Entry::move_backward()]
-//!   - [bptree::VacantEntry::peek_forward()]
-//!   - [bptree::VacantEntry::peek_backward()]
-//!   - [bptree::VacantEntry::move_forward()]
-//!   - [bptree::VacantEntry::move_backward()]
-//!   - [bptree::OccupiedEntry::peek_forward()]
-//!   - [bptree::OccupiedEntry::peek_backward()]
-//!   - [bptree::OccupiedEntry::move_forward()]
-//!   - [bptree::OccupiedEntry::move_backward()]
+//!   - [Entry::peek_forward()](bptree::Entry::peek_forward)
+//!   - [Entry::peek_backward()](bptree::Entry::peek_backward)
+//!   - [Entry::move_forward()](bptree::Entry::move_forward)
+//!   - [Entry::move_backward()](bptree::Entry::move_backward)
+//!   - [VacantEntry::peek_forward()](bptree::VacantEntry::peek_forward)
+//!   - [VacantEntry::peek_backward()](bptree::VacantEntry::peek_backward)
+//!   - [VacantEntry::move_forward()](bptree::VacantEntry::move_forward)
+//!   - [VacantEntry::move_backward()](bptree::VacantEntry::move_backward)
+//!   - [OccupiedEntry::peek_forward()](bptree::OccupiedEntry::peek_forward)
+//!   - [OccupiedEntry::peek_backward()](bptree::OccupiedEntry::peek_backward)
+//!   - [OccupiedEntry::move_forward()](bptree::OccupiedEntry::move_forward)
+//!   - [OccupiedEntry::move_backward()](bptree::OccupiedEntry::move_backward)
 //! - Alter key of an OccupiedEntry.
-//!   - [bptree::OccupiedEntry::alter_key()]
+//!   - [OccupiedEntry::alter_key()](bptree::OccupiedEntry::alter_key)
 //!
 //! Batch removal:
-//! - [bptree::BTree::remove_range()](btree::BTree::remove_range)
-//! - [bptree::BTree::remove_range_with()](btree::BTree::remove_range_with)
+//! - [BTree::remove_range()](bptree::BTree::remove_range)
+//! - [BTree::remove_range_with()](b[tree::BTree::remove_range_with)
 //!
-//! Readonly [Cursor](btree::Cursor):
-//! - [bptree::BTree::cursor()](btree::BTree::cursor)
-//! - [bptree::BTree::first_cursor()](btree::BTree::first_cursor)
-//! - [bptree::BTree::last_cursor()](btree::BTree::last_cursor)
+//! Readonly [Cursor](bptree::Cursor):
+//! - [BTree::cursor()](bptree::BTree::cursor)
+//! - [BTree::first_cursor()](bptree::BTree::first_cursor)
+//! - [BTree::last_cursor()](bptree::BTree::last_cursor)
 //!
 //! Use case:
 //! - [range-tree-rs](https://docs.rs/range-tree-rs)
