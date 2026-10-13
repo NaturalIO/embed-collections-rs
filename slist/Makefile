@@ -28,7 +28,7 @@ test-release: init
 
 .PHONY: test-leak
 test-leak:
-	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly nextest run ${ARGS} -r --no-capture -j 1
+	RUST_BACKTRACE=1 RUSTFLAGS="-Zsanitizer=leak" cargo +nightly nextest run --target x86_64-unknown-linux-gnu  ${ARGS} -r --no-capture -j 1
 
 .PHONY: build_nostd
 build_nostd: init
