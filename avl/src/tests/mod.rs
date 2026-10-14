@@ -51,6 +51,7 @@ unsafe impl AvlItem<()> for IntAvlNode {
     }
 }
 
+#[derive(Debug)]
 pub struct IntAvlTree<P: Pointer<Target = IntAvlNode>>(AvlTree<P, ()>);
 
 impl<P> IntAvlTree<P>

@@ -169,6 +169,7 @@ where
     tree: &'a AvlTree<P, Tag>,
     cur: Option<NonNull<P::Target>>,
     dir: Dir,
+    left: usize,
 }
 
 /// A lending iterator for AvlTree
@@ -185,7 +186,7 @@ where
     pub(crate) fn new(
         tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Dir,
     ) -> Self {
-        Self { tree, cur: init, dir }
+        Self { tree, cur: init, dir, left: tree.len() }
     }
 }
 
@@ -205,7 +206,19 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         let cur: NonNull<P::Target> = self.cur.take()?;
+        self.left -= 1;
         self.cur = self.tree._walk_dir(cur, self.dir);
         Some(NodeRef::<'a, P>::from(cur.as_ptr()))
+    }
+}
+
+impl<'a, P, Tag> ExactSizeIterator for AvlIter<'a, P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline]
+    fn len(&self) -> usize {
+        self.left
     }
 }

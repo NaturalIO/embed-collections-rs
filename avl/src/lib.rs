@@ -417,6 +417,28 @@ where
 {
 }
 
+impl<P, Tag> fmt::Debug for AvlTree<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag> + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let _ = write!(f, "AvlTree{{");
+        if self.count > 0 {
+            let mut iter = self.iter();
+            loop {
+                let node = iter.next().unwrap();
+                let _ = write!(f, "{:?}", node.as_ref().as_ref());
+                if iter.len() > 0 {
+                    let _ = write!(f, ", ");
+                } else {
+                    break;
+                }
+            }
+        }
+        write!(f, "}}")
+    }
+}
 
 impl<P, Tag> AvlTree<P, Tag>
 where
