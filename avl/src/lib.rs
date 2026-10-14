@@ -218,6 +218,16 @@ macro_rules! impl_ord_with_borrow {
     };
 }
 
+/// logging macro for development
+#[macro_export(local_inner_macros)]
+macro_rules! trace_log {
+    ($($arg:tt)+)=>{
+        #[cfg(feature="trace_log")]
+        {
+            log::debug!($($arg)+);
+        }
+    };
+}
 
 pub(crate) const DIR_LEFT: Dir = Dir(false);
 pub(crate) const DIR_RIGHT: Dir = Dir(true);
@@ -660,15 +670,18 @@ where
     unsafe fn _insert_here(
         &mut self, new_ptr: *mut P::Target, here: NonNull<P::Target>, direction: Dir,
     ) {
+        crate::trace_log!("_insert_here {new_ptr:p} here {here:p} dir {direction:?}");
         let mut dir_child = direction;
         unsafe {
             let child = here.as_ref().get_node().get_child(dir_child);
             let parent;
             if child.is_null() {
                 parent = here;
+                crate::trace_log!("direct at here {here:p}");
             } else {
                 dir_child = dir_child.reverse();
                 parent = self.bottom_child(NonNull::new_unchecked(child), dir_child);
+                crate::trace_log!("find bottom {parent:p}");
             }
             self._insert(new_ptr, parent.as_ptr(), dir_child);
         }
@@ -1111,6 +1124,7 @@ where
             if !data.is_null() {
                 let left = unsafe { (*data).get_node() }.get_child(DIR_LEFT);
                 if !left.is_null() {
+                    crate::trace_log!("validate: push {data:p}");
                     stack.push(data);
                     data = left;
                     continue;
@@ -1120,6 +1134,7 @@ where
             } else {
                 break;
             }
+            crate::trace_log!("validate: {data:p}");
             validate_node(data);
             visited += 1;
             data = unsafe { (*data).get_node() }.get_child(DIR_RIGHT);
