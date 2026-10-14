@@ -389,7 +389,9 @@ where
         self.count
     }
 
-    /// Adds a new node to the tree
+    /// Adds a new node to the tree, requires P::Target has `Ord`.
+    ///
+    /// (If you want more freedom of Ordering, see also [Self::entry_with])
     ///
     /// - Returns `Ok(())` if the node was added, takes the ownership of P.
     /// - Err(P) if an equivalent node already exists
@@ -406,7 +408,11 @@ where
                         Ordering::Less => {
                             let left = (*parent).get_node().get_child(Direction::Left);
                             if left.is_null() {
-                                self._insert(node, parent, Direction::Left);
+                                self._insert(
+                                    node.into_raw() as *mut P::Target,
+                                    parent,
+                                    Direction::Left,
+                                );
                                 return Ok(());
                             }
                             parent = left;
@@ -414,7 +420,11 @@ where
                         Ordering::Greater => {
                             let right = (*parent).get_node().get_child(Direction::Right);
                             if right.is_null() {
-                                self._insert(node, parent, Direction::Right);
+                                self._insert(
+                                    node.into_raw() as *mut P::Target,
+                                    parent,
+                                    Direction::Right,
+                                );
                                 return Ok(());
                             }
                             parent = right;
@@ -581,12 +591,11 @@ where
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn _insert(
         &mut self,
-        new_data: P,
+        new_ptr: *mut P::Target,
         parent: *mut P::Target, // parent
         mut which_child: Direction,
     ) {
         let mut new_balance: i8;
-        let new_ptr = new_data.into_raw() as *mut P::Target;
 
         if parent.is_null() {
             if self.count > 0 {
@@ -632,7 +641,7 @@ where
         }
     }
 
-    /// Insert "new_data" in "tree" in the given "direction" either after or
+    /// Insert `new_ptr` in `tree` in the given `direction` either after or
     /// before Direction::After, Direction::Before) the data "here".
     ///
     /// For range-tree scenario
@@ -641,7 +650,9 @@ where
     /// if the given child of the node is already present we move to either
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
-    unsafe fn _insert_here(&mut self, new_data: P, here: NonNull<P::Target>, direction: Direction) {
+    unsafe fn _insert_here(
+        &mut self, new_ptr: *mut P::Target, here: NonNull<P::Target>, direction: Direction,
+    ) {
         let mut dir_child = direction;
         unsafe {
             let child = here.as_ref().get_node().get_child(dir_child);
@@ -652,7 +663,7 @@ where
                 dir_child = dir_child.reverse();
                 parent = self.bottom_child(NonNull::new_unchecked(child), dir_child);
             }
-            self._insert(new_data, parent.as_ptr(), dir_child);
+            self._insert(new_ptr, parent.as_ptr(), dir_child);
         }
     }
 

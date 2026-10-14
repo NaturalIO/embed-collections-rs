@@ -121,8 +121,8 @@ where
         }
     }
 
-    /// Insert before the current node, for entries require by
-    /// `AvlTree::entry_with` and custom ordering function
+    /// Insert before the current node.
+    /// The entry position is unchanged.
     ///
     /// # Safety
     ///
@@ -131,15 +131,15 @@ where
     /// otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_before_unchecked(self, new_node: P) {
+    pub unsafe fn insert_before_unchecked(&mut self, new_node: P) {
         unsafe {
-            self.tree._insert_here(new_node, self.node, Direction::Left);
+            let new_ptr = new_node.into_raw() as *mut P::Target;
+            self.tree._insert_here(new_ptr, self.node, Direction::Left);
         }
     }
 
-    /// Insert before the current node, this require P::Target have ordering.
-    ///
-    /// We will debug_assert 'new_node.as_ref() <= self.node.as_ref()'
+    /// Insert before the current node,
+    /// with entry position is changed to newly inserted node.
     ///
     /// # Safety
     ///
@@ -148,18 +148,16 @@ where
     /// otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_before(self, new_node: P)
-    where
-        P::Target: Ord,
-    {
+    pub unsafe fn insert_move_before_unchecked(self, new_node: P) -> Self {
         unsafe {
-            debug_assert!(new_node.as_ref() <= self.node.as_ref());
-            self.tree._insert_here(new_node, self.node, Direction::Left);
+            let new_ptr = new_node.into_raw() as *mut P::Target;
+            self.tree._insert_here(new_ptr, self.node, Direction::Left);
+            Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
     }
 
-    /// Insert after the current node, for entries require by
-    /// `AvlTree::entry_with` and custom ordering function
+    /// Insert after the current node.
+    /// The entry position is unchanged.
     ///
     /// # Safety
     ///
@@ -168,15 +166,15 @@ where
     /// Otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_after_unchecked(self, new_node: P) {
+    pub unsafe fn insert_after_unchecked(&mut self, new_node: P) {
         unsafe {
-            self.tree._insert_here(new_node, self.node, Direction::Right);
+            let new_ptr = new_node.into_raw() as *mut P::Target;
+            self.tree._insert_here(new_ptr, self.node, Direction::Right);
         }
     }
 
-    /// Insert after the current node, this require P::Target have ordering.
-    ///
-    /// We will debug_assert 'new_node.as_ref() >= self.node.as_ref()'
+    /// Insert after the current node,
+    /// with entry position is changed to newly inserted node.
     ///
     /// # Safety
     ///
@@ -185,13 +183,11 @@ where
     /// Otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_after(self, new_node: P)
-    where
-        P::Target: Ord,
-    {
+    pub unsafe fn insert_move_after_unchecked(self, new_node: P) -> Self {
         unsafe {
-            debug_assert!(new_node.as_ref() > self.node.as_ref());
-            self.tree._insert_here(new_node, self.node, Direction::Right);
+            let new_ptr = new_node.into_raw() as *mut P::Target;
+            self.tree._insert_here(new_ptr, self.node, Direction::Right);
+            Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
     }
 }
@@ -360,8 +356,10 @@ where
     ///
     /// ignoring `K` captured in VacantEntry
     #[inline]
-    pub unsafe fn insert_node_unchecked(self, new_node: P) {
-        self.tree._insert(new_node, self.node, self.direction);
+    pub unsafe fn insert_node_unchecked(self, new_node: P) -> OccupiedEntry<'a, P, Tag> {
+        let new_ptr = new_node.into_raw() as *mut P::Target;
+        self.tree._insert(new_ptr, self.node, self.direction);
+        OccupiedEntry { node: unsafe { NonNull::new_unchecked(new_ptr) }, tree: self.tree }
     }
 }
 
@@ -377,8 +375,10 @@ where
     ///
     /// We have debug_assert_eq the key an the node
     #[inline]
-    pub fn insert_node(self, new_node: P) {
+    pub fn insert_node(self, new_node: P) -> OccupiedEntry<'a, P, Tag> {
         debug_assert!(&self.key == new_node.as_ref().borrow());
-        self.tree._insert(new_node, self.node, self.direction);
+        let new_ptr = new_node.into_raw() as *mut P::Target;
+        self.tree._insert(new_ptr, self.node, self.direction);
+        OccupiedEntry { node: unsafe { NonNull::new_unchecked(new_ptr) }, tree: self.tree }
     }
 }
