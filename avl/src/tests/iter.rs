@@ -1,6 +1,8 @@
 use super::*;
 use rstest::*;
 use std::boxed::Box;
+use std::fmt::Debug;
+use std::rc::Rc;
 use std::sync::Arc;
 
 #[rstest]
@@ -9,12 +11,13 @@ use std::sync::Arc;
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_drain<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode>,
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
     reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
     {
         for i in 0..100 {
-            tree.add_int_node(tree.new_node(i));
+            tree.add_int_node(_new_node(i));
         }
         assert_eq!(tree.len(), 100);
 
@@ -37,12 +40,13 @@ where
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_iter<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode>,
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
     reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
     {
         for i in 0..100 {
-            tree.add_int_node(tree.new_node(i));
+            tree.add_int_node(_new_node(i));
         }
         assert_eq!(tree.len(), 100);
 
@@ -71,13 +75,14 @@ where
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_next_ref_clone_arc<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone,
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone + Debug,
 {
     reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
     {
         let n = 50;
         for i in 0..n {
-            tree.add_int_node(tree.new_node(i as i64));
+            tree.add_int_node(_new_node(i as i64));
         }
         assert_eq!(tree.len(), n);
         // Each node created once
@@ -86,7 +91,7 @@ where
         // Iterate using next_ref() and clone each Arc during iteration
         let mut cloned_nodes: Vec<P> = Vec::with_capacity(n);
         let mut iter = tree.iter();
-        while let Some(arc) = iter.next_ref() {
+        while let Some(arc) = iter.next() {
             cloned_nodes.push(arc.clone());
         }
         for (i, node) in cloned_nodes.iter().enumerate() {
@@ -121,20 +126,21 @@ where
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_next_ref_clone_rev<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone,
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone + Debug,
 {
     reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
     {
         let n = 30;
         for i in 0..n {
-            tree.add_int_node(tree.new_node(i as i64));
+            tree.add_int_node(_new_node(i as i64));
         }
         assert_eq!(tree.len(), n);
         assert_eq!(alive_count(), n);
 
         let mut cloned_nodes: Vec<P> = Vec::with_capacity(n);
         let mut iter = tree.iter_rev();
-        while let Some(arc) = iter.next_ref() {
+        while let Some(arc) = iter.next() {
             cloned_nodes.push(arc.clone());
         }
 
@@ -150,13 +156,3 @@ where
     }
     assert_eq!(alive_count(), 0);
 }
-
-/*
-#[test]
-fn test_avl_prev_and_next() {
-    let mut tree = new_inttree();
-    for i in 0..100 {
-        tree.add_int_node(tree.new_node(i));
-    }
-}
-*/
