@@ -278,6 +278,17 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
         }
     }
 
+    // set child and both child's parent
+    #[inline(always)]
+    fn set_child2<P: Pointer<Target = T>>(
+        &mut self, dir: Direction, child: *mut P::Target, parent: *mut P::Target,
+    ) {
+        if !child.is_null() {
+            unsafe { (*child).get_node().parent = parent };
+        }
+        self.set_child(dir, child);
+    }
+
     #[inline(always)]
     fn get_parent(&self) -> *mut T {
         self.parent
@@ -667,18 +678,6 @@ where
         }
     }
 
-    // set child and both child's parent
-    #[inline(always)]
-    fn set_child2(
-        &mut self, node: &mut AvlNode<P::Target, Tag>, dir: Direction, child: *mut P::Target,
-        parent: *mut P::Target,
-    ) {
-        if !child.is_null() {
-            unsafe { (*child).get_node().parent = parent };
-        }
-        node.set_child(dir, child);
-    }
-
     #[inline(always)]
     fn parent_direction(&self, data: *mut P::Target, parent: *mut P::Target) -> Direction {
         if !parent.is_null() {
@@ -728,7 +727,7 @@ where
             child_balance += right_heavy;
 
             let c_right = child_node.get_child(dir_inverse);
-            self.set_child2(node, dir, c_right, data);
+            node.set_child2::<P>(dir, c_right, data);
             // move node to be child's right child
             node.balance = -child_balance;
 
@@ -754,8 +753,8 @@ where
         let g_left = g_child_node.get_child(dir);
         let g_right = g_child_node.get_child(dir_inverse);
 
-        self.set_child2(node, dir, g_right, data);
-        self.set_child2(child_node, dir_inverse, g_left, child);
+        node.set_child2::<P>(dir, g_right, data);
+        child_node.set_child2::<P>(dir_inverse, g_left, child);
 
         /*
          * move child to left child of gchild and
