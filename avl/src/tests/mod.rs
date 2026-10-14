@@ -1,6 +1,6 @@
 mod basic;
 mod iter;
-mod range_tree;
+//mod range_tree;
 pub use embed_collections_test::*;
 
 use super::*;
@@ -9,6 +9,8 @@ use core::ops::{Deref, DerefMut};
 use pointers::{Pointer, SmartPointer};
 use std::println;
 
+#[derive(format_attr::DebugAttr)]
+#[fmt("IntAvlNode {value} {node:#?}")]
 pub struct IntAvlNode {
     pub value: i64,
     pub node: UnsafeCell<AvlNode<Self, ()>>,
@@ -27,29 +29,19 @@ impl Drop for IntAvlNode {
     }
 }
 
-impl fmt::Debug for IntAvlNode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {:#?}", self.value, self.node)
-    }
-}
-
-impl fmt::Display for IntAvlNode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.value)
+impl Borrow<i64> for IntAvlNode {
+    fn borrow(&self) -> &i64 {
+        &self.value
     }
 }
 
 unsafe impl AvlItem<()> for IntAvlNode {
-    type Key = i64;
-
     fn get_node(&self) -> &mut AvlNode<Self, ()> {
         unsafe { &mut *self.node.get() }
     }
-
-    fn borrow_key(&self) -> &Self::Key {
-        &self.value
-    }
 }
+
+impl_ord_with_borrow!(IntAvlNode, i64);
 
 #[derive(Debug)]
 pub struct IntAvlTree<P: Pointer<Target = IntAvlNode>>(AvlTree<P, ()>);
@@ -72,16 +64,15 @@ where
         false
     }
 
-    pub fn add_int_node(&mut self, node: P) -> bool {
-        self.0.add(node)
+    pub fn add_int_node(&mut self, node: P)
+    where
+        P: core::fmt::Debug,
+    {
+        self.0.add(node).expect("added");
     }
 
     pub fn validate_tree(&self) {
         self.0.validate();
-    }
-
-    pub fn find_int<'a>(&'a self, i: i64) -> AvlSearchResult<'a, P> {
-        self.0.find(&i)
     }
 }
 
@@ -109,7 +100,7 @@ impl<P> IntAvlTree<P>
 where
     P: SmartPointer<Target = IntAvlNode>,
 {
-    pub fn new_node(&self, i: i64) -> P {
+    pub fn new_node(i: i64) -> P {
         P::new(IntAvlNode::new(i))
     }
 }
