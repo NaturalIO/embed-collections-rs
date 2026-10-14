@@ -1,6 +1,5 @@
 use super::*;
-use core::mem::MaybeUninit;
-use core::ptr::null;
+use core::ptr::null_mut;
 use pointers::Pointer;
 
 // TODO IntoIter
@@ -10,8 +9,8 @@ where
     P::Target: AvlItem<Tag>,
 {
     tree: &'a mut AvlTree<P, Tag>,
-    parent: *const P::Target,
-    dir: Option<AvlDirection>,
+    parent: *mut P::Target,
+    dir: Option<Direction>,
 }
 
 impl<'a, P: Pointer, Tag> AvlDrain<'a, P, Tag>
@@ -20,7 +19,7 @@ where
 {
     #[inline]
     pub(super) fn new(tree: &'a mut AvlTree<P, Tag>) -> Self {
-        Self { tree, parent: null(), dir: None }
+        Self { tree, parent: null_mut(), dir: None }
     }
 }
 
@@ -42,8 +41,8 @@ where
             return None;
         }
 
-        let mut node: *const P::Target;
-        let parent: *const P::Target;
+        let mut node: *mut P::Target;
+        let parent: *mut P::Target;
 
         if self.dir.is_none() && self.parent.is_null() {
             // Initial call: find the leftmost node
@@ -58,12 +57,11 @@ where
                 // Should not happen if root was nulled
                 return None;
             }
-
             let child_dir = self.dir.unwrap();
             // child_dir child of parent was just nulled in previous call?
             // NO, we null it in THIS call.
 
-            if child_dir == AvlDirection::Right || unsafe { (*parent).get_node().right.is_null() } {
+            if child_dir == Direction::Right || unsafe { (*parent).get_node().right.is_null() } {
                 node = parent;
             } else {
                 // Finished left, go to right sibling
@@ -84,14 +82,14 @@ where
         // Determine next state
         let next_parent = unsafe { (*node).get_node().parent };
         if next_parent.is_null() {
-            self.tree.root = null();
-            self.parent = null();
-            self.dir = Some(AvlDirection::Left);
+            self.tree.root = null_mut();
+            self.parent = null_mut();
+            self.dir = Some(Direction::Left);
         } else {
             self.parent = next_parent;
             self.dir = Some(self.tree.parent_direction(node, next_parent));
             // Unlink from parent NOW
-            unsafe { (*next_parent).get_node().set_child(self.dir.unwrap(), null()) };
+            unsafe { (*next_parent).get_node().set_child(self.dir.unwrap(), null_mut()) };
         }
 
         self.tree.count -= 1;
@@ -102,6 +100,54 @@ where
     }
 }
 
+/// Return a reference of P (you can P.clone() of P has Clone)
+///
+/// # Example
+///
+/// ```rust
+/// use embed_avl::{AvlTree, AvlItem, AvlNode, impl_ord_with_borrow};
+/// use core::cell::UnsafeCell;
+/// use core::cmp::Ordering;
+/// use core::borrow::Borrow;
+/// extern crate alloc;
+/// use alloc::sync::Arc;
+///
+/// #[derive(format_attr::DebugAttr)]
+/// #[fmt("MyNode {value}")]
+/// struct MyNode {
+///     value: i32,
+///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+/// }
+///
+/// impl Borrow<i32> for MyNode {
+///     fn borrow(&self) -> &i32 {
+///         &self.value
+///     }
+/// }
+///
+/// unsafe impl AvlItem<()> for MyNode {
+///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+///         unsafe { &mut *self.avl_node.get() }
+///     }
+/// }
+/// impl_ord_with_borrow!(MyNode, i32);
+///
+/// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
+///
+/// let new_node = | n: i32| {
+///     Arc::new(MyNode { value: n, avl_node: UnsafeCell::new(Default::default()) })
+/// };
+/// tree.add(new_node(1)).expect("add");
+/// tree.add(new_node(2)).expect("add");
+/// tree.add(new_node(3)).expect("add");
+/// assert_eq!(tree.len(), 3);
+///
+/// let mut iter = tree.iter_rev();
+/// let mut all_nodes_rev = Vec::with_capacity(tree.len());
+/// while let Some(node) = iter.next() {
+///     all_nodes_rev.push(node.clone());
+/// }
+/// ```
 pub struct AvlIter<'a, P, Tag>
 where
     P: Pointer,
@@ -109,8 +155,7 @@ where
 {
     tree: &'a AvlTree<P, Tag>,
     cur: Option<NonNull<P::Target>>,
-    dir: AvlDirection,
-    temp: MaybeUninit<P>,
+    dir: Direction,
 }
 
 /// A lending iterator for AvlTree
@@ -125,66 +170,9 @@ where
 {
     #[inline]
     pub(crate) fn new(
-        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: AvlDirection,
+        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Direction,
     ) -> Self {
-        Self { tree, cur: init, dir, temp: MaybeUninit::uninit() }
-    }
-
-    /// Return a reference of P (you can P.clone() of P has Clone)
-    ///
-    /// NOTE: this is a lending iterator.
-    /// Unfortunately rust Iterator trait don't let us do this because of lifetime limitation
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use embed_avl::{AvlTree, AvlItem, AvlNode};
-    /// use core::cell::UnsafeCell;
-    /// use core::cmp::Ordering;
-    /// extern crate alloc;
-    /// use alloc::sync::Arc;
-    ///
-    /// struct MyNode {
-    ///     value: i32,
-    ///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
-    /// }
-    ///
-    /// unsafe impl AvlItem<()> for MyNode {
-    ///
-    ///     type Key = i32;
-    ///
-    ///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
-    ///         unsafe { &mut *self.avl_node.get() }
-    ///     }
-    ///
-    ///     fn borrow_key(&self) -> &Self::Key {
-    ///         &self.value
-    ///     }
-    /// }
-    ///
-    /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
-    ///
-    /// let new_node = | n: i32| {
-    ///     Arc::new(MyNode { value: n, avl_node: UnsafeCell::new(Default::default()) })
-    /// };
-    /// tree.add(new_node(1));
-    /// tree.add(new_node(2));
-    /// tree.add(new_node(3));
-    /// assert_eq!(tree.len(), 3);
-    ///
-    /// let mut iter = tree.iter_rev();
-    /// let mut all_nodes_rev = Vec::with_capacity(tree.len());
-    /// while let Some(node) = iter.next_ref() {
-    ///     all_nodes_rev.push(node.clone());
-    /// }
-    /// ```
-    #[inline]
-    pub fn next_ref(&mut self) -> Option<&P> {
-        let cur: NonNull<P::Target> = self.cur.take()?;
-        self.temp.write(unsafe { P::from_raw(cur.as_ptr()) });
-        let p = self.tree.walk_dir(cur, self.dir);
-        self.cur = p;
-        Some(unsafe { self.temp.assume_init_ref() })
+        Self { tree, cur: init, dir }
     }
 }
 
@@ -200,12 +188,11 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    type Item = &'a P::Target;
+    type Item = NodeRef<'a, P>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cur: NonNull<P::Target> = self.cur.take()?;
-        let p = self.tree.walk_dir(cur, self.dir);
-        self.cur = p;
-        Some(unsafe { cur.as_ref() })
+        self.cur = self.tree._walk_dir(cur, self.dir);
+        Some(NodeRef::<'a, P>::from(cur.as_ptr()))
     }
 }
