@@ -10,13 +10,15 @@ homepage = "https://github.com/NaturalIO/embed-collections-rs"
 readme = "../README.md"
 
 [dependencies]
-pointers = {version="0"}
+pointers = {version=">=0.2"}
 
 [dev-dependencies]
 embed-collections-test = {path="../test-common"}
 log = { version="0"}
 rstest = "0"
 fastrand = "2.3"
+# for doc
+format-attr = "0"
 
 [features]
 default = []

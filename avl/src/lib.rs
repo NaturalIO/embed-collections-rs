@@ -2,7 +2,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, allow(unused_attributes))]
 #![cfg_attr(not(feature = "std"), no_std)]
-
 //! An intrusive AVL tree implementation.
 //!
 //! The algorithm origin from open-zfs
@@ -18,37 +17,43 @@
 //! ## Using `Box` to search and remove by key
 //!
 //! ```rust
-//! use embed_avl::{AvlTree, AvlItem, AvlNode};
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
 //! use core::cell::UnsafeCell;
-//! use core::cmp::Ordering;
+//! use core::cmp::{Ordering, Ord};
+//! use core::borrow::Borrow;
+//! extern crate format_attr;
 //! extern crate alloc;
 //! use alloc::sync::Arc;
+//! use core::fmt;
 //!
+//! #[derive(format_attr::DebugAttr)]
+//! #[fmt("MyNode {value}")]
 //! struct MyNode {
 //!     value: i32,
 //!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
 //! }
 //!
-//! unsafe impl AvlItem<()> for MyNode {
-//!
-//!     type Key = i32;
-//!
-//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
-//!         unsafe { &mut *self.avl_node.get() }
-//!     }
-//!
-//!     fn borrow_key(&self) -> &Self::Key {
+//! impl Borrow<i32> for MyNode {
+//!     fn borrow(&self) -> &i32 {
 //!         &self.value
 //!     }
 //! }
 //!
+//! unsafe impl AvlItem<()> for MyNode {
+//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!         unsafe { &mut *self.avl_node.get() }
+//!     }
+//! }
+//!
+//! impl_ord_with_borrow!(MyNode, i32);
+//!
 //! // A boxed example
 //!
 //! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
-//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) }));
+//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) })).expect("add ok");
 //!
 //! // Search and remove
-//! if let Some(node) = tree.remove_by_key(&10) {
+//! if let Some(node) = tree.remove_by_key::<i32>(&10i32) {
 //!     assert_eq!(node.value, 10);
 //! }
 //! assert!(tree.is_empty());
@@ -59,11 +64,16 @@
 //! let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
 //! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
 //!
-//! tree.add(node.clone());
+//! // Alternative way of insert
+//! if let Entry::Vacant(ent) = tree.entry(node.value) {
+//!     ent.insert_node(node.clone());
+//! } else {
+//!     unreachable!();
+//! }
 //! assert_eq!(tree.len(), 1);
 //!
 //! // Remove by reference (detach from avl tree)
-//! tree.remove_ref(&node);
+//! tree.remove(&node);
 //! assert_eq!(tree.len(), 0);
 //! ```
 
@@ -71,19 +81,22 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+mod entry;
 mod iter;
+pub use entry::*;
 pub use iter::*;
 #[cfg(test)]
 mod tests;
 
-use alloc::rc::Rc;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::{
+    borrow::Borrow,
     cmp::{Ordering, PartialEq},
-    fmt, mem,
-    ptr::{NonNull, null},
+    fmt,
+    mem::{self, ManuallyDrop},
+    ops::Deref,
+    ptr::{NonNull, null_mut},
 };
 use pointers::Pointer;
 
@@ -102,24 +115,31 @@ use pointers::Pointer;
 /// # Example (struct field as key)
 ///
 /// ```
-/// use embed_avl::{AvlItem, AvlNode};
+/// use embed_avl::{AvlItem, AvlNode, impl_ord_with_borrow};
+/// extern crate format_attr;
+/// use core::borrow::Borrow;
 /// use core::cell::UnsafeCell;
 ///
+/// #[derive(format_attr::DebugAttr)]
+/// #[fmt("IntAvlNode {value}")]
 /// pub struct IntAvlNode {
 ///     pub value: i64,
 ///     pub node: UnsafeCell<AvlNode<Self, ()>>,
 /// }
-/// unsafe impl AvlItem<()> for IntAvlNode {
-///     type Key = i64;
 ///
+/// unsafe impl AvlItem<()> for IntAvlNode {
 ///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
 ///         unsafe { &mut *self.node.get() }
 ///     }
+/// }
 ///
-///     fn borrow_key(&self) -> &Self::Key {
+/// impl Borrow<i64> for IntAvlNode {
+///     fn borrow(&self) -> &i64 {
 ///         &self.value
 ///     }
 /// }
+///
+/// impl_ord_with_borrow!(IntAvlNode, i64);
 /// ```
 ///
 /// # Example (impl Ord for struct)
@@ -161,47 +181,55 @@ use pointers::Pointer;
 /// }
 /// unsafe impl Send for RangeSeg {}
 /// unsafe impl AvlItem<()> for RangeSeg {
-///     type Key = Self;
-///
 ///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
 ///         unsafe { &mut *self.node.get() }
-///     }
-///
-///     fn borrow_key(&self) -> &Self::Key {
-///         self
 ///     }
 /// }
 /// ```
 pub unsafe trait AvlItem<Tag>: Sized {
-    type Key: Ord;
-
     fn get_node(&self) -> &mut AvlNode<Self, Tag>;
+}
 
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.borrow_key().cmp(other.borrow_key())
-    }
+/// Implement Ord with `Borrow<K>`
+///
+/// # Arguments
+/// - cls: struct name
+/// - key_type: `cls: Borrow<$key_type>`
+#[macro_export]
+macro_rules! impl_ord_with_borrow {
+    ($cls: ty, $key_type: ty) => {
+        impl PartialOrd for $cls {
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(Ord::cmp(self, other))
+            }
+        }
+        impl PartialEq for $cls {
+            fn eq(&self, other: &Self) -> bool {
+                Borrow::<$key_type>::borrow(self) == Borrow::<$key_type>::borrow(other)
+            }
+        }
+        impl Eq for $cls {}
 
-    #[inline(always)]
-    fn cmp_key(&self, key: &Self::Key) -> Ordering {
-        key.cmp(self.borrow_key())
-    }
-
-    fn borrow_key(&self) -> &Self::Key;
+        impl Ord for $cls {
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                Borrow::<$key_type>::borrow(self).cmp(Borrow::<$key_type>::borrow(other))
+            }
+        }
+    };
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
-pub enum AvlDirection {
+pub enum Direction {
     Left = 0,
     Right = 1,
 }
 
-impl AvlDirection {
+impl Direction {
     #[inline(always)]
-    fn reverse(self) -> AvlDirection {
+    fn reverse(self) -> Direction {
         match self {
-            AvlDirection::Left => AvlDirection::Right,
-            AvlDirection::Right => AvlDirection::Left,
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
         }
     }
 }
@@ -209,22 +237,16 @@ impl AvlDirection {
 macro_rules! avlchild_to_balance {
     ( $dir: expr ) => {
         match $dir {
-            AvlDirection::Left => -1,
-            AvlDirection::Right => 1,
+            Direction::Left => -1,
+            Direction::Right => 1,
         }
     };
 }
 
-macro_rules! as_avlitem {
-    ($P: tt, $Tag: tt, $name: ident) => {
-        <$P::Target as AvlItem<$Tag>>::$name
-    };
-}
-
 pub struct AvlNode<T: AvlItem<Tag>, Tag> {
-    pub left: *const T,
-    pub right: *const T,
-    pub parent: *const T,
+    pub left: *mut T,
+    pub right: *mut T,
+    pub parent: *mut T,
     pub balance: i8,
     _phan: PhantomData<fn(&Tag)>,
 }
@@ -234,30 +256,30 @@ unsafe impl<T: AvlItem<Tag> + Send, Tag> Send for AvlNode<T, Tag> {}
 impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     #[inline(always)]
     pub fn detach(&mut self) {
-        self.left = null();
-        self.right = null();
-        self.parent = null();
+        self.left = null_mut();
+        self.right = null_mut();
+        self.parent = null_mut();
         self.balance = 0;
     }
 
     #[inline(always)]
-    fn get_child(&self, dir: AvlDirection) -> *const T {
+    fn get_child(&self, dir: Direction) -> *mut T {
         match dir {
-            AvlDirection::Left => self.left,
-            AvlDirection::Right => self.right,
+            Direction::Left => self.left,
+            Direction::Right => self.right,
         }
     }
 
     #[inline(always)]
-    fn set_child(&mut self, dir: AvlDirection, child: *const T) {
+    fn set_child(&mut self, dir: Direction, child: *mut T) {
         match dir {
-            AvlDirection::Left => self.left = child,
-            AvlDirection::Right => self.right = child,
+            Direction::Left => self.left = child,
+            Direction::Right => self.right = child,
         }
     }
 
     #[inline(always)]
-    fn get_parent(&self) -> *const T {
+    fn get_parent(&self) -> *mut T {
         self.parent
     }
 
@@ -273,7 +295,13 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
 
 impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
     fn default() -> Self {
-        Self { left: null(), right: null(), parent: null(), balance: 0, _phan: Default::default() }
+        Self {
+            left: null_mut(),
+            right: null_mut(),
+            parent: null_mut(),
+            balance: 0,
+            _phan: Default::default(),
+        }
     }
 }
 
@@ -297,8 +325,6 @@ impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
     }
 }
 
-pub type AvlCmpFunc<K, T> = fn(&K, &T) -> Ordering;
-
 /// An intrusive AVL tree (balanced binary search tree).
 ///
 /// Elements in the tree must implement the [`AvlItem`] trait.
@@ -308,7 +334,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    root: *const P::Target,
+    root: *mut P::Target,
     count: usize,
     _phan: PhantomData<fn(P, &Tag)>,
 }
@@ -320,123 +346,16 @@ where
 {
 }
 
-/// Result of a search operation in an [`AvlTree`].
-///
-/// An `AvlSearchResult` identifies either:
-/// 1. An exact match: `direction` is `None` and `node` points to the matching item.
-/// 2. An insertion point: `direction` is `Some(dir)` and `node` points to the parent
-///    where a new node should be attached as the `dir` child.
-///
-/// The lifetime `'a` ties the search result to the tree's borrow, ensuring safety.
-/// However, this lifetime often prevents further mutable operations on the tree
-/// (e.g., adding a node while holding the search result). Use [`detach`](Self::detach)
-/// to de-couple the result from the tree's lifetime when necessary.
-pub struct AvlSearchResult<'a, P: Pointer> {
-    /// The matching node or the parent for insertion.
-    pub node: *const P::Target,
-    /// `None` if exact match found, or `Some(direction)` indicating insertion point.
-    pub direction: Option<AvlDirection>,
-    _phan: PhantomData<&'a P::Target>,
-}
-
-impl<P: Pointer> Default for AvlSearchResult<'_, P> {
-    fn default() -> Self {
-        AvlSearchResult { node: null(), direction: Some(AvlDirection::Left), _phan: PhantomData }
-    }
-}
-
-impl<'a, P: Pointer> AvlSearchResult<'a, P> {
-    /// Returns a reference to the matching node if the search was an exact match.
-    #[inline(always)]
-    pub fn get_node_ref(&self) -> Option<&'a P::Target> {
-        if self.is_exact() { unsafe { self.node.as_ref() } } else { None }
-    }
-
-    /// Returns `true` if the search result is an exact match.
-    #[inline(always)]
-    pub fn is_exact(&self) -> bool {
-        self.direction.is_none() && !self.node.is_null()
-    }
-
-    /// De-couple the lifetime of the search result from the tree.
-    ///
-    /// This method is essential for performing mutable operations on the tree
-    /// using search results. In Rust, a search result typically borrows the tree
-    /// immutably. If you need to modify the tree (e.g., call `insert` or `remove`)
-    /// based on that result, the borrow checker would normally prevent it.
-    ///
-    /// `detach` effectively "erases" the lifetime `'a`, returning a result with
-    /// an unbounded lifetime `'b`.
-    ///
-    /// # Examples
-    ///
-    /// Used in `RangeTree::add`:
-    /// ```ignore
-    /// let result = self.root.find(&rs_key);
-    /// // result is AvlSearchResult<'a, ...> and borrows self.root
-    ///
-    /// let detached = unsafe { result.detach() };
-    /// // detached has no lifetime bound to self.root
-    ///
-    /// self.space += size; // Mutable operation on self permitted
-    /// self.merge_seg(start, end, detached); // Mutation on tree permitted
-    /// ```
-    ///
-    /// # Safety
-    /// This is an unsafe operation. The compiler no longer protects the validity
-    /// of the internal pointer via lifetimes. You must ensure that the tree
-    /// structure is not modified in a way that invalidates `node` (e.g., the
-    /// parent node being removed) before using the detached result.
-    #[inline(always)]
-    pub unsafe fn detach<'b>(&'a self) -> AvlSearchResult<'b, P> {
-        AvlSearchResult { node: self.node, direction: self.direction, _phan: PhantomData }
-    }
-
-    /// Return the nearest node in the search result
-    #[inline(always)]
-    pub fn get_nearest(&self) -> Option<&P::Target> {
-        if self.node.is_null() { None } else { unsafe { self.node.as_ref() } }
-    }
-}
-
-impl<'a, T> AvlSearchResult<'a, Arc<T>> {
-    /// Returns the matching Arc node if this is an exact match.
-    pub fn get_exact(&self) -> Option<Arc<T>> {
-        if self.is_exact() {
-            unsafe {
-                Arc::increment_strong_count(self.node);
-                Some(Arc::from_raw(self.node))
-            }
-        } else {
-            None
-        }
-    }
-}
-
-impl<'a, T> AvlSearchResult<'a, Rc<T>> {
-    /// Returns the matching Rc node if this is an exact match.
-    pub fn get_exact(&self) -> Option<Rc<T>> {
-        if self.is_exact() {
-            unsafe {
-                Rc::increment_strong_count(self.node);
-                Some(Rc::from_raw(self.node))
-            }
-        } else {
-            None
-        }
-    }
-}
-
-macro_rules! return_end {
-    ($tree: expr, $dir: expr) => {{ if $tree.root.is_null() { null() } else { $tree.bottom_child_ref($tree.root, $dir) } }};
+unsafe impl<P, Tag> Sync for AvlTree<P, Tag>
+where
+    P: Pointer + Send,
+    P::Target: AvlItem<Tag>,
+{
 }
 
 macro_rules! balance_to_child {
     ($balance: expr) => {
-        match $balance {
-            0 | 1 => AvlDirection::Left,
-            _ => AvlDirection::Right,
-        }
+        if $balance <= 1 { Direction::Left } else { Direction::Right }
     };
 }
 
@@ -448,7 +367,7 @@ where
     /// Creates a new, empty `AvlTree`.
     #[inline]
     pub fn new() -> Self {
-        AvlTree { count: 0, root: null(), _phan: Default::default() }
+        AvlTree { count: 0, root: null_mut(), _phan: Default::default() }
     }
 
     /// Returns an iterator that removes all elements from the tree in post-order.
@@ -470,105 +389,206 @@ where
         self.count
     }
 
-    /// Adds a new element to the tree， takes the ownership of P.
+    /// Adds a new node to the tree
     ///
-    /// Returns `true` if the element was added, `false` if an equivalent element
-    /// already exists (in which case the provided `node` is dropped).
+    /// - Returns `Ok(())` if the node was added, takes the ownership of P.
+    /// - Err(P) if an equivalent node already exists
     #[inline]
-    pub fn add(&mut self, node: P) -> bool {
-        if self.count == 0 && self.root.is_null() {
-            self.root = node.into_raw();
+    pub fn add(&mut self, node: P) -> Result<(), P>
+    where
+        P::Target: Ord,
+    {
+        if !self.root.is_null() {
+            let mut parent = self.root;
+            unsafe {
+                loop {
+                    match node.as_ref().cmp((&*parent).as_ref()) {
+                        Ordering::Less => {
+                            let left = (*parent).get_node().get_child(Direction::Left);
+                            if left.is_null() {
+                                self._insert(node, parent, Direction::Left);
+                                return Ok(());
+                            }
+                            parent = left;
+                        }
+                        Ordering::Greater => {
+                            let right = (*parent).get_node().get_child(Direction::Right);
+                            if right.is_null() {
+                                self._insert(node, parent, Direction::Right);
+                                return Ok(());
+                            }
+                            parent = right;
+                        }
+                        Ordering::Equal => {
+                            return Err(node);
+                        }
+                    }
+                }
+            }
+        } else {
+            debug_assert_eq!(self.count, 0);
+            self.root = node.into_raw() as *mut P::Target;
             self.count = 1;
-            return true;
+            Ok(())
         }
-
-        let w = self._find(node.as_ref(), as_avlitem!(P, Tag, cmp));
-        if w.direction.is_none() {
-            // To prevent memory leak, we must drop the node.
-            // But since we took ownership, we have to convert it back to P and drop it.
-            drop(node);
-            return false;
-        }
-
-        // Safety: We need to decouple the lifetime of 'w' from 'self' to call 'insert'.
-        // We extract the pointers and reconstruct the result.
-        let w_node = w.node;
-        let w_dir = w.direction;
-
-        let w_detached = AvlSearchResult { node: w_node, direction: w_dir, _phan: PhantomData };
-
-        self.insert(node, w_detached);
-        true
     }
 
-    /// Inserts a new node into the tree at the location specified by a search result.
-    ///
-    /// This is typically used after a [`find`](Self::find) operation didn't find an exact match.
-    ///
-    /// # Safety
-    ///
-    /// Once the tree structure changed, previous search result is not safe to use anymore.
-    ///
-    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
-    /// to avoid the borrowing issue.
-    ///
-    /// # Panics
-    /// Panics if the search result is an exact match (i.e. node already exists).
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use embed_avl::{AvlTree, AvlItem, AvlNode};
-    /// use core::cell::UnsafeCell;
-    /// extern crate alloc;
-    /// use alloc::sync::Arc;
-    ///
-    /// struct MyNode {
-    ///     value: i32,
-    ///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
-    /// }
-    ///
-    /// unsafe impl AvlItem<()> for MyNode {
-    ///     type Key = i32;
-    ///
-    ///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
-    ///         unsafe { &mut *self.avl_node.get() }
-    ///     }
-    ///
-    ///     fn borrow_key(&self) -> &Self::Key {
-    ///         &self.value
-    ///     }
-    /// }
-    ///
-    /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
-    /// let key = 42;
-    /// let result = tree.find(&key);
-    ///
-    /// if !result.is_exact() {
-    ///     let new_node = Arc::new(MyNode {
-    ///         value: key,
-    ///         avl_node: UnsafeCell::new(Default::default()),
-    ///     });
-    ///     tree.insert(new_node, unsafe{result.detach()});
-    /// }
-    /// ```
+    /// remove a node from the tree (need P::Target to impl Borrow)
     #[inline]
-    pub fn insert(&mut self, new_data: P, w: AvlSearchResult<'_, P>) {
-        debug_assert!(w.direction.is_some());
-        self._insert(new_data, w.node, w.direction.unwrap());
+    pub fn remove_by_key<K>(&mut self, key: &K) -> Option<P>
+    where
+        P::Target: Borrow<K>,
+        K: Ord,
+    {
+        let _cmp = |_key: &&K, node: &P::Target| -> Ordering { _key.cmp(&node.borrow()) };
+        if let Entry::Occupied(ent) = unsafe { self.entry_with::<&K, _>(&key, _cmp) } {
+            Some(ent.remove())
+        } else {
+            None
+        }
+    }
+
+    /// remove a node from the tree (useful if P is multiple ownership)
+    #[inline]
+    pub fn remove(&mut self, node: &P)
+    where
+        P::Target: Ord,
+    {
+        let _cmp = |_cur: &&P::Target, node: &P::Target| -> Ordering { _cur.cmp(&node.borrow()) };
+        if let Entry::Occupied(ent) =
+            unsafe { self.entry_with::<&P::Target, _>(node.as_ref(), _cmp) }
+        {
+            ent.remove();
+        }
+    }
+
+    /// Searches for an element in the tree with `key`, requires P::Target can borrow to `K` type,
+    /// and have a total ordering by `K`.
+    ///
+    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
+    /// or where a new element should be inserted.
+    #[inline]
+    pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, P, Tag, K>
+    where
+        P::Target: Borrow<K>,
+        K: Ord,
+    {
+        unsafe { self.entry_with(key, |_key: &K, node: &P::Target| _key.cmp(node.borrow())) }
+    }
+
+    /// Searches for an element in the tree with `key` and custom compare function.
+    ///
+    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
+    /// or where a new element should be inserted.
+    #[inline]
+    pub unsafe fn entry_with<'a, K, F>(&'a mut self, key: K, cmp_f: F) -> Entry<'a, P, Tag, K>
+    where
+        F: Fn(&K, &P::Target) -> Ordering,
+    {
+        if !self.root.is_null() {
+            let mut parent = self.root;
+            unsafe {
+                loop {
+                    match cmp_f(&key, (&*parent).as_ref()) {
+                        Ordering::Equal => {
+                            return Entry::Occupied(OccupiedEntry {
+                                node: NonNull::new_unchecked(parent as *mut P::Target),
+                                tree: self,
+                            });
+                        }
+                        Ordering::Less => {
+                            let left = (*parent).get_node().get_child(Direction::Left);
+                            if left.is_null() {
+                                return Entry::Vacant(VacantEntry {
+                                    node: parent,
+                                    direction: Direction::Left,
+                                    tree: self,
+                                    key,
+                                });
+                            }
+                            parent = left;
+                        }
+                        Ordering::Greater => {
+                            let right = (*parent).get_node().get_child(Direction::Right);
+                            if right.is_null() {
+                                return Entry::Vacant(VacantEntry {
+                                    node: parent,
+                                    direction: Direction::Right,
+                                    tree: self,
+                                    key,
+                                });
+                            }
+                            parent = right;
+                        }
+                    }
+                }
+            }
+        } else {
+            return Entry::Vacant(VacantEntry {
+                node: null_mut(),
+                direction: Direction::Right,
+                tree: self,
+                key,
+            });
+        }
+    }
+
+    #[inline]
+    pub fn get<'a, K>(&'a self, key: &K) -> Option<NodeRef<'a, P>>
+    where
+        P::Target: Borrow<K>,
+        K: Ord,
+    {
+        self.get_with(|node| key.cmp(node.borrow()))
+    }
+
+    pub fn get_with<'a, F>(&'a self, cmp_f: F) -> Option<NodeRef<'a, P>>
+    where
+        F: Fn(&P::Target) -> Ordering,
+    {
+        unsafe {
+            if !self.root.is_null() {
+                let mut node_data = self.root;
+                loop {
+                    match cmp_f((&*node_data).as_ref()) {
+                        Ordering::Equal => {
+                            return Some(NodeRef::from(node_data));
+                        }
+                        Ordering::Less => {
+                            let node = (*node_data).get_node();
+                            let left = node.get_child(Direction::Left);
+                            if left.is_null() {
+                                return None;
+                            }
+                            node_data = left;
+                        }
+                        Ordering::Greater => {
+                            let node = (*node_data).get_node();
+                            let right = node.get_child(Direction::Right);
+                            if right.is_null() {
+                                return None;
+                            }
+                            node_data = right;
+                        }
+                    }
+                }
+            } else {
+                None
+            }
+        }
     }
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn _insert(
         &mut self,
         new_data: P,
-        here: *const P::Target, // parent
-        mut which_child: AvlDirection,
+        parent: *mut P::Target, // parent
+        mut which_child: Direction,
     ) {
         let mut new_balance: i8;
-        let new_ptr = new_data.into_raw();
+        let new_ptr = new_data.into_raw() as *mut P::Target;
 
-        if here.is_null() {
+        if parent.is_null() {
             if self.count > 0 {
                 panic!("insert into a tree size {} with empty where.node", self.count);
             }
@@ -577,10 +597,9 @@ where
             return;
         }
 
-        let parent = unsafe { &*here };
         let node = unsafe { (*new_ptr).get_node() };
-        let parent_node = parent.get_node();
-        node.parent = here;
+        let parent_node = unsafe { (*parent).get_node() };
+        node.parent = parent;
         parent_node.set_child(which_child, new_ptr);
         self.count += 1;
 
@@ -590,7 +609,7 @@ where
          * need to do a rotation.  If we back out of the tree we are done.
          * If we brought any subtree into perfect balance (0), we are also done.
          */
-        let mut data: *const P::Target = here;
+        let mut data: *mut P::Target = parent;
         loop {
             let node = unsafe { (*data).get_node() };
             let old_balance = node.balance;
@@ -614,40 +633,34 @@ where
     }
 
     /// Insert "new_data" in "tree" in the given "direction" either after or
-    /// before AvlDirection::After, AvlDirection::Before) the data "here".
+    /// before Direction::After, Direction::Before) the data "here".
+    ///
+    /// For range-tree scenario
     ///
     /// Insertions can only be done at empty leaf points in the tree, therefore
     /// if the given child of the node is already present we move to either
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
-    ///
-    /// # Safety
-    ///
-    /// Once the tree structure changed, previous search result is not safe to use anymore.
-    ///
-    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
-    /// to avoid the borrowing issue.
-    pub unsafe fn insert_here(
-        &mut self, new_data: P, here: AvlSearchResult<P>, direction: AvlDirection,
-    ) {
+    unsafe fn _insert_here(&mut self, new_data: P, here: NonNull<P::Target>, direction: Direction) {
         let mut dir_child = direction;
-        assert!(!here.node.is_null());
-        let here_node = here.node;
-        let child = unsafe { (*here_node).get_node().get_child(dir_child) };
-        if !child.is_null() {
-            dir_child = dir_child.reverse();
-            let node = self.bottom_child_ref(child, dir_child);
-            self._insert(new_data, node, dir_child);
-        } else {
-            self._insert(new_data, here_node, dir_child);
+        unsafe {
+            let child = here.as_ref().get_node().get_child(dir_child);
+            let parent;
+            if child.is_null() {
+                parent = here;
+            } else {
+                dir_child = dir_child.reverse();
+                parent = self.bottom_child(NonNull::new_unchecked(child), dir_child);
+            }
+            self._insert(new_data, parent.as_ptr(), dir_child);
         }
     }
 
     // set child and both child's parent
     #[inline(always)]
     fn set_child2(
-        &mut self, node: &mut AvlNode<P::Target, Tag>, dir: AvlDirection, child: *const P::Target,
-        parent: *const P::Target,
+        &mut self, node: &mut AvlNode<P::Target, Tag>, dir: Direction, child: *mut P::Target,
+        parent: *mut P::Target,
     ) {
         if !child.is_null() {
             unsafe { (*child).get_node().parent = parent };
@@ -656,35 +669,36 @@ where
     }
 
     #[inline(always)]
-    fn parent_direction(&self, data: *const P::Target, parent: *const P::Target) -> AvlDirection {
+    fn parent_direction(&self, data: *mut P::Target, parent: *mut P::Target) -> Direction {
         if !parent.is_null() {
             let parent_node = unsafe { (*parent).get_node() };
             if parent_node.left == data {
-                return AvlDirection::Left;
+                return Direction::Left;
             }
             if parent_node.right == data {
-                return AvlDirection::Right;
+                return Direction::Right;
             }
             panic!("invalid avl tree, node {:p}, parent {:p}", data, parent);
         }
         // this just follow zfs
-        AvlDirection::Left
+        Direction::Left
     }
 
     #[inline(always)]
-    fn parent_direction2(&self, data: *const P::Target) -> AvlDirection {
+    fn parent_direction2(&self, data: *mut P::Target) -> Direction {
         let node = unsafe { (*data).get_node() };
         let parent = node.get_parent();
         if !parent.is_null() {
             return self.parent_direction(data, parent);
         }
         // this just follow zfs
-        AvlDirection::Left
+        Direction::Left
     }
 
     #[inline]
-    fn rotate(&mut self, data: *const P::Target, balance: i8) -> bool {
-        let dir = if balance < 0 { AvlDirection::Left } else { AvlDirection::Right };
+    fn rotate(&mut self, data: *mut P::Target, balance: i8) -> bool {
+        /* when balance = -2, left will be 0 */
+        let dir = if balance < 0 { Direction::Left } else { Direction::Right };
         let node = unsafe { (*data).get_node() };
 
         let parent = node.get_parent();
@@ -716,7 +730,7 @@ where
                 child_node.parent = parent;
                 unsafe { (*parent).get_node() }.set_child(which_child, child);
             } else {
-                child_node.parent = null();
+                child_node.parent = null_mut();
                 self.root = child;
             }
             return child_balance == 0;
@@ -761,40 +775,11 @@ where
             g_child_node.parent = parent;
             unsafe { (*parent).get_node() }.set_child(which_child, g_child);
         } else {
-            g_child_node.parent = null();
+            g_child_node.parent = null_mut();
             self.root = g_child;
         }
         true
     }
-
-    /*
-    fn replace(&mut self, old: *const P::Target, node: P) {
-        let old_node = unsafe { (*old).get_node() };
-        let new_ptr = node.into_raw();
-        let new_node = unsafe { (*new_ptr).get_node() };
-
-        let left = old_node.get_child(AvlDirection::Left);
-        if !left.is_null() {
-            self.set_child2(new_node, AvlDirection::Left, left, new_ptr);
-        }
-        let right = old_node.get_child(AvlDirection::Right);
-        if !right.is_null() {
-            self.set_child2(new_node, AvlDirection::Right, right, new_ptr);
-        }
-
-        new_node.balance = old_node.balance;
-        old_node.balance = 0;
-        let parent = old_node.get_parent();
-        if !parent.is_null() {
-            let dir = self.parent_direction(old, parent);
-            self.set_child2(unsafe { (*parent).get_node() }, dir, new_ptr, parent);
-            old_node.parent = null();
-        } else {
-            debug_assert_eq!(self.root, old);
-            self.root = new_ptr;
-        }
-    }
-    */
 
     /// Requires `del` to be a valid pointer to a node in this tree.
     ///
@@ -805,7 +790,7 @@ where
     ///
     /// For Arc/Rc, use [Self::remove_ref()] instead.
     ///
-    pub unsafe fn remove(&mut self, del: *const P::Target) {
+    pub(crate) unsafe fn _remove(&mut self, del: *mut P::Target) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
          * We swap a node with 2 children with a sequentially valued
@@ -820,12 +805,12 @@ where
             return;
         }
         if self.count == 1 && self.root == del {
-            self.root = null();
+            self.root = null_mut();
             self.count = 0;
             unsafe { (*del).get_node().detach() };
             return;
         }
-        let mut which_child: AvlDirection;
+        let mut which_child: Direction;
 
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
         let del_node = unsafe { (*del).get_node() };
@@ -833,11 +818,13 @@ where
         let node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
 
         if node_swap_flag {
-            let dir: AvlDirection = balance_to_child!(del_node.balance + 1);
+            let dir: Direction = balance_to_child!(del_node.balance + 1);
             let child_temp = del_node.get_child(dir);
 
-            let dir_inverse: AvlDirection = dir.reverse();
-            let child = self.bottom_child_ref(child_temp, dir_inverse);
+            let dir_inverse: Direction = dir.reverse();
+            let child = self
+                .bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
+                .as_ptr();
 
             // Fix Miri UB: Avoid calling parent_direction2(child) if child's parent is del,
             // because that would create a aliasing &mut ref to del while we hold del_node.
@@ -850,7 +837,7 @@ where
             let dir_child_del = if !parent.is_null() {
                 self.parent_direction(del, parent)
             } else {
-                AvlDirection::Left
+                Direction::Left
             };
 
             let child_node = unsafe { (*child).get_node() };
@@ -888,9 +875,9 @@ where
             let parent = del_node.get_parent();
             unsafe { (*parent).get_node() }.set_child(dir_child_temp, del);
             if !del_node.right.is_null() {
-                which_child = AvlDirection::Right;
+                which_child = Direction::Right;
             } else {
-                which_child = AvlDirection::Left;
+                which_child = Direction::Left;
             }
             let child = del_node.get_child(which_child);
             if !child.is_null() {
@@ -903,15 +890,15 @@ where
             if !parent.is_null() {
                 which_child = self.parent_direction(del, parent);
             } else {
-                which_child = AvlDirection::Left;
+                which_child = Direction::Left;
             }
         }
 
         // Here we know "delete" is at least partially a leaf node. It can
         // be easily removed from the tree.
-        let parent: *const P::Target = del_node.get_parent();
+        let parent: *mut P::Target = del_node.get_parent();
 
-        let imm_data: *const P::Target =
+        let imm_data: *mut P::Target =
             if !del_node.left.is_null() { del_node.left } else { del_node.right };
 
         // Connect parent directly to node (leaving out delete).
@@ -929,7 +916,7 @@ where
 
             //Since the subtree is now shorter, begin adjusting parent balances
             //and performing any needed rotations.
-            let mut node_data: *const P::Target = parent;
+            let mut node_data: *mut P::Target = parent;
             let mut old_balance: i8;
             let mut new_balance: i8;
             loop {
@@ -979,228 +966,16 @@ where
         del_node.detach();
     }
 
-    /// Removes a node from the tree by key.
-    ///
-    /// Returns `Some(P)` if an exact match was found and removed, `None` otherwise.
-    #[inline]
-    pub fn remove_by_key(&mut self, val: &'_ as_avlitem!(P, Tag, Key)) -> Option<P> {
-        let result = self.find(val);
-        self.remove_with(unsafe { result.detach() })
-    }
-
-    /// remove with a previous search result
-    ///
-    /// - If the result is exact match, return the removed element ownership
-    /// - If the result is not exact match, return None
-    ///
-    /// # Safety
-    ///
-    /// Once the tree structure changed, previous search result is not safe to use anymore.
-    ///
-    /// You should [detach()](AvlSearchResult::detach) the result before calling insert,
-    /// to avoid the borrowing issue.
-    #[inline]
-    pub fn remove_with(&mut self, result: AvlSearchResult<'_, P>) -> Option<P> {
-        if result.is_exact() {
-            unsafe {
-                let p = result.node;
-                self.remove(p);
-                Some(P::from_raw(p))
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Searches for an element in the tree.
-    ///
-    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
-    /// or where a new element should be inserted.
-    #[inline]
-    pub fn find<'a>(&'a self, val: &'_ as_avlitem!(P, Tag, Key)) -> AvlSearchResult<'a, P> {
-        self._find::<as_avlitem!(P, Tag, Key)>(val, |_val, other| _val.cmp(other.borrow_key()))
-    }
-
-    #[inline]
-    fn _find<'a, K>(
-        &'a self, val: &'_ K, cmp_func: AvlCmpFunc<K, P::Target>,
-    ) -> AvlSearchResult<'a, P> {
-        if self.root.is_null() {
-            return AvlSearchResult::default();
-        }
-        let mut node_data = self.root;
-        loop {
-            let diff = cmp_func(val, unsafe { &*node_data });
-            match diff {
-                Ordering::Equal => {
-                    return AvlSearchResult {
-                        node: node_data,
-                        direction: None,
-                        _phan: PhantomData,
-                    };
-                }
-                Ordering::Less => {
-                    let node = unsafe { (*node_data).get_node() };
-                    let left = node.get_child(AvlDirection::Left);
-                    if left.is_null() {
-                        return AvlSearchResult {
-                            node: node_data,
-                            direction: Some(AvlDirection::Left),
-                            _phan: PhantomData,
-                        };
-                    }
-                    node_data = left;
-                }
-                Ordering::Greater => {
-                    let node = unsafe { (*node_data).get_node() };
-                    let right = node.get_child(AvlDirection::Right);
-                    if right.is_null() {
-                        return AvlSearchResult {
-                            node: node_data,
-                            direction: Some(AvlDirection::Right),
-                            _phan: PhantomData,
-                        };
-                    }
-                    node_data = right;
-                }
-            }
-        }
-    }
-
-    // for range tree, val may overlap multiple range(node), ensure return the smallest
-    #[inline]
-    pub fn find_contained<'a>(
-        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
-    ) -> Option<&'a P::Target> {
-        if self.root.is_null() {
-            return None;
-        }
-        let mut node_data = self.root;
-        let mut result_node: *const P::Target = null();
-        loop {
-            let diff = unsafe { &*node_data }.cmp_key(val);
-            match diff {
-                Ordering::Equal => {
-                    let node = unsafe { (*node_data).get_node() };
-                    let left = node.get_child(AvlDirection::Left);
-                    result_node = node_data;
-                    if left.is_null() {
-                        break;
-                    } else {
-                        node_data = left;
-                    }
-                }
-                Ordering::Less => {
-                    let node = unsafe { (*node_data).get_node() };
-                    let left = node.get_child(AvlDirection::Left);
-                    if left.is_null() {
-                        break;
-                    }
-                    node_data = left;
-                }
-                Ordering::Greater => {
-                    let node = unsafe { (*node_data).get_node() };
-                    let right = node.get_child(AvlDirection::Right);
-                    if right.is_null() {
-                        break;
-                    }
-                    node_data = right;
-                }
-            }
-        }
-        if result_node.is_null() { None } else { unsafe { result_node.as_ref() } }
-    }
-
-    // for slab, return any block larger or equal than search param
-    #[inline]
-    pub fn find_larger_eq<'a>(
-        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
-    ) -> AvlSearchResult<'a, P> {
-        if self.root.is_null() {
-            return AvlSearchResult::default();
-        }
-        let mut node_data = self.root;
-        loop {
-            let diff = unsafe { &*node_data }.cmp_key(val);
-            match diff {
-                Ordering::Equal => {
-                    return AvlSearchResult {
-                        node: node_data,
-                        direction: None,
-                        _phan: PhantomData,
-                    };
-                }
-                Ordering::Less => {
-                    return AvlSearchResult {
-                        node: node_data,
-                        direction: None,
-                        _phan: PhantomData,
-                    };
-                }
-                Ordering::Greater => {
-                    let right = unsafe { (*node_data).get_node() }.get_child(AvlDirection::Right);
-                    if right.is_null() {
-                        return AvlSearchResult {
-                            node: null(),
-                            direction: None,
-                            _phan: PhantomData,
-                        };
-                    }
-                    node_data = right;
-                }
-            }
-        }
-    }
-
-    /// For range tree
-    #[inline]
-    pub fn find_nearest<'a, K>(
-        &'a self, val: &'_ <P::Target as AvlItem<Tag>>::Key,
-    ) -> AvlSearchResult<'a, P> {
-        if self.root.is_null() {
-            return AvlSearchResult::default();
-        }
-
-        let mut node_data = self.root;
-        let mut nearest_node = null();
-        loop {
-            let diff = unsafe { &*node_data }.cmp_key(val);
-            match diff {
-                Ordering::Equal => {
-                    return AvlSearchResult {
-                        node: node_data,
-                        direction: None,
-                        _phan: PhantomData,
-                    };
-                }
-                Ordering::Less => {
-                    nearest_node = node_data;
-                    let left = unsafe { (*node_data).get_node() }.get_child(AvlDirection::Left);
-                    if left.is_null() {
-                        break;
-                    }
-                    node_data = left;
-                }
-                Ordering::Greater => {
-                    let right = unsafe { (*node_data).get_node() }.get_child(AvlDirection::Right);
-                    if right.is_null() {
-                        break;
-                    }
-                    node_data = right;
-                }
-            }
-        }
-        AvlSearchResult { node: nearest_node, direction: None, _phan: PhantomData }
-    }
-
     #[inline(always)]
-    fn bottom_child_ref(&self, mut data: *const P::Target, dir: AvlDirection) -> *const P::Target {
+    fn bottom_child(&self, mut data: NonNull<P::Target>, dir: Direction) -> NonNull<P::Target> {
         loop {
-            let child = unsafe { (*data).get_node() }.get_child(dir);
-            if !child.is_null() {
-                data = child;
-            } else {
-                return data;
+            unsafe {
+                let child = data.as_ref().get_node().get_child(dir);
+                if !child.is_null() {
+                    data = NonNull::new_unchecked(child as *mut P::Target);
+                } else {
+                    return data;
+                }
             }
         }
     }
@@ -1213,15 +988,14 @@ where
     #[inline]
     pub fn iter(&self) -> AvlIter<'_, P, Tag> {
         let first_p = if !self.root.is_null() {
-            Some(unsafe {
-                NonNull::new_unchecked(
-                    self.bottom_child_ref(self.root, AvlDirection::Left) as *mut P::Target
-                )
-            })
+            Some(self.bottom_child(
+                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
+                Direction::Left,
+            ))
         } else {
             None
         };
-        AvlIter::new(self, first_p, AvlDirection::Right)
+        AvlIter::new(self, first_p, Direction::Right)
     }
 
     /// return a reversed iterator to get the reference.
@@ -1233,47 +1007,43 @@ where
     #[inline]
     pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
         let last_p = if !self.root.is_null() {
-            Some(unsafe {
-                NonNull::new_unchecked(
-                    self.bottom_child_ref(self.root, AvlDirection::Right) as *mut P::Target
-                )
-            })
+            Some(self.bottom_child(
+                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
+                Direction::Right,
+            ))
         } else {
             None
         };
-        AvlIter::new(self, last_p, AvlDirection::Left)
+        AvlIter::new(self, last_p, Direction::Left)
     }
 
     #[inline]
-    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
-        if let Some(p) = self.walk_dir(data.into(), AvlDirection::Right) {
-            Some(unsafe { p.as_ref() })
+    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
+        if let Some(p) = self._walk_dir(data.into(), Direction::Left) {
+            Some(NodeRef::from(p.as_ptr()))
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<&'a P::Target> {
-        if let Some(p) = self.walk_dir(data.into(), AvlDirection::Left) {
-            Some(unsafe { p.as_ref() })
+    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
+        if let Some(p) = self._walk_dir(data.into(), Direction::Right) {
+            Some(NodeRef::from(p.as_ptr()))
         } else {
             None
         }
     }
 
-    #[inline]
-    fn walk_dir(
-        &self, mut data_ptr: NonNull<P::Target>, dir: AvlDirection,
+    fn _walk_dir(
+        &self, mut data_ptr: NonNull<P::Target>, dir: Direction,
     ) -> Option<NonNull<P::Target>> {
         let dir_inverse = dir.reverse();
         let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
         if !temp.is_null() {
             unsafe {
-                Some(NonNull::new_unchecked(
-                    self.bottom_child_ref(temp, dir_inverse) as *mut P::Target
-                ))
+                Some(self.bottom_child(NonNull::new_unchecked(temp as *mut P::Target), dir_inverse))
             }
         } else {
             let mut parent = node.parent;
@@ -1298,53 +1068,56 @@ where
     }
 
     #[inline]
-    fn validate_node(&self, data: *const P::Target) {
-        let node = unsafe { (*data).get_node() };
-        let left = node.left;
-        if !left.is_null() {
-            assert!(unsafe { &*left }.cmp(unsafe { &*data }) != Ordering::Greater);
-            assert_eq!(unsafe { (*left).get_node() }.get_parent(), data);
-        }
-        let right = node.right;
-        if !right.is_null() {
-            assert!(unsafe { &*right }.cmp(unsafe { &*data }) != Ordering::Less);
-            assert_eq!(unsafe { (*right).get_node() }.get_parent(), data);
+    pub fn first<'a>(&'a self) -> Option<NodeRef<'a, P>> {
+        if !self.root.is_null() {
+            let p = self.bottom_child(
+                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
+                Direction::Left,
+            );
+            Some(NodeRef::<'a, P>::from(p.as_ptr()))
+        } else {
+            None
         }
     }
 
     #[inline]
-    pub fn first(&self) -> Option<&P::Target> {
-        unsafe { return_end!(self, AvlDirection::Left).as_ref() }
+    pub fn last<'a>(&'a self) -> Option<NodeRef<'a, P>> {
+        if !self.root.is_null() {
+            let p = self.bottom_child(
+                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
+                Direction::Right,
+            );
+            Some(NodeRef::<'a, P>::from(p.as_ptr()))
+        } else {
+            None
+        }
     }
 
     #[inline]
-    pub fn last(&self) -> Option<&P::Target> {
-        unsafe { return_end!(self, AvlDirection::Right).as_ref() }
+    pub fn validate(&self)
+    where
+        P::Target: Ord,
+    {
+        self.validate_with(P::Target::cmp)
     }
 
-    #[inline]
-    pub fn nearest<'a>(
-        &'a self, current: &AvlSearchResult<'a, P>, direction: AvlDirection,
-    ) -> AvlSearchResult<'a, P> {
-        if !current.node.is_null() {
-            if current.direction.is_some() && current.direction != Some(direction) {
-                return AvlSearchResult { node: current.node, direction: None, _phan: PhantomData };
+    pub fn validate_with<F>(&self, cmp_f: F)
+    where
+        F: Fn(&P::Target, &P::Target) -> Ordering,
+    {
+        let validate_node = |data: *mut P::Target| unsafe {
+            let node = (*data).get_node();
+            let left = node.left;
+            if !left.is_null() {
+                assert!(cmp_f(&*left, &*data) != Ordering::Greater);
+                assert_eq!((*left).get_node().get_parent(), data);
             }
-            if let Some(node) = self.walk_dir(
-                unsafe { NonNull::new_unchecked(current.node as *mut P::Target) },
-                direction,
-            ) {
-                return AvlSearchResult {
-                    node: node.as_ptr(),
-                    direction: None,
-                    _phan: PhantomData,
-                };
+            let right = node.right;
+            if !right.is_null() {
+                assert!(cmp_f(&*right, &*data) != Ordering::Less);
+                assert_eq!((*right).get_node().get_parent(), data);
             }
-        }
-        AvlSearchResult::default()
-    }
-
-    pub fn validate(&self) {
+        };
         let c = {
             #[cfg(feature = "std")]
             {
@@ -1355,7 +1128,7 @@ where
                 100
             }
         };
-        let mut stack: Vec<*const P::Target> = Vec::with_capacity(c);
+        let mut stack: Vec<*mut P::Target> = Vec::with_capacity(c);
         if self.root.is_null() {
             assert_eq!(self.count, 0);
             return;
@@ -1364,27 +1137,20 @@ where
         let mut visited = 0;
         loop {
             if !data.is_null() {
-                let left = {
-                    let node = unsafe { (*data).get_node() };
-                    node.get_child(AvlDirection::Left)
-                };
+                let left = unsafe { (*data).get_node() }.get_child(Direction::Left);
                 if !left.is_null() {
                     stack.push(data);
                     data = left;
                     continue;
                 }
-                visited += 1;
-                self.validate_node(data);
-                data = unsafe { (*data).get_node() }.get_child(AvlDirection::Right);
             } else if !stack.is_empty() {
-                let _data = stack.pop().unwrap();
-                self.validate_node(_data);
-                visited += 1;
-                let node = unsafe { (*_data).get_node() };
-                data = node.get_child(AvlDirection::Right);
+                data = stack.pop().unwrap();
             } else {
                 break;
             }
+            validate_node(data);
+            visited += 1;
+            data = unsafe { (*data).get_node() }.get_child(Direction::Right);
         }
         assert_eq!(visited, self.count);
     }
@@ -1402,24 +1168,31 @@ where
     }
 }
 
-impl<T, Tag> AvlTree<Arc<T>, Tag>
-where
-    T: AvlItem<Tag>,
-{
-    pub fn remove_ref(&mut self, node: &Arc<T>) {
-        let p = Arc::as_ptr(node);
-        unsafe { self.remove(p) };
-        unsafe { drop(Arc::from_raw(p)) };
+/// A Reference to `P` recover from raw pointer
+pub struct NodeRef<'a, P> {
+    node: ManuallyDrop<P>,
+    _phan: PhantomData<&'a P>,
+}
+
+impl<'a, P> AsRef<P> for NodeRef<'a, P> {
+    #[inline(always)]
+    fn as_ref(&self) -> &P {
+        self.node.deref()
     }
 }
 
-impl<T, Tag> AvlTree<Rc<T>, Tag>
-where
-    T: AvlItem<Tag>,
-{
-    pub fn remove_ref(&mut self, node: &Rc<T>) {
-        let p = Rc::as_ptr(node);
-        unsafe { self.remove(p) };
-        unsafe { drop(Rc::from_raw(p)) };
+impl<'a, P: Pointer> Deref for NodeRef<'a, P> {
+    type Target = P;
+
+    #[inline(always)]
+    fn deref(&self) -> &P {
+        &self.node
+    }
+}
+
+impl<'a, P: Pointer> From<*mut P::Target> for NodeRef<'a, P> {
+    #[inline]
+    fn from(p: *mut P::Target) -> Self {
+        Self { node: ManuallyDrop::new(unsafe { P::from_raw(p) }), _phan: Default::default() }
     }
 }
