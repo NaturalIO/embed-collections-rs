@@ -11,10 +11,12 @@ readme = "../README.md"
 
 [dependencies]
 pointers = {version=">=0.2"}
+log = { version="0.4", optional=true}
 
 [dev-dependencies]
 embed-collections-test = {path="../test-common"}
-log = { version="0"}
+log = { version="0.4"}
+captains-log = "0"
 rstest = "0"
 fastrand = "2.3"
 # for doc
@@ -23,6 +25,8 @@ format-attr = "0"
 [features]
 default = []
 std = []
+# only for test
+trace_log = ["dep:log", "embed-collections-test/trace_log"]
 
 [package.metadata.docs.rs]
 all-features = true
