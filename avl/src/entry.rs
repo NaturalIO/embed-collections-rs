@@ -85,7 +85,7 @@ where
 
     #[inline]
     pub fn peek_prev(&self) -> Option<&'a P::Target> {
-        if let Some(p) = self.tree._walk_dir(self.node, Direction::Left) {
+        if let Some(p) = self.tree._walk_dir(self.node, DIR_LEFT) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -94,7 +94,7 @@ where
 
     #[inline]
     pub fn peek_next(&self) -> Option<&'a P::Target> {
-        if let Some(p) = self.tree._walk_dir(self.node, Direction::Right) {
+        if let Some(p) = self.tree._walk_dir(self.node, DIR_RIGHT) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -103,7 +103,7 @@ where
 
     #[inline]
     pub fn move_prev(mut self) -> Option<Self> {
-        if let Some(p) = self.tree._walk_dir(self.node, Direction::Left) {
+        if let Some(p) = self.tree._walk_dir(self.node, DIR_LEFT) {
             self.node = p;
             Some(self)
         } else {
@@ -113,7 +113,7 @@ where
 
     #[inline]
     pub fn move_next(mut self) -> Option<Self> {
-        if let Some(p) = self.tree._walk_dir(self.node, Direction::Right) {
+        if let Some(p) = self.tree._walk_dir(self.node, DIR_RIGHT) {
             self.node = p;
             Some(self)
         } else {
@@ -134,7 +134,7 @@ where
     pub unsafe fn insert_before_unchecked(&mut self, new_node: P) {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
-            self.tree._insert_here(new_ptr, self.node, Direction::Left);
+            self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
         }
     }
 
@@ -151,7 +151,7 @@ where
     pub unsafe fn insert_move_before_unchecked(self, new_node: P) -> Self {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
-            self.tree._insert_here(new_ptr, self.node, Direction::Left);
+            self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
             Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
     }
@@ -169,7 +169,7 @@ where
     pub unsafe fn insert_after_unchecked(&mut self, new_node: P) {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
-            self.tree._insert_here(new_ptr, self.node, Direction::Right);
+            self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);
         }
     }
 
@@ -186,7 +186,7 @@ where
     pub unsafe fn insert_move_after_unchecked(self, new_node: P) -> Self {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
-            self.tree._insert_here(new_ptr, self.node, Direction::Right);
+            self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);
             Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
     }
@@ -271,7 +271,7 @@ where
     P::Target: AvlItem<Tag>,
 {
     pub(crate) node: *mut P::Target,
-    pub(crate) direction: Direction,
+    pub(crate) direction: Dir,
     pub(crate) tree: &'a mut AvlTree<P, Tag>,
     pub(crate) key: K,
 }
@@ -291,11 +291,11 @@ where
     pub fn peek_prev(&self) -> Option<&P::Target> {
         if !self.node.is_null() {
             unsafe {
-                if self.direction == Direction::Right {
+                if self.direction == DIR_RIGHT {
                     return Some(&*self.node);
                 } else if let Some(node) = self
                     .tree
-                    ._walk_dir(NonNull::new_unchecked(self.node as *mut P::Target), Direction::Left)
+                    ._walk_dir(NonNull::new_unchecked(self.node as *mut P::Target), DIR_LEFT)
                 {
                     return Some(node.as_ref());
                 }
@@ -313,12 +313,12 @@ where
     pub fn peek_next(&self) -> Option<&P::Target> {
         if !self.node.is_null() {
             unsafe {
-                if self.direction == Direction::Left {
+                if self.direction == DIR_LEFT {
                     return Some(&*self.node);
-                } else if let Some(node) = self.tree._walk_dir(
-                    NonNull::new_unchecked(self.node as *mut P::Target),
-                    Direction::Right,
-                ) {
+                } else if let Some(node) = self
+                    .tree
+                    ._walk_dir(NonNull::new_unchecked(self.node as *mut P::Target), DIR_RIGHT)
+                {
                     return Some(node.as_ref());
                 }
             }
@@ -331,9 +331,9 @@ where
         if !self.node.is_null() {
             unsafe {
                 let p = NonNull::new_unchecked(self.node as *mut P::Target);
-                if self.direction == Direction::Right {
+                if self.direction == DIR_RIGHT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
-                } else if let Some(node) = self.tree._walk_dir(p, Direction::Left) {
+                } else if let Some(node) = self.tree._walk_dir(p, DIR_LEFT) {
                     return Some(OccupiedEntry { node, tree: self.tree });
                 }
             }
@@ -346,9 +346,9 @@ where
         if !self.node.is_null() {
             unsafe {
                 let p = NonNull::new_unchecked(self.node as *mut P::Target);
-                if self.direction == Direction::Left {
+                if self.direction == DIR_LEFT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
-                } else if let Some(node) = self.tree._walk_dir(p, Direction::Right) {
+                } else if let Some(node) = self.tree._walk_dir(p, DIR_RIGHT) {
                     return Some(OccupiedEntry { node, tree: self.tree });
                 }
             }
