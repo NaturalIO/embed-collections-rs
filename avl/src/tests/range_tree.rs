@@ -9,34 +9,40 @@ use core::{
 };
 use std::println;
 use std::vec;
+use crate::impl_ord_with_borrow;
 
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RangePos {
+    pub start: u64,
+    pub end: u64,
+}
+
+#[derive(Default, format_attr::DisplayAttr)]
+#[fmt("Range{:?}", self.pos.get())]
 #[repr(C)]
 pub struct RangeSeg {
     node: UnsafeCell<AvlNode<Self, ()>>,
-    pub start: Cell<u64>,
-    pub end: Cell<u64>,
+    pub pos = Cell<RangePos>,
 }
 
-impl PartialOrd for RangeSeg {
+impl PartialOrd for RangePos {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(Ord::cmp(self, other))
     }
 }
 
-impl PartialEq for RangeSeg {
+impl PartialEq for RangePos {
     fn eq(&self, other: &Self) -> bool {
         Ord::cmp(self, other) == Ordering::Equal
     }
 }
 
-impl Eq for RangeSeg {}
 
-impl Ord for RangeSeg {
+impl Ord for RangePos {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.end.get() <= other.start.get() {
+        if self.end <= other.start {
             Ordering::Less
-        } else if self.start.get() >= other.end.get() {
+        } else if self.start >= other.end {
             Ordering::Greater
         } else {
             // intersection
@@ -48,16 +54,19 @@ impl Ord for RangeSeg {
 unsafe impl Send for RangeSeg {}
 
 unsafe impl AvlItem<()> for RangeSeg {
-    type Key = Self;
 
     fn get_node(&self) -> &mut AvlNode<Self, ()> {
         unsafe { &mut *self.node.get() }
     }
+}
 
-    fn borrow_key(&self) -> &Self::Key {
-        self
+impl Borrow<RangePos> for RangeSeg {
+    fn borrow(&self) -> &RangePos {
+        &self.pos
     }
 }
+
+impl_ord_with_borrow!(RangeSeg, RangePos);
 
 pub struct RangeTree {
     root: AvlTree<Arc<RangeSeg>, ()>,
@@ -69,7 +78,8 @@ unsafe impl Send for RangeTree {}
 impl RangeSeg {
     #[inline]
     pub fn valid(&self) {
-        assert!(self.start.get() <= self.end.get(), "RangeSeg:{:?} invalid", self);
+        let pos = self.pos.get();
+        assert!(pos.start.get() <= pos.end.get(), "RangeSeg:{:?} invalid", self);
     }
 
     #[inline]
@@ -79,19 +89,15 @@ impl RangeSeg {
 
     #[inline]
     pub fn get_range(&self) -> (u64, u64) {
-        (self.start.get(), self.end.get())
-    }
-}
-
-impl fmt::Display for RangeSeg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "RangeSeg({}-{})", self.start.get(), self.end.get())
+        let pos = self.pos.get();
+        (pos.start, pos.end)
     }
 }
 
 impl fmt::Debug for RangeSeg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let _ = write!(f, "( start: {}, end:{}, ", self.start.get(), self.end.get());
+        let pos = self.pos.get();
+        let _ = write!(f, "({pos:?} , ");
         let _ = write!(f, "node: {:?}, ", unsafe { &*self.node.get() });
         write!(f, ")")
     }
@@ -169,19 +175,16 @@ impl RangeTree {
     #[inline]
     pub fn add(&mut self, start: u64, size: u64) {
         assert!(size > 0, "range tree add size={} error", size);
-        let rs_key = RangeSeg {
-            start: Cell::new(start),
-            end: Cell::new(start + size),
-            ..Default::default()
-        };
-        let result = self.root.find(&rs_key);
-        if result.direction.is_none() {
-            panic!("allocating allocated {} of {:?}", &rs_key, result.get_exact().unwrap());
+        let rs_key = RangePos{start, end: start + size};
+        match self.root.entry(&rs_key) {
+            Entry::Vacant(ent)=>{
+                Self::merge_seg(ent);
+            }
+            Entry::Occupied(ent)=>{
+                panic!("allocating allocated {} of {:?}", &rs_key, ent.get().pos.get());
+            }
         }
-
-        let detached_result = unsafe { result.detach() };
         self.space += size;
-        self.merge_seg(start, start + size, detached_result);
     }
 
     /// Add range segment, possible adjacent, and check overlapping.
@@ -190,33 +193,33 @@ impl RangeTree {
     #[inline]
     pub fn add_find_overlap(&mut self, start: u64, size: u64) -> Result<(), (u64, u64)> {
         assert!(size > 0, "range tree add size={} error", size);
-        let rs_key = RangeSeg {
-            start: Cell::new(start),
-            end: Cell::new(start + size),
-            ..Default::default()
-        };
-        let result = self.root.find(&rs_key);
-        if result.direction.is_none() {
-            let ol_node = result.get_exact().unwrap();
-            let max_start = if rs_key.start.get() > ol_node.start.get() {
-                rs_key.start.get()
-            } else {
-                ol_node.start.get()
-            };
-            let min_end = if rs_key.end.get() > ol_node.end.get() {
-                ol_node.end.get()
-            } else {
-                rs_key.end.get()
-            };
-            return Err((max_start, min_end));
-        }
+        let rs_key = RangePos{start, end: start + size};
+        match self.root.entry(&rs_key) {
+            Entry::Vacant(ent)=>{
+                Self::merge_seg(ent);
+                self.space += size;
+            }
+            Entry::Occupied(ent)=>{
+                let ol_node = ent.get();
+                let other = ol_node.pos.get();
+                let max_start = if rs_key.start > other.start {
+                    rs_key.start
+                } else {
+                    other.start
+                };
+                let min_end = if rs_key.end > other.end {
+                    other.end
+                } else {
+                    rs_key.end
+                };
+                return Err((max_start, min_end));
 
-        let detached_result = unsafe { result.detach() };
-        self.space += size;
-        self.merge_seg(start, start + size, detached_result);
+            }
+        }
         Ok(())
     }
 
+    /*
     /// Add range which may be crossed section or larger with existing, will merge the range
     #[inline]
     pub fn add_and_merge(&mut self, start: u64, size: u64) {
@@ -259,24 +262,25 @@ impl RangeTree {
         self.space += new_end - new_start;
         self.merge_seg(new_start, new_end, detached_result);
     }
+    */
 
     #[inline(always)]
-    fn merge_seg(&mut self, start: u64, end: u64, result: AvlSearchResult<Arc<RangeSeg>>) {
+    fn merge_seg<'a>(ent: Vacant<'a, Arc<RangeSeg>, (), RangePos>) {
         // Detach early to get insertion point / parent check for nearest.
 
-        let before_res = unsafe { self.root.nearest(&result, AvlDirection::Left).detach() };
-        let after_res = unsafe { self.root.nearest(&result, AvlDirection::Right).detach() };
+        let before_res = ent.peek_prev();
+        let after_res = ent.peek_next();
         // Detach results to allow mutable access to self
         let mut merge_before = false;
         let mut merge_after = false;
         let mut before_start = 0;
         let before_end;
-        if let Some(before_node) = before_res.get_nearest() {
+        if let Some(before_node) = before_res.as_ref() {
             (before_start, before_end) = before_node.get_range();
             merge_before = before_end == start;
         }
 
-        if let Some(after_node) = after_res.get_nearest() {
+        if let Some(after_node) = after_res.as_ref() {
             let (after_start, _) = after_node.get_range();
             merge_after = after_start == end;
         }
@@ -286,7 +290,7 @@ impl RangeTree {
 
         if merge_before && merge_after {
             // Merge Both: [before] + [new] + [after]
-
+            ent.remove()
             let _before_node = self.root.remove_with(before_res).unwrap();
             let after_node_ref = after_res.get_node_ref().unwrap();
 
