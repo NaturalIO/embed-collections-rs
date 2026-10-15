@@ -1,4 +1,5 @@
 use super::*;
+use captains_log::logfn;
 use pointers::CloneablePointer;
 use rstest::*;
 use std::boxed::Box;
@@ -6,11 +7,12 @@ use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Arc;
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn test_drain<P>(#[case] mut tree: IntAvlTree<P>)
+fn test_drain<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -35,11 +37,12 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn test_iter<P>(#[case] mut tree: IntAvlTree<P>)
+fn test_iter<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -71,10 +74,11 @@ where
 
 /// Test AvlIter::next_ref() with Arc by cloning each node during iteration.
 /// Verifies that reference counting works correctly and all references are properly cleaned up.
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn test_next_ref_clone_arc<P>(#[case] mut tree: IntAvlTree<P>)
+fn test_next_ref_clone_arc<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode>
         + CloneablePointer
@@ -126,10 +130,11 @@ where
 }
 
 /// Test AvlIter::next_ref() reverse iteration with Arc cloning.
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn test_next_ref_clone_rev<P>(#[case] mut tree: IntAvlTree<P>)
+fn test_next_ref_clone_rev<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode>
         + CloneablePointer

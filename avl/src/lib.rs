@@ -1067,6 +1067,26 @@ where
     }
 
     #[inline]
+    pub fn first_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, P, Tag>> {
+        if !self.root.is_null() {
+            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
+            Some(OccupiedEntry { node: p, tree: self })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn last_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, P, Tag>> {
+        if !self.root.is_null() {
+            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
+            Some(OccupiedEntry { node: p, tree: self })
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     pub fn validate(&self)
     where
         P::Target: Ord,

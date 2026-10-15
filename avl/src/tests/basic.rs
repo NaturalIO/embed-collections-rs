@@ -335,3 +335,39 @@ where
     }
     assert_eq!(alive_count(), 0);
 }
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn int_avl_tree_entry_cursor_mut<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        let n: usize = 1000;
+        for i in 0..n {
+            tree.add_int_node(_new_node((i as i64) * 2));
+        }
+        assert_eq!(tree.len(), n);
+        assert_eq!(alive_count(), n);
+        let mut ent = tree.first_entry().unwrap();
+        let mut i: usize = 0;
+        loop {
+            ent = unsafe { ent.insert_move_after_unchecked(_new_node(i as i64 + 1)) };
+            i += 2;
+            if let Some(_ent) = ent.move_next() {
+                ent = _ent;
+            } else {
+                break;
+            }
+        }
+        assert_eq!(i, n * 2);
+        tree.validate_tree();
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
