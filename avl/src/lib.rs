@@ -218,35 +218,51 @@ macro_rules! impl_ord_with_borrow {
     };
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub enum Direction {
-    Left = 0,
-    Right = 1,
-}
 
-impl Direction {
+pub(crate) const DIR_LEFT: Dir = Dir(false);
+pub(crate) const DIR_RIGHT: Dir = Dir(true);
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub(crate) struct Dir(bool);
+
+impl Dir {
     #[inline(always)]
-    fn reverse(self) -> Direction {
-        match self {
-            Direction::Left => Direction::Right,
-            Direction::Right => Direction::Left,
-        }
+    const fn to_usize(&self) -> usize {
+        self.0 as usize
+    }
+
+    #[inline(always)]
+    const fn reverse(&self) -> Self {
+        Self(!self.0)
+    }
+
+    #[inline(always)]
+    fn to_balance(&self) -> i8 {
+        if *self == DIR_LEFT { -1 } else { 1 }
     }
 }
 
-macro_rules! avlchild_to_balance {
-    ( $dir: expr ) => {
-        match $dir {
-            Direction::Left => -1,
-            Direction::Right => 1,
-        }
-    };
+impl From<i8> for Dir {
+    #[inline(always)]
+    fn from(i: i8) -> Self {
+        Self(i != 0)
+    }
+}
+
+impl From<bool> for Dir {
+    #[inline(always)]
+    fn from(i: bool) -> Self {
+        Self(i)
+    }
+}
+
+macro_rules! balance_to_child {
+    ($balance: expr) => {{ ($balance > 1).into() }};
 }
 
 pub struct AvlNode<T: AvlItem<Tag>, Tag> {
-    pub left: *mut T,
-    pub right: *mut T,
     pub parent: *mut T,
+    pub children: [*mut T; 2],
     pub balance: i8,
     _phan: PhantomData<fn(&Tag)>,
 }
@@ -256,32 +272,36 @@ unsafe impl<T: AvlItem<Tag> + Send, Tag> Send for AvlNode<T, Tag> {}
 impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     #[inline(always)]
     pub fn detach(&mut self) {
-        self.left = null_mut();
-        self.right = null_mut();
+        self.children[0] = null_mut();
+        self.children[1] = null_mut();
         self.parent = null_mut();
         self.balance = 0;
     }
 
     #[inline(always)]
-    fn get_child(&self, dir: Direction) -> *mut T {
-        match dir {
-            Direction::Left => self.left,
-            Direction::Right => self.right,
-        }
+    fn get_child(&self, dir: Dir) -> *mut T {
+        unsafe { self.children.get_unchecked(dir.to_usize()).clone() }
     }
 
     #[inline(always)]
-    fn set_child(&mut self, dir: Direction, child: *mut T) {
-        match dir {
-            Direction::Left => self.left = child,
-            Direction::Right => self.right = child,
-        }
+    fn set_child(&mut self, dir: Dir, child: *mut T) {
+        self.children[dir.to_usize()] = child;
+    }
+
+    #[inline(always)]
+    fn left(&self) -> *mut T {
+        self.children[0]
+    }
+
+    #[inline(always)]
+    fn right(&self) -> *mut T {
+        self.children[1]
     }
 
     // set child and both child's parent
     #[inline(always)]
     fn set_child2<P: Pointer<Target = T>>(
-        &mut self, dir: Direction, child: *mut P::Target, parent: *mut P::Target,
+        &mut self, dir: Dir, child: *mut P::Target, parent: *mut P::Target,
     ) {
         if !child.is_null() {
             unsafe { (*child).get_node().parent = parent };
@@ -294,11 +314,39 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
         self.parent
     }
 
+    #[inline(always)]
+    fn _child_direction(&self, child_p: *mut T) -> Dir {
+        // this is AvlTree::parent_direction in previous version
+        let is_right = self.children[1] == child_p;
+        #[cfg(debug_assertions)]
+        {
+            if !is_right {
+                debug_assert!(self.children[0] == child_p);
+            }
+        }
+        is_right.into()
+    }
+
+    #[inline(always)]
+    fn child_direction(parent: *mut T, child_p: *mut T) -> Dir {
+        if !parent.is_null() {
+            unsafe { (*parent).get_node() }._child_direction(child_p)
+        } else {
+            DIR_LEFT
+        }
+    }
+
+    #[inline(always)]
+    fn parent_direction(node: *mut T) -> Dir {
+        // this is AvlTree::parent_direction2 in previous version
+        let parent = unsafe { (*node).get_node() }.get_parent();
+        Self::child_direction(parent, node)
+    }
+
     // Swap two node but not there value
     #[inline(always)]
     pub fn swap(&mut self, other: &mut AvlNode<T, Tag>) {
-        mem::swap(&mut self.left, &mut other.left);
-        mem::swap(&mut self.right, &mut other.right);
+        mem::swap(&mut self.children, &mut other.children);
         mem::swap(&mut self.parent, &mut other.parent);
         mem::swap(&mut self.balance, &mut other.balance);
     }
@@ -307,8 +355,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
 impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
     fn default() -> Self {
         Self {
-            left: null_mut(),
-            right: null_mut(),
+            children: [null_mut(), null_mut()],
             parent: null_mut(),
             balance: 0,
             _phan: Default::default(),
@@ -320,15 +367,14 @@ impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
 impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(")?;
-
-        if !self.left.is_null() {
-            write!(f, "left: {:p}", self.left)?;
+        if !self.left().is_null() {
+            write!(f, "left: {:p}", self.left())?;
         } else {
             write!(f, "left: none ")?;
         }
 
-        if !self.right.is_null() {
-            write!(f, "right: {:p}", self.right)?;
+        if !self.right().is_null() {
+            write!(f, "right: {:p}", self.right())?;
         } else {
             write!(f, "right: none ")?;
         }
@@ -364,11 +410,6 @@ where
 {
 }
 
-macro_rules! balance_to_child {
-    ($balance: expr) => {
-        if $balance <= 1 { Direction::Left } else { Direction::Right }
-    };
-}
 
 impl<P, Tag> AvlTree<P, Tag>
 where
@@ -415,34 +456,18 @@ where
             let mut parent = self.root;
             unsafe {
                 loop {
-                    match node.as_ref().cmp((&*parent).as_ref()) {
-                        Ordering::Less => {
-                            let left = (*parent).get_node().get_child(Direction::Left);
-                            if left.is_null() {
-                                self._insert(
-                                    node.into_raw() as *mut P::Target,
-                                    parent,
-                                    Direction::Left,
-                                );
-                                return Ok(());
-                            }
-                            parent = left;
-                        }
-                        Ordering::Greater => {
-                            let right = (*parent).get_node().get_child(Direction::Right);
-                            if right.is_null() {
-                                self._insert(
-                                    node.into_raw() as *mut P::Target,
-                                    parent,
-                                    Direction::Right,
-                                );
-                                return Ok(());
-                            }
-                            parent = right;
-                        }
-                        Ordering::Equal => {
-                            return Err(node);
-                        }
+                    // match is actually better optimized than if-else or table mapping
+                    let dir = match node.as_ref().cmp((&*parent).as_ref()) {
+                        Ordering::Greater => DIR_RIGHT,
+                        Ordering::Less => DIR_LEFT,
+                        Ordering::Equal => return Err(node),
+                    };
+                    let child = (*parent).get_node().get_child(dir);
+                    if !child.is_null() {
+                        parent = child;
+                    } else {
+                        self._insert(node.into_raw() as *mut P::Target, parent, dir);
+                        return Ok(());
                     }
                 }
             }
@@ -508,46 +533,34 @@ where
     {
         if !self.root.is_null() {
             let mut parent = self.root;
-            unsafe {
-                loop {
-                    match cmp_f(&key, (&*parent).as_ref()) {
-                        Ordering::Equal => {
-                            return Entry::Occupied(OccupiedEntry {
-                                node: NonNull::new_unchecked(parent as *mut P::Target),
-                                tree: self,
-                            });
-                        }
-                        Ordering::Less => {
-                            let left = (*parent).get_node().get_child(Direction::Left);
-                            if left.is_null() {
-                                return Entry::Vacant(VacantEntry {
-                                    node: parent,
-                                    direction: Direction::Left,
-                                    tree: self,
-                                    key,
-                                });
-                            }
-                            parent = left;
-                        }
-                        Ordering::Greater => {
-                            let right = (*parent).get_node().get_child(Direction::Right);
-                            if right.is_null() {
-                                return Entry::Vacant(VacantEntry {
-                                    node: parent,
-                                    direction: Direction::Right,
-                                    tree: self,
-                                    key,
-                                });
-                            }
-                            parent = right;
-                        }
+            loop {
+                // match is actually better optimized than if-else or table mapping
+                let dir = match cmp_f(&key, unsafe { &*parent }.as_ref()) {
+                    Ordering::Greater => DIR_RIGHT,
+                    Ordering::Less => DIR_LEFT,
+                    Ordering::Equal => {
+                        return Entry::Occupied(OccupiedEntry {
+                            node: unsafe { NonNull::new_unchecked(parent as *mut P::Target) },
+                            tree: self,
+                        });
                     }
+                };
+                let child = unsafe { (*parent).get_node() }.get_child(dir);
+                if !child.is_null() {
+                    parent = child;
+                } else {
+                    return Entry::Vacant(VacantEntry {
+                        node: parent,
+                        direction: dir,
+                        tree: self,
+                        key,
+                    });
                 }
             }
         } else {
             return Entry::Vacant(VacantEntry {
                 node: null_mut(),
-                direction: Direction::Right,
+                direction: DIR_RIGHT,
                 tree: self,
                 key,
             });
@@ -567,93 +580,76 @@ where
     where
         F: Fn(&P::Target) -> Ordering,
     {
-        unsafe {
-            if !self.root.is_null() {
-                let mut node_data = self.root;
-                loop {
-                    match cmp_f((&*node_data).as_ref()) {
-                        Ordering::Equal => {
-                            return Some(NodeRef::from(node_data));
-                        }
-                        Ordering::Less => {
-                            let node = (*node_data).get_node();
-                            let left = node.get_child(Direction::Left);
-                            if left.is_null() {
-                                return None;
-                            }
-                            node_data = left;
-                        }
-                        Ordering::Greater => {
-                            let node = (*node_data).get_node();
-                            let right = node.get_child(Direction::Right);
-                            if right.is_null() {
-                                return None;
-                            }
-                            node_data = right;
-                        }
-                    }
+        if !self.root.is_null() {
+            let mut node = self.root;
+            loop {
+                // match is actually better optimized than if-else or table mapping
+                let dir = match cmp_f(unsafe { &*node }.as_ref()) {
+                    Ordering::Greater => DIR_RIGHT,
+                    Ordering::Less => DIR_LEFT,
+                    Ordering::Equal => return Some(NodeRef::from(node)),
+                };
+                let child = unsafe { (*node).get_node() }.get_child(dir);
+                if !child.is_null() {
+                    node = child;
+                } else {
+                    return None;
                 }
-            } else {
-                None
             }
+        } else {
+            None
         }
     }
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn _insert(
+    #[inline]
+    pub(crate) fn _insert(
         &mut self,
         new_ptr: *mut P::Target,
         parent: *mut P::Target, // parent
-        mut which_child: Direction,
+        mut which_child: Dir,
     ) {
-        let mut new_balance: i8;
-
-        if parent.is_null() {
-            if self.count > 0 {
-                panic!("insert into a tree size {} with empty where.node", self.count);
+        if !parent.is_null() {
+            let mut new_balance: i8;
+            unsafe { (*new_ptr).get_node() }.parent = parent;
+            let parent_node = unsafe { (*parent).get_node() };
+            parent_node.set_child(which_child, new_ptr);
+            self.count += 1;
+            /*
+             * Now, back up the tree modifying the balance of all nodes above the
+             * insertion point. If we get to a highly unbalanced ancestor, we
+             * need to do a rotation.  If we back out of the tree we are done.
+             * If we brought any subtree into perfect balance (0), we are also done.
+             */
+            let mut data: *mut P::Target = parent;
+            loop {
+                let node = unsafe { (*data).get_node() };
+                let old_balance = node.balance;
+                new_balance = old_balance + which_child.to_balance();
+                if new_balance == 0 {
+                    node.balance = 0;
+                    return;
+                }
+                if old_balance != 0 {
+                    break;
+                }
+                node.balance = new_balance;
+                let parent_ptr = node.get_parent();
+                if parent_ptr.is_null() {
+                    return;
+                }
+                which_child = unsafe { (*parent_ptr).get_node() }._child_direction(data);
+                data = parent_ptr;
             }
+            self.rotate(data, new_balance);
+        } else {
             self.root = new_ptr;
             self.count += 1;
-            return;
-        }
-
-        let node = unsafe { (*new_ptr).get_node() };
-        let parent_node = unsafe { (*parent).get_node() };
-        node.parent = parent;
-        parent_node.set_child(which_child, new_ptr);
-        self.count += 1;
-
-        /*
-         * Now, back up the tree modifying the balance of all nodes above the
-         * insertion point. If we get to a highly unbalanced ancestor, we
-         * need to do a rotation.  If we back out of the tree we are done.
-         * If we brought any subtree into perfect balance (0), we are also done.
-         */
-        let mut data: *mut P::Target = parent;
-        loop {
-            let node = unsafe { (*data).get_node() };
-            let old_balance = node.balance;
-            new_balance = old_balance + avlchild_to_balance!(which_child);
-            if new_balance == 0 {
-                node.balance = 0;
-                return;
-            }
-            if old_balance != 0 {
-                self.rotate(data, new_balance);
-                return;
-            }
-            node.balance = new_balance;
-            let parent_ptr = node.get_parent();
-            if parent_ptr.is_null() {
-                return;
-            }
-            which_child = self.parent_direction(data, parent_ptr);
-            data = parent_ptr;
+            debug_assert_eq!(self.count, 0);
         }
     }
 
-    /// Insert `new_ptr` in `tree` in the given `direction` either after or
-    /// before Direction::After, Direction::Before) the data "here".
+    /// Insert `new_ptr` in `tree` in the given `direction` against the node `here`.
     ///
     /// For range-tree scenario
     ///
@@ -662,7 +658,7 @@ where
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
     unsafe fn _insert_here(
-        &mut self, new_ptr: *mut P::Target, here: NonNull<P::Target>, direction: Direction,
+        &mut self, new_ptr: *mut P::Target, here: NonNull<P::Target>, direction: Dir,
     ) {
         let mut dir_child = direction;
         unsafe {
@@ -678,37 +674,11 @@ where
         }
     }
 
-    #[inline(always)]
-    fn parent_direction(&self, data: *mut P::Target, parent: *mut P::Target) -> Direction {
-        if !parent.is_null() {
-            let parent_node = unsafe { (*parent).get_node() };
-            if parent_node.left == data {
-                return Direction::Left;
-            }
-            if parent_node.right == data {
-                return Direction::Right;
-            }
-            panic!("invalid avl tree, node {:p}, parent {:p}", data, parent);
-        }
-        // this just follow zfs
-        Direction::Left
-    }
-
-    #[inline(always)]
-    fn parent_direction2(&self, data: *mut P::Target) -> Direction {
-        let node = unsafe { (*data).get_node() };
-        let parent = node.get_parent();
-        if !parent.is_null() {
-            return self.parent_direction(data, parent);
-        }
-        // this just follow zfs
-        Direction::Left
-    }
-
     #[inline]
     fn rotate(&mut self, data: *mut P::Target, balance: i8) -> bool {
         /* when balance = -2, left will be 0 */
-        let dir = if balance < 0 { Direction::Left } else { Direction::Right };
+        //let dir = if balance < 0 { DIR_LEFT } else { DIR_RIGHT };
+        let dir: Dir = (balance >= 0).into();
         let node = unsafe { (*data).get_node() };
 
         let parent = node.get_parent();
@@ -720,7 +690,7 @@ where
         let child_node = unsafe { (*child).get_node() };
         let mut child_balance = child_node.balance;
 
-        let which_child = self.parent_direction(data, parent);
+        let which_child = AvlNode::<P::Target, Tag>::child_direction(parent, data);
 
         // node is overly left heavy, the left child is balanced or also left heavy.
         if child_balance != right_heavy {
@@ -820,35 +790,34 @@ where
             unsafe { (*del).get_node().detach() };
             return;
         }
-        let mut which_child: Direction;
+        let mut which_child: Dir;
 
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
         let del_node = unsafe { (*del).get_node() };
 
-        let node_swap_flag = !del_node.left.is_null() && !del_node.right.is_null();
+        let node_swap_flag = !del_node.left().is_null() && !del_node.right().is_null();
 
         if node_swap_flag {
-            let dir: Direction = balance_to_child!(del_node.balance + 1);
+            let dir: Dir = balance_to_child!(del_node.balance + 1);
             let child_temp = del_node.get_child(dir);
 
-            let dir_inverse: Direction = dir.reverse();
+            let dir_inverse: Dir = dir.reverse();
             let child = self
                 .bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
                 .as_ptr();
 
-            // Fix Miri UB: Avoid calling parent_direction2(child) if child's parent is del,
+            // Fix Miri UB: Avoid calling parent_direction(child) if child's parent is del,
             // because that would create a aliasing &mut ref to del while we hold del_node.
-            let dir_child_temp =
-                if child == child_temp { dir } else { self.parent_direction2(child) };
+            let dir_child_temp = if child == child_temp {
+                dir
+            } else {
+                AvlNode::<P::Target, Tag>::parent_direction(child)
+            };
 
-            // Fix Miri UB: Do not call parent_direction2(del) as it creates a new &mut AvlNode
+            // Fix Miri UB: Do not call parent_direction(del) as it creates a new &mut AvlNode
             // alias while we hold del_node. Use del_node to find parent direction.
             let parent = del_node.get_parent();
-            let dir_child_del = if !parent.is_null() {
-                self.parent_direction(del, parent)
-            } else {
-                Direction::Left
-            };
+            let dir_child_del = AvlNode::<P::Target, Tag>::child_direction(parent, del);
 
             let child_node = unsafe { (*child).get_node() };
             child_node.swap(del_node);
@@ -884,38 +853,34 @@ where
             // It always has a parent and at most 1 child.
             let parent = del_node.get_parent();
             unsafe { (*parent).get_node() }.set_child(dir_child_temp, del);
-            if !del_node.right.is_null() {
-                which_child = Direction::Right;
-            } else {
-                which_child = Direction::Left;
-            }
+            // if right exist, go to right
+            which_child = Dir(!del_node.right().is_null());
             let child = del_node.get_child(which_child);
             if !child.is_null() {
                 unsafe { (*child).get_node() }.parent = del;
             }
             which_child = dir_child_temp;
         } else {
-            // Fix Miri UB here as well
             let parent = del_node.get_parent();
-            if !parent.is_null() {
-                which_child = self.parent_direction(del, parent);
-            } else {
-                which_child = Direction::Left;
-            }
+            which_child = AvlNode::<P::Target, Tag>::child_direction(parent, del);
         }
 
         // Here we know "delete" is at least partially a leaf node. It can
         // be easily removed from the tree.
         let parent: *mut P::Target = del_node.get_parent();
 
-        let imm_data: *mut P::Target =
-            if !del_node.left.is_null() { del_node.left } else { del_node.right };
-
-        // Connect parent directly to node (leaving out delete).
+        let mut imm_data: *mut P::Target = del_node.left();
         if !imm_data.is_null() {
             let imm_node = unsafe { (*imm_data).get_node() };
             imm_node.parent = parent;
+        } else {
+            imm_data = del_node.right();
+            if !imm_data.is_null() {
+                let imm_node = unsafe { (*imm_data).get_node() };
+                imm_node.parent = parent;
+            }
         }
+        // Connect parent directly to node (leaving out delete).
 
         if !parent.is_null() {
             assert!(self.count > 0);
@@ -927,26 +892,25 @@ where
             //Since the subtree is now shorter, begin adjusting parent balances
             //and performing any needed rotations.
             let mut node_data: *mut P::Target = parent;
-            let mut old_balance: i8;
-            let mut new_balance: i8;
             loop {
                 // Move up the tree and adjust the balance.
                 // Capture the parent and which_child values for the next
                 // iteration before any rotations occur.
                 let node = unsafe { (*node_data).get_node() };
-                old_balance = node.balance;
-                new_balance = old_balance - avlchild_to_balance!(which_child);
+                let balance_delta = -which_child.to_balance();
+                let old_balance = node.balance;
 
                 //If a node was in perfect balance but isn't anymore then
                 //we can stop, since the height didn't change above this point
                 //due to a deletion.
                 if old_balance == 0 {
-                    node.balance = new_balance;
+                    node.balance = balance_delta;
                     break;
                 }
+                let new_balance = old_balance + balance_delta;
 
                 let parent = node.get_parent();
-                which_child = self.parent_direction(node_data, parent);
+                which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
 
                 //If the new balance is zero, we don't need to rotate
                 //else
@@ -954,7 +918,7 @@ where
                 //If the rotation doesn't change the height
                 //of the sub-tree we have finished adjusting.
                 if new_balance == 0 {
-                    node.balance = new_balance;
+                    node.balance = 0;
                 } else if !self.rotate(node_data, new_balance) {
                     break;
                 }
@@ -977,7 +941,7 @@ where
     }
 
     #[inline(always)]
-    fn bottom_child(&self, mut data: NonNull<P::Target>, dir: Direction) -> NonNull<P::Target> {
+    fn bottom_child(&self, mut data: NonNull<P::Target>, dir: Dir) -> NonNull<P::Target> {
         loop {
             unsafe {
                 let child = data.as_ref().get_node().get_child(dir);
@@ -1000,12 +964,12 @@ where
         let first_p = if !self.root.is_null() {
             Some(self.bottom_child(
                 unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                Direction::Left,
+                DIR_LEFT,
             ))
         } else {
             None
         };
-        AvlIter::new(self, first_p, Direction::Right)
+        AvlIter::new(self, first_p, DIR_RIGHT)
     }
 
     /// return a reversed iterator to get the reference.
@@ -1019,17 +983,17 @@ where
         let last_p = if !self.root.is_null() {
             Some(self.bottom_child(
                 unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                Direction::Right,
+                DIR_RIGHT,
             ))
         } else {
             None
         };
-        AvlIter::new(self, last_p, Direction::Left)
+        AvlIter::new(self, last_p, DIR_LEFT)
     }
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        if let Some(p) = self._walk_dir(data.into(), Direction::Left) {
+        if let Some(p) = self._walk_dir(data.into(), DIR_LEFT) {
             Some(NodeRef::from(p.as_ptr()))
         } else {
             None
@@ -1038,16 +1002,14 @@ where
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        if let Some(p) = self._walk_dir(data.into(), Direction::Right) {
+        if let Some(p) = self._walk_dir(data.into(), DIR_RIGHT) {
             Some(NodeRef::from(p.as_ptr()))
         } else {
             None
         }
     }
 
-    fn _walk_dir(
-        &self, mut data_ptr: NonNull<P::Target>, dir: Direction,
-    ) -> Option<NonNull<P::Target>> {
+    fn _walk_dir(&self, mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
         let dir_inverse = dir.reverse();
         let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
@@ -1061,7 +1023,7 @@ where
                 return None;
             }
             loop {
-                let pdir = self.parent_direction(data_ptr.as_ptr(), parent);
+                let pdir = AvlNode::<P::Target, Tag>::child_direction(parent, data_ptr.as_ptr());
                 if pdir == dir_inverse {
                     return Some(unsafe { NonNull::new_unchecked(parent as *mut P::Target) });
                 }
@@ -1082,7 +1044,7 @@ where
         if !self.root.is_null() {
             let p = self.bottom_child(
                 unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                Direction::Left,
+                DIR_LEFT,
             );
             Some(NodeRef::<'a, P>::from(p.as_ptr()))
         } else {
@@ -1095,7 +1057,7 @@ where
         if !self.root.is_null() {
             let p = self.bottom_child(
                 unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                Direction::Right,
+                DIR_RIGHT,
             );
             Some(NodeRef::<'a, P>::from(p.as_ptr()))
         } else {
@@ -1117,12 +1079,12 @@ where
     {
         let validate_node = |data: *mut P::Target| unsafe {
             let node = (*data).get_node();
-            let left = node.left;
+            let left = node.left();
             if !left.is_null() {
                 assert!(cmp_f(&*left, &*data) != Ordering::Greater);
                 assert_eq!((*left).get_node().get_parent(), data);
             }
-            let right = node.right;
+            let right = node.right();
             if !right.is_null() {
                 assert!(cmp_f(&*right, &*data) != Ordering::Less);
                 assert_eq!((*right).get_node().get_parent(), data);
@@ -1147,7 +1109,7 @@ where
         let mut visited = 0;
         loop {
             if !data.is_null() {
-                let left = unsafe { (*data).get_node() }.get_child(Direction::Left);
+                let left = unsafe { (*data).get_node() }.get_child(DIR_LEFT);
                 if !left.is_null() {
                     stack.push(data);
                     data = left;
@@ -1160,7 +1122,7 @@ where
             }
             validate_node(data);
             visited += 1;
-            data = unsafe { (*data).get_node() }.get_child(Direction::Right);
+            data = unsafe { (*data).get_node() }.get_child(DIR_RIGHT);
         }
         assert_eq!(visited, self.count);
     }

@@ -10,7 +10,7 @@ where
 {
     tree: &'a mut AvlTree<P, Tag>,
     parent: *mut P::Target,
-    dir: Option<Direction>,
+    dir: Option<Dir>,
 }
 
 impl<'a, P: Pointer, Tag> AvlDrain<'a, P, Tag>
@@ -47,8 +47,13 @@ where
         if self.dir.is_none() && self.parent.is_null() {
             // Initial call: find the leftmost node
             let mut curr = self.tree.root;
-            while unsafe { !(*curr).get_node().left.is_null() } {
-                curr = unsafe { (*curr).get_node().left };
+            loop {
+                let left = unsafe { (*curr).get_node().left() };
+                if !left.is_null() {
+                    curr = left;
+                } else {
+                    break;
+                }
             }
             node = curr;
         } else {
@@ -61,22 +66,28 @@ where
             // child_dir child of parent was just nulled in previous call?
             // NO, we null it in THIS call.
 
-            if child_dir == Direction::Right || unsafe { (*parent).get_node().right.is_null() } {
+            if child_dir == DIR_RIGHT || unsafe { (*parent).get_node().right().is_null() } {
                 node = parent;
             } else {
                 // Finished left, go to right sibling
-                node = unsafe { (*parent).get_node().right };
-                while unsafe { !(*node).get_node().left.is_null() } {
-                    node = unsafe { (*node).get_node().left };
+                node = unsafe { (*parent).get_node().right() };
+                loop {
+                    let left = unsafe { (*node).get_node().left() };
+                    if !left.is_null() {
+                        node = left;
+                    } else {
+                        break;
+                    }
                 }
             }
         }
+        let right = unsafe { (*node).get_node().right() };
 
         // Goto check_right_side logic
-        if unsafe { !(*node).get_node().right.is_null() } {
+        if !right.is_null() {
             // It has a right child, so we must yield that first (in post-order)
             // Note: in AVL, if left is null, right must be a leaf.
-            node = unsafe { (*node).get_node().right };
+            node = right;
         }
 
         // Determine next state
@@ -84,12 +95,14 @@ where
         if next_parent.is_null() {
             self.tree.root = null_mut();
             self.parent = null_mut();
-            self.dir = Some(Direction::Left);
+            self.dir = Some(DIR_LEFT);
         } else {
             self.parent = next_parent;
-            self.dir = Some(self.tree.parent_direction(node, next_parent));
+            let next_parent_node = unsafe { (*next_parent).get_node() };
+            let _dir = next_parent_node._child_direction(node);
             // Unlink from parent NOW
-            unsafe { (*next_parent).get_node().set_child(self.dir.unwrap(), null_mut()) };
+            next_parent_node.set_child(_dir, null_mut());
+            self.dir = Some(_dir);
         }
 
         self.tree.count -= 1;
@@ -155,7 +168,7 @@ where
 {
     tree: &'a AvlTree<P, Tag>,
     cur: Option<NonNull<P::Target>>,
-    dir: Direction,
+    dir: Dir,
 }
 
 /// A lending iterator for AvlTree
@@ -170,7 +183,7 @@ where
 {
     #[inline]
     pub(crate) fn new(
-        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Direction,
+        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Dir,
     ) -> Self {
         Self { tree, cur: init, dir }
     }
