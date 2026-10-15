@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-avl 0.2.0] -2026-10-15
+
+### Changed
+
+Refactor API
+
+- Change `AvlItem` trait, remove the requirement of a fixed key.
+
+### Added
+
+- `get` (which requires `AvlItem` to implement Borrow<Key>) / `get_with` (which accepts custom compare func),  will return `NodeRef`, which can deref to `&P` (so that you can clone it if it's `Arc`)
+
+- `entry` (which requires `AvlItem` to implement Borrow<Key>) / `entry_with` (which accepts custom compare func)
+
+- VacantEntry & OccupiedEntry allow insert/remove during peak/move, allowing usage similar to `CursorMut`.
+
+- VacantEntry now carries search key
+
+## Removed
+
+- Removed `find` & `AvlSearchResult`, the borrowing issue make it hard to use
+
 ## [embed-btree 0.4.0] - 2026-10-11
 
 ### Changed
