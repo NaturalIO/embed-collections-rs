@@ -12,6 +12,8 @@
 //!
 //! Refer to the example of [AvlItem] document.
 //!
+//! benchmarks: <https://github.com/NaturalIO/embed-collections-rs/wiki>
+//!
 //! # Examples
 //!
 //! ## Using `Box` to search and remove by key

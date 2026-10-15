@@ -15,9 +15,11 @@ This repo consists some small crates.
 
 ### Cache efficient collections
 
+Sub crates:
+
+- [embed-btree](#embed-btree): A cache aware B+tree for small and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
+- [embed-seglist](#embed-seglist):  A cache aware (short-live) list to store elements with adaptive size segments
 - [embed-constvec](https://docs.rs/embed-constvec): Fixed capacity inline vec
-- [embed-seglist](https://docs.rs/embed-seglist):  A cache aware (short-live) list to store elements with adaptive size segments
-- [embed-btree](https://docs.rs/embed-btree): A cache aware B+tree for small and large dataset, optimized for numeric types, with special entry API allows peeking adjacent values.
 
 ### Intrusive collections:
 
@@ -51,7 +53,7 @@ There're three usage scenarios:
    `Rc`, but you have to use UnsafeCell for internal mutation.
 
 2. Push `Box` to the list, the list own the items until they are popped, it's better than std
-   LinkedList because no additional allocation is needed.  It will not move the item
+   `LinkedList` because no additional allocation is needed.  It will not move the item
    in-and-out of hidden `Box` on every push / pop.
 
 3. Push raw pointer (better use NonNull instead of *const T for smaller footprint) to the list,
@@ -73,7 +75,7 @@ This crate choose to use trait instead of c like `offset_of!`, mainly because:
 
 <!-- cargo-rdme end -->
 
-### SegList & Various
+### embed-seglist
 
 crate: [embed-seglist](https://docs.rs/embed-seglist)
 
@@ -128,108 +130,4 @@ Compared to std::collections::btree (as of rust 1.94):
 
 **benchmark**
 
-platform: intel i7-8550U, key: u32, value: u32, rust 1.97.
-
-Measured in million ops for different size of dataset:
-
-insert_seq |compact|large|std
--|-|-|-
-1k|84.777|**91.140**|20.001
-10k|72.022|**79.060**|16.04
-1m|44.863|**46.200**|11.207
-
-insert_rand|compact|large|std|avl(box)|avl(arc)
--|-|-|-|-|-
-1k|21.459|**22.284**|17.792|11.172|9.5397
-10k|13.931|**14.319**|11.587|6.3669|5.651
-1M|5.8124|**5.9710**|3.0691|0.78|0.732
-
-get_seq|compact|large|std
--|-|-|-
-1k|59.214|**62.891**|34.248
-10k|40.652|**41.823**|27.571
-1M|30.640|**32.597**|19.907
-
-get_rand|compact|large|std|avl(box)|avl(arc)
--|-|-|-|-|-
-1k|**52.213**|51.230|27.651|24.254|23.466
-10k|**22.117**|20.894|16.868|11.771|10.806
-1M|6.1369|**6.2403**|3.2569|1.4423|1.2712
-
-remove_rand|compact|large|std
--|-|-|-
-1k|18.336|**19.963**|15.968
-10k|14.094|**15.462**|11.701
-1M|5.2262|**5.4713**|3.0724
-
-iter|compact|large|std
--|-|-|-
-1k|1423,3|1443.2|346.8
-10k|1226.3|1286.9|303.83
-1M|**217.10**|**215.95**|51.147
-
-into_iter|compact|large|std
--|-|-|-
-1k|364.14|**396.07**|143.81
-10k|356.85|**410.32**|81.389
-1M|327.87|**360.18**|56.742
-
-
-#### instrusive link list example
-
-```rust
-use embed_dlist::{DLinkedList, DListItem, DListNode};
-use pointers::Pointer;
-use std::cell::UnsafeCell;
-use std::sync::Arc;
-
-// The tag structure only for labeling, distinguish two lists
-struct CacheTag;
-struct IOTag;
-
-struct MyItem {
-    val: i32,
-    cache_link: UnsafeCell<DListNode<MyItem, CacheTag>>,
-    io_link: UnsafeCell<DListNode<MyItem, IOTag>>,
-}
-
-impl MyItem {
-    fn new(val: i32) -> Self {
-        Self {
-            val,
-            cache_link: UnsafeCell::new(DListNode::default()),
-            io_link: UnsafeCell::new(DListNode::default()),
-        }
-    }
-}
-
-unsafe impl DListItem<CacheTag> for MyItem {
-    fn get_node(&self) -> &mut DListNode<Self, CacheTag> {
-        unsafe { &mut *self.cache_link.get() }
-    }
-}
-
-unsafe impl DListItem<IOTag> for MyItem {
-    fn get_node(&self) -> &mut DListNode<Self, IOTag> {
-        unsafe { &mut *self.io_link.get() }
-    }
-}
-
-let mut cache_list = DLinkedList::<Arc<MyItem>, CacheTag>::new();
-let mut io_list = DLinkedList::<Arc<MyItem>, IOTag>::new();
-
-let item1 = Arc::new(MyItem::new(10));
-let item2 = Arc::new(MyItem::new(20));
-
-// Push the same item to both lists
-cache_list.push_back(item1.clone());
-io_list.push_back(item1.clone());
-
-cache_list.push_back(item2.clone());
-io_list.push_back(item2.clone());
-
-assert_eq!(cache_list.pop_front().unwrap().val, 10);
-assert_eq!(io_list.pop_front().unwrap().val, 10);
-assert_eq!(cache_list.pop_front().unwrap().val, 20);
-assert_eq!(io_list.pop_front().unwrap().val, 20);
-```
+benchmarks: <https://github.com/NaturalIO/embed-collections-rs/wiki/embed%E2%80%90btree-v0.4-2026.10.11>
