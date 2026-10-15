@@ -282,8 +282,7 @@ unsafe impl<T: AvlItem<Tag> + Send, Tag> Send for AvlNode<T, Tag> {}
 impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     #[inline(always)]
     pub fn detach(&mut self) {
-        self.children[0] = null_mut();
-        self.children[1] = null_mut();
+        self.children = [null_mut(), null_mut()];
         self.parent = null_mut();
         self.balance = 0;
     }
@@ -356,9 +355,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     // Swap two node but not there value
     #[inline(always)]
     pub fn swap(&mut self, other: &mut AvlNode<T, Tag>) {
-        mem::swap(&mut self.children, &mut other.children);
-        mem::swap(&mut self.parent, &mut other.parent);
-        mem::swap(&mut self.balance, &mut other.balance);
+        mem::swap(self, other);
     }
 }
 
