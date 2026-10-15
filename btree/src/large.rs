@@ -717,7 +717,8 @@ mod tests {
 
             assert_eq!(info.header().unwrap().cap, 3);
             info.ensure_cap(7);
-            assert!(info.0.get() != inner1); // re-alloc
+            //assert!(info.0.get() != inner1); // re-alloc
+            // Some times after re-alloc we get the same addr
             assert_eq!(info.header().unwrap().cap, 7);
 
             test_push_pop(&mut info, 7);
