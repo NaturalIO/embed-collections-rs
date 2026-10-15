@@ -547,9 +547,6 @@ where
 
     /// Searches for an element in the tree with `key`, requires P::Target can borrow to `K` type,
     /// and have a total ordering by `K`.
-    ///
-    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
-    /// or where a new element should be inserted.
     #[inline]
     pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, P, Tag, K>
     where
@@ -988,9 +985,7 @@ where
 
     /// return a iterator to get the reference
     ///
-    /// NOTE: If you use the [Iterator] interface (for iteration), you only get &P::Target.
-    ///
-    /// you can use [AvlIter::next_ref()] to get &P.
+    /// NOTE: The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
     #[inline]
     pub fn iter(&self) -> AvlIter<'_, P, Tag> {
         let first_p = if !self.root.is_null() {
@@ -1003,10 +998,7 @@ where
 
     /// return a reversed iterator to get the reference.
     ///
-    ///
-    /// NOTE: If you use the [Iterator] interface (for iteration), you only get &P::Target.
-    ///
-    /// you can use [AvlIter::next_ref()] to get &P.
+    /// NOTE: The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
     #[inline]
     pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
         let last_p = if !self.root.is_null() {

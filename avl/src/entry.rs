@@ -240,20 +240,6 @@ where
     }
 }
 
-/// Inserts a new node into the tree at the location specified by a search result.
-///
-/// This is typically used after a [`find`](Self::find) operation didn't find an exact match.
-///
-/// # Safety
-///
-/// Once the tree structure changed, previous search result is not safe to use anymore.
-///
-/// You should [detach()](AvlSearchResult::detach) the result before calling insert,
-/// to avoid the borrowing issue.
-///
-/// # Panics
-/// Panics if the search result is an exact match (i.e. node already exists).
-///
 /// # Examples
 ///
 /// ```rust

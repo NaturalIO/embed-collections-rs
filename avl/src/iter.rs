@@ -174,9 +174,7 @@ where
 
 /// A lending iterator for AvlTree
 ///
-/// NOTE: If you use the [Iterator] interface (for iteration), you only get &P::Target.
-///
-/// you can use next_ref() to get &P
+/// The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
 impl<'a, P, Tag> AvlIter<'a, P, Tag>
 where
     P: Pointer,
