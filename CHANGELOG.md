@@ -25,7 +25,7 @@ Refactor API
 
 ### Added
 
-- `get` (which requires `AvlItem` to implement Borrow<Key>) / `get_with` (which accepts custom compare func),  will return `NodeRef`, which can deref to `&P` (so that you can clone it if it's `Arc`)
+- `get` (which requires `AvlItem` to implement Borrow<Key>) / `get_with` (which accepts custom compare func),  will return `NodeRef`, which can deref to `&P::Target`, and provide a `clone_ref()` for `Arc`.
 
 - `entry` (which requires `AvlItem` to implement Borrow<Key>) / `entry_with` (which accepts custom compare func)
 
