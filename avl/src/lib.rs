@@ -95,12 +95,11 @@ use core::marker::PhantomData;
 use core::{
     borrow::Borrow,
     cmp::{Ordering, PartialEq},
-    fmt,
-    mem::{self, ManuallyDrop},
+    fmt, mem,
     ops::Deref,
     ptr::{NonNull, null_mut},
 };
-use pointers::Pointer;
+use pointers::{CloneablePointer, Pointer};
 
 /// A trait to return internal mutable AvlNode for specified list.
 ///
@@ -608,7 +607,7 @@ where
                 let dir = match cmp_f(unsafe { &*node }.as_ref()) {
                     Ordering::Greater => DIR_RIGHT,
                     Ordering::Less => DIR_LEFT,
-                    Ordering::Equal => return Some(NodeRef::from(node)),
+                    Ordering::Equal => return Some(NodeRef::new(node)),
                 };
                 let child = unsafe { (*node).get_node() }.get_child(dir);
                 if !child.is_null() {
@@ -1011,12 +1010,12 @@ where
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_LEFT).map(|p| NodeRef::from(p.as_ptr()))
+        self._walk_dir(data.into(), DIR_LEFT).map(|p| NodeRef::new(p.as_ptr()))
     }
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_RIGHT).map(|p| NodeRef::from(p.as_ptr()))
+        self._walk_dir(data.into(), DIR_RIGHT).map(|p| NodeRef::new(p.as_ptr()))
     }
 
     fn _walk_dir(&self, mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
@@ -1051,7 +1050,7 @@ where
     pub fn first<'a>(&'a self) -> Option<NodeRef<'a, P>> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
-            Some(NodeRef::<'a, P>::from(p.as_ptr()))
+            Some(NodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
         }
@@ -1061,7 +1060,7 @@ where
     pub fn last<'a>(&'a self) -> Option<NodeRef<'a, P>> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
-            Some(NodeRef::<'a, P>::from(p.as_ptr()))
+            Some(NodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
         }
@@ -1144,31 +1143,39 @@ where
     }
 }
 
-/// A Reference to `P` recover from raw pointer
-pub struct NodeRef<'a, P> {
-    node: ManuallyDrop<P>,
+/// A Reference to `P`
+pub struct NodeRef<'a, P: Pointer> {
+    node: NonNull<P::Target>,
     _phan: PhantomData<&'a P>,
 }
 
-impl<'a, P> AsRef<P> for NodeRef<'a, P> {
+impl<'a, P: Pointer> AsRef<P::Target> for NodeRef<'a, P> {
     #[inline(always)]
-    fn as_ref(&self) -> &P {
-        self.node.deref()
+    fn as_ref(&self) -> &P::Target {
+        unsafe { self.node.as_ref() }
     }
 }
 
 impl<'a, P: Pointer> Deref for NodeRef<'a, P> {
-    type Target = P;
+    type Target = P::Target;
 
     #[inline(always)]
-    fn deref(&self) -> &P {
-        &self.node
+    fn deref(&self) -> &P::Target {
+        unsafe { self.node.as_ref() }
     }
 }
 
 impl<'a, P: Pointer> NodeRef<'a, P> {
     #[inline]
-    fn from(p: *mut P::Target) -> Self {
-        Self { node: ManuallyDrop::new(unsafe { P::from_raw(p) }), _phan: Default::default() }
+    fn new(p: *mut P::Target) -> Self {
+        Self { node: unsafe { NonNull::new_unchecked(p) }, _phan: Default::default() }
+    }
+}
+
+impl<'a, P: CloneablePointer> NodeRef<'a, P> {
+    /// If P is `Rc`/`Arc`, you can clone the reference out
+    #[inline]
+    pub fn clone_ref(&self) -> P {
+        unsafe { CloneablePointer::from_raw_and_clone(self.node.as_ptr()) }
     }
 }

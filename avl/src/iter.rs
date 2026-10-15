@@ -158,7 +158,7 @@ where
 /// let mut iter = tree.iter_rev();
 /// let mut all_nodes_rev = Vec::with_capacity(tree.len());
 /// while let Some(node) = iter.next() {
-///     all_nodes_rev.push(node.clone());
+///     all_nodes_rev.push(node.clone_ref());
 /// }
 /// ```
 pub struct AvlIter<'a, P, Tag>
@@ -208,7 +208,7 @@ where
         let cur: NonNull<P::Target> = self.cur.take()?;
         self.left -= 1;
         self.cur = self.tree._walk_dir(cur, self.dir);
-        Some(NodeRef::<'a, P>::from(cur.as_ptr()))
+        Some(NodeRef::<'a, P>::new(cur.as_ptr()))
     }
 }
 

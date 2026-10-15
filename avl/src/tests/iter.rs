@@ -1,4 +1,5 @@
 use super::*;
+use pointers::CloneablePointer;
 use rstest::*;
 use std::boxed::Box;
 use std::fmt::Debug;
@@ -75,7 +76,11 @@ where
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_next_ref_clone_arc<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone + Debug,
+    P: SmartPointer<Target = IntAvlNode>
+        + CloneablePointer
+        + Deref<Target = IntAvlNode>
+        + Clone
+        + Debug,
 {
     reset_alive_count();
     let _new_node = IntAvlTree::<P>::new_node;
@@ -92,7 +97,7 @@ where
         let mut cloned_nodes: Vec<P> = Vec::with_capacity(n);
         let mut iter = tree.iter();
         while let Some(arc) = iter.next() {
-            cloned_nodes.push(arc.clone());
+            cloned_nodes.push(arc.clone_ref());
         }
         for (i, node) in cloned_nodes.iter().enumerate() {
             assert_eq!(node.value as usize, i);
@@ -126,7 +131,11 @@ where
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
 fn test_next_ref_clone_rev<P>(#[case] mut tree: IntAvlTree<P>)
 where
-    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Clone + Debug,
+    P: SmartPointer<Target = IntAvlNode>
+        + CloneablePointer
+        + Deref<Target = IntAvlNode>
+        + Clone
+        + Debug,
 {
     reset_alive_count();
     let _new_node = IntAvlTree::<P>::new_node;
@@ -141,7 +150,7 @@ where
         let mut cloned_nodes: Vec<P> = Vec::with_capacity(n);
         let mut iter = tree.iter_rev();
         while let Some(arc) = iter.next() {
-            cloned_nodes.push(arc.clone());
+            cloned_nodes.push(arc.clone_ref());
         }
 
         // Reverse order: last element first
