@@ -293,9 +293,8 @@ where
             unsafe {
                 if self.direction == DIR_RIGHT {
                     return Some(&*self.node);
-                } else if let Some(node) = self
-                    .tree
-                    ._walk_dir(NonNull::new_unchecked(self.node as *mut P::Target), DIR_LEFT)
+                } else if let Some(node) =
+                    self.tree._walk_dir(NonNull::new_unchecked(self.node), DIR_LEFT)
                 {
                     return Some(node.as_ref());
                 }
@@ -315,9 +314,8 @@ where
             unsafe {
                 if self.direction == DIR_LEFT {
                     return Some(&*self.node);
-                } else if let Some(node) = self
-                    .tree
-                    ._walk_dir(NonNull::new_unchecked(self.node as *mut P::Target), DIR_RIGHT)
+                } else if let Some(node) =
+                    self.tree._walk_dir(NonNull::new_unchecked(self.node), DIR_RIGHT)
                 {
                     return Some(node.as_ref());
                 }
@@ -330,7 +328,7 @@ where
     pub fn move_prev(self) -> Option<OccupiedEntry<'a, P, Tag>> {
         if !self.node.is_null() {
             unsafe {
-                let p = NonNull::new_unchecked(self.node as *mut P::Target);
+                let p = NonNull::new_unchecked(self.node);
                 if self.direction == DIR_RIGHT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
                 } else if let Some(node) = self.tree._walk_dir(p, DIR_LEFT) {
@@ -345,7 +343,7 @@ where
     pub fn move_next(self) -> Option<OccupiedEntry<'a, P, Tag>> {
         if !self.node.is_null() {
             unsafe {
-                let p = NonNull::new_unchecked(self.node as *mut P::Target);
+                let p = NonNull::new_unchecked(self.node);
                 if self.direction == DIR_LEFT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
                 } else if let Some(node) = self.tree._walk_dir(p, DIR_RIGHT) {

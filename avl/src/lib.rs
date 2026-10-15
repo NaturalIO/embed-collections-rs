@@ -291,7 +291,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
 
     #[inline(always)]
     fn get_child(&self, dir: Dir) -> *mut T {
-        unsafe { self.children.get_unchecked(dir.to_usize()).clone() }
+        unsafe { *self.children.get_unchecked(dir.to_usize()) }
     }
 
     #[inline(always)]
@@ -518,7 +518,7 @@ where
         K: Ord,
     {
         let _cmp = |_key: &&K, node: &P::Target| -> Ordering { _key.cmp(&node.borrow()) };
-        if let Entry::Occupied(ent) = unsafe { self.entry_with::<&K, _>(&key, _cmp) } {
+        if let Entry::Occupied(ent) = self.entry_with::<&K, _>(key, _cmp) {
             Some(ent.remove())
         } else {
             None
@@ -532,9 +532,7 @@ where
         P::Target: Ord,
     {
         let _cmp = |_cur: &&P::Target, node: &P::Target| -> Ordering { _cur.cmp(&node.borrow()) };
-        if let Entry::Occupied(ent) =
-            unsafe { self.entry_with::<&P::Target, _>(node.as_ref(), _cmp) }
-        {
+        if let Entry::Occupied(ent) = self.entry_with::<&P::Target, _>(node.as_ref(), _cmp) {
             ent.remove();
         }
     }
@@ -550,15 +548,12 @@ where
         P::Target: Borrow<K>,
         K: Ord,
     {
-        unsafe { self.entry_with(key, |_key: &K, node: &P::Target| _key.cmp(node.borrow())) }
+        self.entry_with(key, |_key: &K, node: &P::Target| _key.cmp(node.borrow()))
     }
 
     /// Searches for an element in the tree with `key` and custom compare function.
-    ///
-    /// Returns an [`AvlSearchResult`] which indicates if an exact match was found,
-    /// or where a new element should be inserted.
     #[inline]
-    pub unsafe fn entry_with<'a, K, F>(&'a mut self, key: K, cmp_f: F) -> Entry<'a, P, Tag, K>
+    pub fn entry_with<'a, K, F>(&'a mut self, key: K, cmp_f: F) -> Entry<'a, P, Tag, K>
     where
         F: Fn(&K, &P::Target) -> Ordering,
     {
@@ -571,7 +566,7 @@ where
                     Ordering::Less => DIR_LEFT,
                     Ordering::Equal => {
                         return Entry::Occupied(OccupiedEntry {
-                            node: unsafe { NonNull::new_unchecked(parent as *mut P::Target) },
+                            node: unsafe { NonNull::new_unchecked(parent) },
                             tree: self,
                         });
                     }
@@ -589,12 +584,7 @@ where
                 }
             }
         } else {
-            return Entry::Vacant(VacantEntry {
-                node: null_mut(),
-                direction: DIR_RIGHT,
-                tree: self,
-                key,
-            });
+            Entry::Vacant(VacantEntry { node: null_mut(), direction: DIR_RIGHT, tree: self, key })
         }
     }
 
@@ -697,8 +687,8 @@ where
             let child = here.as_ref().get_node().get_child(dir_child);
             let parent;
             if child.is_null() {
-                parent = here;
                 crate::trace_log!("direct at here {here:p}");
+                parent = here;
             } else {
                 dir_child = dir_child.reverse();
                 parent = self.bottom_child(NonNull::new_unchecked(child), dir_child);
@@ -980,7 +970,7 @@ where
             unsafe {
                 let child = data.as_ref().get_node().get_child(dir);
                 if !child.is_null() {
-                    data = NonNull::new_unchecked(child as *mut P::Target);
+                    data = NonNull::new_unchecked(child);
                 } else {
                     return data;
                 }
@@ -996,10 +986,7 @@ where
     #[inline]
     pub fn iter(&self) -> AvlIter<'_, P, Tag> {
         let first_p = if !self.root.is_null() {
-            Some(self.bottom_child(
-                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                DIR_LEFT,
-            ))
+            Some(self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT))
         } else {
             None
         };
@@ -1015,10 +1002,7 @@ where
     #[inline]
     pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
         let last_p = if !self.root.is_null() {
-            Some(self.bottom_child(
-                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                DIR_RIGHT,
-            ))
+            Some(self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT))
         } else {
             None
         };
@@ -1027,20 +1011,12 @@ where
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        if let Some(p) = self._walk_dir(data.into(), DIR_LEFT) {
-            Some(NodeRef::from(p.as_ptr()))
-        } else {
-            None
-        }
+        self._walk_dir(data.into(), DIR_LEFT).map(|p| NodeRef::from(p.as_ptr()))
     }
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        if let Some(p) = self._walk_dir(data.into(), DIR_RIGHT) {
-            Some(NodeRef::from(p.as_ptr()))
-        } else {
-            None
-        }
+        self._walk_dir(data.into(), DIR_RIGHT).map(|p| NodeRef::from(p.as_ptr()))
     }
 
     fn _walk_dir(&self, mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
@@ -1048,9 +1024,7 @@ where
         let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
         if !temp.is_null() {
-            unsafe {
-                Some(self.bottom_child(NonNull::new_unchecked(temp as *mut P::Target), dir_inverse))
-            }
+            unsafe { Some(self.bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
         } else {
             let mut parent = node.parent;
             if parent.is_null() {
@@ -1059,9 +1033,9 @@ where
             loop {
                 let pdir = AvlNode::<P::Target, Tag>::child_direction(parent, data_ptr.as_ptr());
                 if pdir == dir_inverse {
-                    return Some(unsafe { NonNull::new_unchecked(parent as *mut P::Target) });
+                    return Some(unsafe { NonNull::new_unchecked(parent) });
                 }
-                let data_ptr_raw = parent as *mut P::Target;
+                let data_ptr_raw = parent;
                 parent = unsafe { (*parent).get_node() }.parent;
                 if parent.is_null() {
                     return None;
@@ -1076,10 +1050,7 @@ where
     #[inline]
     pub fn first<'a>(&'a self) -> Option<NodeRef<'a, P>> {
         if !self.root.is_null() {
-            let p = self.bottom_child(
-                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                DIR_LEFT,
-            );
+            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
             Some(NodeRef::<'a, P>::from(p.as_ptr()))
         } else {
             None
@@ -1089,10 +1060,7 @@ where
     #[inline]
     pub fn last<'a>(&'a self) -> Option<NodeRef<'a, P>> {
         if !self.root.is_null() {
-            let p = self.bottom_child(
-                unsafe { NonNull::new_unchecked(self.root as *mut P::Target) },
-                DIR_RIGHT,
-            );
+            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
             Some(NodeRef::<'a, P>::from(p.as_ptr()))
         } else {
             None
@@ -1198,7 +1166,7 @@ impl<'a, P: Pointer> Deref for NodeRef<'a, P> {
     }
 }
 
-impl<'a, P: Pointer> From<*mut P::Target> for NodeRef<'a, P> {
+impl<'a, P: Pointer> NodeRef<'a, P> {
     #[inline]
     fn from(p: *mut P::Target) -> Self {
         Self { node: ManuallyDrop::new(unsafe { P::from_raw(p) }), _phan: Default::default() }
