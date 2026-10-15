@@ -6,13 +6,22 @@
 //!
 //! The algorithm origin from open-zfs
 //!
-//! The ordering of avl tree is defined by [AvlItem] trait. There're two scenario:
+//! benchmarks: <https://github.com/NaturalIO/embed-collections-rs/wiki>
+//!
+//! The ordering of avl tree is defined by [AvlItem] trait. There're two usage:
 //! - borrow field as key from the node struct
 //! - impl Ord for struct itself
 //!
-//! Refer to the example of [AvlItem] document.
+//! We provide Entry API to achieve `CursorMut` like ability, you can use the following combination:
+//! - [AvlTree::entry], [AvlTree::first_entry], [AvlTree::last_entry]
+//! - [OccupiedEntry::peek_prev], [OccupiedEntry::peek_next]
+//! - [OccupiedEntry::move_prev], [OccupiedEntry::move_next]
+//! - [OccupiedEntry::insert_prev_unchecked], [OccupiedEntry::insert_next_unchecked]  ( does not change current `OccupiedEntry`)
+//! - [OccupiedEntry::insert_move_prev_unchecked], OccupiedEntry::insert_move_next_unchecked] (return the newlly inserted OccupiedEntry, reduce additional seek cost)
+//! - [OccupiedEntry::remove_prev] , [OccupiedEntry::remove_next] (does not change current `OccupiedEntry`)
 //!
-//! benchmarks: <https://github.com/NaturalIO/embed-collections-rs/wiki>
+//!
+//! Refer to the example of [AvlItem] document.
 //!
 //! # Examples
 //!

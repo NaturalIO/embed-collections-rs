@@ -83,6 +83,30 @@ where
         }
     }
 
+    /// Remove the next node if it exists and return the reference, without changing the current position.
+    #[inline]
+    pub fn remove_prev(&mut self) -> Option<P> {
+        if let Some(prev) = self.tree._walk_dir(self.node, DIR_LEFT) {
+            unsafe {
+                self.tree._remove(prev.as_ptr());
+                return Some(P::from_raw(prev.as_ptr()));
+            }
+        }
+        None
+    }
+
+    /// Remove the next node if it exists and return the reference, without changing the current position.
+    #[inline]
+    pub fn remove_next(&mut self) -> Option<P> {
+        if let Some(next) = self.tree._walk_dir(self.node, DIR_RIGHT) {
+            unsafe {
+                self.tree._remove(next.as_ptr());
+                return Some(P::from_raw(next.as_ptr()));
+            }
+        }
+        None
+    }
+
     #[inline]
     pub fn peek_prev(&self) -> Option<&'a P::Target> {
         if let Some(p) = self.tree._walk_dir(self.node, DIR_LEFT) {
@@ -131,7 +155,7 @@ where
     /// otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_before_unchecked(&mut self, new_node: P) {
+    pub unsafe fn insert_prev_unchecked(&mut self, new_node: P) {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
             self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
@@ -148,7 +172,7 @@ where
     /// otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_move_before_unchecked(self, new_node: P) -> Self {
+    pub unsafe fn insert_move_prev_unchecked(self, new_node: P) -> Self {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
             self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
@@ -166,7 +190,7 @@ where
     /// Otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_after_unchecked(&mut self, new_node: P) {
+    pub unsafe fn insert_next_unchecked(&mut self, new_node: P) {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
             self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);
@@ -183,7 +207,7 @@ where
     /// Otherwise the new_node is way smaller than its ancestor
     /// (with value not adjacent to current node) will break the tree total ordering.
     #[inline]
-    pub unsafe fn insert_move_after_unchecked(self, new_node: P) -> Self {
+    pub unsafe fn insert_move_next_unchecked(self, new_node: P) -> Self {
         unsafe {
             let new_ptr = new_node.into_raw() as *mut P::Target;
             self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);

@@ -302,7 +302,7 @@ where
         let mut ent = tree.entry(10).unwrap_occupied();
         let node = _new_node(5);
         // left is null
-        unsafe { ent.insert_before_unchecked(node) };
+        unsafe { ent.insert_prev_unchecked(node) };
         // ent is not moved
         assert_eq!(ent.value, 10);
         tree.validate_tree();
@@ -313,7 +313,7 @@ where
         // Insert 15 after 10
         let ent = tree.entry(10).unwrap_occupied();
         let node = _new_node(15);
-        assert_eq!(unsafe { ent.insert_move_after_unchecked(node) }.get().value, 15);
+        assert_eq!(unsafe { ent.insert_move_next_unchecked(node) }.get().value, 15);
         tree.validate_tree();
         assert_eq!(tree.len(), 3);
         assert_eq!(tree.get(&15).unwrap().value, 15);
@@ -321,14 +321,14 @@ where
         // Insert 3 before 5 (which is left child of 10)
         let ent = tree.entry(5).unwrap_occupied();
         let node = _new_node(3);
-        assert_eq!(unsafe { ent.insert_move_before_unchecked(node) }.value, 3);
+        assert_eq!(unsafe { ent.insert_move_prev_unchecked(node) }.value, 3);
         tree.validate_tree();
         assert_eq!(tree.len(), 4);
 
         // Insert 7 after 5
         let ent = tree.entry(5).unwrap_occupied();
         let node = _new_node(7);
-        assert_eq!(unsafe { ent.insert_move_after_unchecked(node) }.value, 7);
+        assert_eq!(unsafe { ent.insert_move_next_unchecked(node) }.value, 7);
         tree.validate_tree();
         assert_eq!(tree.len(), 5);
         drop(tree);
@@ -341,7 +341,7 @@ where
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_entry_cursor_mut<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+fn int_avl_tree_entry_cursor_mut_forward<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -357,7 +357,7 @@ where
         let mut ent = tree.first_entry().unwrap();
         let mut i: usize = 0;
         loop {
-            ent = unsafe { ent.insert_move_after_unchecked(_new_node(i as i64 + 1)) };
+            ent = unsafe { ent.insert_move_next_unchecked(_new_node(i as i64 + 1)) };
             i += 2;
             if let Some(_ent) = ent.move_next() {
                 ent = _ent;
@@ -366,7 +366,98 @@ where
             }
         }
         assert_eq!(i, n * 2);
+        assert_eq!(tree.len(), n * 2);
         tree.validate_tree();
+
+        for i in 0..n {
+            let m = (i as i64) * 2;
+            assert_eq!(tree.get(&m).unwrap().value, m);
+            assert_eq!(tree.get(&(m + 1)).unwrap().value, m + 1);
+        }
+
+        let mut i: usize = 0;
+        let mut ent = tree.first_entry().unwrap();
+        loop {
+            ent.remove_next();
+            i += 1;
+            if let Some(_ent) = ent.move_next() {
+                ent = _ent;
+            } else {
+                break;
+            }
+        }
+        for i in 0..n {
+            let m = (i as i64) * 2;
+            assert_eq!(tree.get(&(m)).unwrap().value, m);
+        }
+
+        assert_eq!(tree.len(), n);
+        assert_eq!(i, n);
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn int_avl_tree_entry_cursor_mut_backward<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        let n: usize = 1000;
+        for i in 0..n {
+            tree.add_int_node(_new_node((i as i64) * 2));
+        }
+        assert_eq!(tree.len(), n);
+        assert_eq!(alive_count(), n);
+        let mut ent = tree.last_entry().unwrap();
+        let mut i: usize = n - 1;
+        loop {
+            unsafe { ent.insert_next_unchecked(_new_node((i * 2) as i64 + 1)) };
+            if let Some(_ent) = ent.move_prev() {
+                ent = _ent;
+                i -= 1;
+            } else {
+                break;
+            }
+        }
+        assert_eq!(i, 0);
+        assert_eq!(tree.len(), n * 2);
+        tree.validate_tree();
+
+        for i in 0..n {
+            let m = (i as i64) * 2;
+            assert_eq!(tree.get(&m).unwrap().value, m);
+            assert_eq!(tree.get(&(m + 1)).unwrap().value, m + 1);
+        }
+
+        let mut i: usize = 0;
+        let mut ent = tree.last_entry().unwrap();
+        loop {
+            ent.remove_prev();
+            i += 1;
+            if let Some(_ent) = ent.move_prev() {
+                ent = _ent;
+            } else {
+                break;
+            }
+        }
+        tree.validate_tree();
+
+        for i in 0..n {
+            let m = (i as i64) * 2;
+            assert_eq!(tree.get(&(m + 1)).unwrap().value, m + 1);
+        }
+        assert_eq!(tree.first().unwrap().value, 1i64);
+        assert_eq!(tree.last().unwrap().value, ((n - 1) * 2 + 1) as i64);
+        assert_eq!(tree.len(), n);
+        assert_eq!(i, n);
         drop(tree);
     }
     assert_eq!(alive_count(), 0);
