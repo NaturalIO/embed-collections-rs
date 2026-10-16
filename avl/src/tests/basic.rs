@@ -349,12 +349,13 @@ where
     let _new_node = IntAvlTree::<P>::new_node;
     {
         let n: usize = 1000;
+        let mut ent = tree.last_entry();
         for i in 0..n {
-            tree.add_int_node(_new_node((i as i64) * 2));
+            ent = unsafe { ent.append_unchecked(_new_node((i as i64) * 2)) };
         }
         assert_eq!(tree.len(), n);
         assert_eq!(alive_count(), n);
-        let mut ent = tree.first_entry().unwrap();
+        let mut ent = tree.first_entry().unwrap_occupied();
         let mut i: usize = 0;
         loop {
             ent = unsafe { ent.insert_move_next_unchecked(_new_node(i as i64 + 1)) };
@@ -376,7 +377,7 @@ where
         }
 
         let mut i: usize = 0;
-        let mut ent = tree.first_entry().unwrap();
+        let mut ent = tree.first_entry().unwrap_occupied();
         loop {
             ent.remove_next();
             i += 1;
@@ -411,12 +412,13 @@ where
     let _new_node = IntAvlTree::<P>::new_node;
     {
         let n: usize = 1000;
-        for i in 0..n {
-            tree.add_int_node(_new_node((i as i64) * 2));
+        let mut ent = tree.first_entry();
+        for i in 1..=n {
+            ent = unsafe { ent.prepend_unchecked(_new_node(((n - i) as i64) * 2)) };
         }
         assert_eq!(tree.len(), n);
         assert_eq!(alive_count(), n);
-        let mut ent = tree.last_entry().unwrap();
+        let mut ent = tree.last_entry().unwrap_occupied();
         let mut i: usize = n - 1;
         loop {
             unsafe { ent.insert_next_unchecked(_new_node((i * 2) as i64 + 1)) };
@@ -438,7 +440,7 @@ where
         }
 
         let mut i: usize = 0;
-        let mut ent = tree.last_entry().unwrap();
+        let mut ent = tree.last_entry().unwrap_occupied();
         loop {
             ent.remove_prev();
             i += 1;

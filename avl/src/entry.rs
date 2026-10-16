@@ -1,4 +1,5 @@
 use super::*;
+use core::cmp::Ordering;
 use core::fmt::Debug;
 use core::ops::Deref;
 use pointers::{CloneablePointer, Pointer};
@@ -40,6 +41,202 @@ where
             Self::Vacant(ent) => ent,
             Self::Occupied(ent) => {
                 panic!("called unwrap_occupied on vacent entry {:?}", ent.as_ref());
+            }
+        }
+    }
+
+    #[inline]
+    pub fn try_occupied(self) -> Option<OccupiedEntry<'a, P, Tag>> {
+        match self {
+            Self::Occupied(ent) => Some(ent),
+            Self::Vacant(_ent) => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_vacant(self) -> Option<VacantEntry<'a, P, Tag, K>> {
+        match self {
+            Self::Vacant(ent) => Some(ent),
+            Self::Occupied(_ent) => None,
+        }
+    }
+}
+
+impl<'a, P, Tag, K> From<Entry<'a, P, Tag, K>> for Option<OccupiedEntry<'a, P, Tag>>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline]
+    fn from(ent: Entry<'a, P, Tag, K>) -> Option<OccupiedEntry<'a, P, Tag>> {
+        ent.try_occupied()
+    }
+}
+
+impl<'a, P, Tag, K> From<Entry<'a, P, Tag, K>> for Option<VacantEntry<'a, P, Tag, K>>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline]
+    fn from(ent: Entry<'a, P, Tag, K>) -> Option<VacantEntry<'a, P, Tag, K>> {
+        ent.try_vacant()
+    }
+}
+
+/// Use to mark last entry
+pub struct Last();
+
+impl fmt::Debug for Last {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "last")
+    }
+}
+
+impl<'a, P, Tag> Entry<'a, P, Tag, Last>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    /// Append node to the last entry, return the new entry.
+    ///
+    /// For efficient batch insert without redundant seeking to the last,
+    /// only rotation will be triggered after insert.
+    ///
+    /// # Safety
+    ///
+    /// You have to make sure the node append in total ordering
+    pub unsafe fn append_unchecked(self, node: P) -> Self {
+        match self {
+            Self::Occupied(ent) => Self::Occupied(unsafe { ent.insert_move_next_unchecked(node) }),
+            Self::Vacant(ent) => {
+                debug_assert!(
+                    ent.node.is_null(),
+                    "can only append to VacantEntry when tree is empty"
+                );
+                debug_assert_eq!(ent.direction, DIR_RIGHT);
+                let p = node.into_raw() as *mut P::Target;
+                ent.tree._insert(p, null_mut(), DIR_RIGHT);
+                Self::Occupied(OccupiedEntry {
+                    node: unsafe { NonNull::new_unchecked(p) },
+                    tree: ent.tree,
+                })
+            }
+        }
+    }
+
+    /// Append node to the last entry with check, return the new entry.
+    ///
+    /// For efficient batch insert without redundant seeking to the last,
+    /// only rotation will be triggered after insert.
+    ///
+    /// # Arguments:
+    /// - `node`: the node to insert
+    /// - `cmp_f`: compare `P::Target` of the entry and `node`.
+    ///   If it returns Ordering::Less, insert `node` and return `Ok`; otherwise return `Err(node)`
+    pub fn append<F>(self, node: P, cmp_f: F) -> Result<Self, P>
+    where
+        F: FnOnce(&P::Target, &P::Target) -> Ordering,
+    {
+        match self {
+            Self::Occupied(ent) => {
+                if cmp_f(ent.get(), node.as_ref()) == Ordering::Less {
+                    Ok(Self::Occupied(unsafe { ent.insert_move_next_unchecked(node) }))
+                } else {
+                    Err(node)
+                }
+            }
+            Self::Vacant(ent) => {
+                debug_assert!(
+                    ent.node.is_null(),
+                    "can only append to VacantEntry when tree is empty"
+                );
+                debug_assert_eq!(ent.direction, DIR_RIGHT);
+                let p = node.into_raw() as *mut P::Target;
+                ent.tree._insert(p, null_mut(), DIR_RIGHT);
+                Ok(Self::Occupied(OccupiedEntry {
+                    node: unsafe { NonNull::new_unchecked(p) },
+                    tree: ent.tree,
+                }))
+            }
+        }
+    }
+}
+
+/// Use to mark first entry
+pub struct First();
+
+impl fmt::Debug for First {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "first")
+    }
+}
+
+impl<'a, P, Tag> Entry<'a, P, Tag, First>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    /// Prepend node to the first entry, return the new entry.
+    ///
+    /// For efficient batch insert without redundant seeking to the first,
+    /// only rotation will be triggered after insert.
+    ///
+    /// # Safety
+    ///
+    /// You have to make sure the node append in total ordering
+    pub unsafe fn prepend_unchecked(self, node: P) -> Self {
+        match self {
+            Self::Occupied(ent) => Self::Occupied(unsafe { ent.insert_move_prev_unchecked(node) }),
+            Self::Vacant(ent) => {
+                debug_assert!(
+                    ent.node.is_null(),
+                    "can only append to VacantEntry when tree is empty"
+                );
+                debug_assert_eq!(ent.direction, DIR_LEFT);
+                let p = node.into_raw() as *mut P::Target;
+                ent.tree._insert(p, null_mut(), DIR_LEFT);
+                Self::Occupied(OccupiedEntry {
+                    node: unsafe { NonNull::new_unchecked(p) },
+                    tree: ent.tree,
+                })
+            }
+        }
+    }
+
+    /// Prepend node to the first entry with check, return the new entry.
+    ///
+    /// For efficient batch insert without redundant seeking to the first,
+    /// only rotation will be triggered after insert.
+    ///
+    /// # Arguments:
+    /// - `node`: the node to insert
+    /// - `cmp_f`: compare `P::Target` of the `node` and entry.
+    ///   If it returns Ordering::Less, insert `node` and return `Ok`; otherwise return `Err(node)`
+    pub fn prepend<F>(self, node: P, cmp_f: F) -> Result<Self, P>
+    where
+        F: FnOnce(&P::Target, &P::Target) -> Ordering,
+    {
+        match self {
+            Self::Occupied(ent) => {
+                if cmp_f(node.as_ref(), ent.get()) == Ordering::Less {
+                    Ok(Self::Occupied(unsafe { ent.insert_move_prev_unchecked(node) }))
+                } else {
+                    Err(node)
+                }
+            }
+            Self::Vacant(ent) => {
+                debug_assert!(
+                    ent.node.is_null(),
+                    "can only append to VacantEntry when tree is empty"
+                );
+                debug_assert_eq!(ent.direction, DIR_LEFT);
+                let p = node.into_raw() as *mut P::Target;
+                ent.tree._insert(p, null_mut(), DIR_LEFT);
+                Ok(Self::Occupied(OccupiedEntry {
+                    node: unsafe { NonNull::new_unchecked(p) },
+                    tree: ent.tree,
+                }))
             }
         }
     }

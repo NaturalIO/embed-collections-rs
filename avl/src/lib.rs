@@ -30,12 +30,8 @@
 //! ```rust
 //! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
 //! use core::cell::UnsafeCell;
-//! use core::cmp::{Ordering, Ord};
 //! use core::borrow::Borrow;
 //! extern crate format_attr;
-//! extern crate alloc;
-//! use alloc::sync::Arc;
-//! use core::fmt;
 //!
 //! #[derive(format_attr::DebugAttr)]
 //! #[fmt("MyNode {value}")]
@@ -58,8 +54,6 @@
 //!
 //! impl_ord_with_borrow!(MyNode, i32);
 //!
-//! // A boxed example
-//!
 //! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
 //! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) })).expect("add ok");
 //!
@@ -68,6 +62,39 @@
 //!     assert_eq!(node.value, 10);
 //! }
 //! assert!(tree.is_empty());
+//!
+//! ```
+//!
+//! ## Using `Arc` to search and remove by node
+//!
+//! ```rust
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
+//! use core::cell::UnsafeCell;
+//! use core::borrow::Borrow;
+//! extern crate format_attr;
+//! extern crate alloc;
+//! use alloc::sync::Arc;
+//!
+//! #[derive(format_attr::DebugAttr)]
+//! #[fmt("MyNode {value}")]
+//! struct MyNode {
+//!     value: i32,
+//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//! }
+//!
+//! impl Borrow<i32> for MyNode {
+//!     fn borrow(&self) -> &i32 {
+//!         &self.value
+//!     }
+//! }
+//!
+//! unsafe impl AvlItem<()> for MyNode {
+//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!         unsafe { &mut *self.avl_node.get() }
+//!     }
+//! }
+//!
+//! impl_ord_with_borrow!(MyNode, i32);
 //!
 //! // Using `Arc` for multiple ownership
 //! // remove_ref only available to `Arc` and `Rc`
@@ -86,6 +113,51 @@
 //! // Remove by reference (detach from avl tree)
 //! tree.remove(&node);
 //! assert_eq!(tree.len(), 0);
+//! ```
+//!
+//! ## Efficient bulk insertion
+//!
+//! ```rust
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
+//! use core::cell::UnsafeCell;
+//! use core::borrow::Borrow;
+//! extern crate format_attr;
+//!
+//! #[derive(format_attr::DebugAttr)]
+//! #[fmt("MyNode {value}")]
+//! struct MyNode {
+//!     value: i32,
+//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//! }
+//!
+//! impl Borrow<i32> for MyNode {
+//!     fn borrow(&self) -> &i32 {
+//!         &self.value
+//!     }
+//! }
+//!
+//! unsafe impl AvlItem<()> for MyNode {
+//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!         unsafe { &mut *self.avl_node.get() }
+//!     }
+//! }
+//!
+//! impl_ord_with_borrow!(MyNode, i32);
+//!
+//! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
+//! let mut ent = tree.last_entry();
+//! for i in 0..100 {
+//!     ent = unsafe{ent.append_unchecked(
+//!         Box::new(MyNode { value: i, avl_node: UnsafeCell::new(Default::default()) })
+//!     )};
+//! }
+//!
+//! // Search
+//! if let Some(node) = tree.get::<i32>(&10) {
+//!     assert_eq!(node.value, 10);
+//! }
+//! assert_eq!(tree.len(), 100);
+//!
 //! ```
 
 extern crate alloc;
@@ -411,6 +483,17 @@ where
     root: *mut P::Target,
     count: usize,
     _phan: PhantomData<fn(P, &Tag)>,
+}
+
+impl<P, Tag> Default for AvlTree<P, Tag>
+where
+    P: Pointer + Send,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 unsafe impl<P, Tag> Send for AvlTree<P, Tag>
@@ -1067,23 +1150,39 @@ where
         }
     }
 
+    /// Get the last entry
+    ///
+    /// You can use [Entry::prepend] or [Entry::prepend_unchecked] on it to batch insert
     #[inline]
-    pub fn first_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, P, Tag>> {
+    pub fn first_entry<'a>(&'a mut self) -> Entry<'a, P, Tag, First> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
-            Some(OccupiedEntry { node: p, tree: self })
+            Entry::Occupied(OccupiedEntry { node: p, tree: self })
         } else {
-            None
+            Entry::Vacant(VacantEntry {
+                node: null_mut(),
+                tree: self,
+                direction: DIR_LEFT,
+                key: First(),
+            })
         }
     }
 
+    /// Get the last entry
+    ///
+    /// You can use [Entry::append] or [Entry::append_unchecked] on it to batch insert
     #[inline]
-    pub fn last_entry<'a>(&'a mut self) -> Option<OccupiedEntry<'a, P, Tag>> {
+    pub fn last_entry<'a>(&'a mut self) -> Entry<'a, P, Tag, Last> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
-            Some(OccupiedEntry { node: p, tree: self })
+            Entry::Occupied(OccupiedEntry { node: p, tree: self })
         } else {
-            None
+            Entry::Vacant(VacantEntry {
+                node: null_mut(),
+                tree: self,
+                direction: DIR_RIGHT,
+                key: Last(),
+            })
         }
     }
 
