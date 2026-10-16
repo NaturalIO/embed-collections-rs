@@ -15,7 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [embed-avl 0.2.0] -2026-10-15
+## [embed-avl 0.3.0] - 2026-10-16
+
+### Changed
+
+- avl: Change the return type of `first_entry` & `last_entry` to Entry with First/Last marker
+
+### Added
+
+- avl: Add `append` & `prepend` method on `Entry` for bulk insertion
+
+## [embed-avl 0.2.0] - 2026-10-15
 
 ### Changed
 
