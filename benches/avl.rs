@@ -51,6 +51,46 @@ fn new_intnode_arc(i: u32) -> Arc<IntAvlNode> {
 type IntAvlTreeBox = AvlTree<Box<IntAvlNode>, ()>;
 type IntAvlTreeArc = AvlTree<Arc<IntAvlNode>, ()>;
 
+fn bench_bulk_insert_box(c: &mut Criterion) {
+    for &size in &SIZES {
+        let data = TestData::new_random(size);
+        let desc = size_desc(size);
+
+        let mut group = c.benchmark_group("insert_bulk_box");
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(format!("{}", desc), |b| {
+            b.iter(|| {
+                let mut tree = IntAvlTreeBox::new();
+                let mut ent = tree.last_entry();
+                for i in 0..size {
+                    ent = black_box(unsafe { ent.append_unchecked(new_intnode_box(data.keys[i])) });
+                }
+            });
+        });
+        group.finish();
+    }
+}
+
+fn bench_bulk_insert_arc(c: &mut Criterion) {
+    for &size in &SIZES {
+        let data = TestData::new_random(size);
+        let desc = size_desc(size);
+
+        let mut group = c.benchmark_group("insert_bulk_arc");
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(format!("{}", desc), |b| {
+            b.iter(|| {
+                let mut tree = IntAvlTreeArc::new();
+                let mut ent = tree.last_entry();
+                for i in 0..size {
+                    ent = black_box(unsafe { ent.append_unchecked(new_intnode_arc(data.keys[i])) });
+                }
+            });
+        });
+        group.finish();
+    }
+}
+
 fn bench_insert_box(c: &mut Criterion) {
     for &size in &SIZES {
         let data = TestData::new_random(size);
@@ -62,7 +102,7 @@ fn bench_insert_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    let _ = tree.add(black_box(new_intnode_box(data.keys[i])));
+                    let _ = black_box(tree.add(new_intnode_box(data.keys[i])));
                 }
             });
         });
@@ -81,7 +121,7 @@ fn bench_insert_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    let _ = tree.add(black_box(new_intnode_arc(data.keys[i])));
+                    let _ = black_box(tree.add(new_intnode_arc(data.keys[i])));
                 }
             });
         });
@@ -100,7 +140,7 @@ fn bench_insert_sequential_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    let _ = tree.add(black_box(new_intnode_box(data.keys[i])));
+                    let _ = black_box(tree.add(new_intnode_box(data.keys[i])));
                 }
             });
         });
@@ -119,7 +159,7 @@ fn bench_insert_sequential_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    let _ = tree.add(black_box(new_intnode_arc(data.keys[i])));
+                    let _ = black_box(tree.add(new_intnode_arc(data.keys[i])));
                 }
             });
         });
@@ -321,6 +361,8 @@ fn bench_remove_arc(c: &mut Criterion) {
 
 criterion_group!(
     benches,
+    bench_bulk_insert_box,
+    bench_bulk_insert_arc,
     bench_insert_box,
     bench_insert_arc,
     bench_insert_sequential_box,
