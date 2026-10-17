@@ -214,7 +214,7 @@ pub(crate) trait PathBuffer: Sized {
 
     /// For moving the Entry position
     #[inline(always)]
-    fn move_path_left<K: Ord>(&mut self) {
+    fn move_parent_left<K: Ord>(&mut self) {
         let mut pos = self.buffer_pos();
         // We delay the cache adjustment until pop because may not need to visit the parent
         if pos > i8::MIN {
@@ -228,7 +228,7 @@ pub(crate) trait PathBuffer: Sized {
 
     /// For moving the Entry position
     #[inline(always)]
-    fn move_path_right<K: Ord>(&mut self) {
+    fn move_parent_right<K: Ord>(&mut self) {
         let mut pos = self.buffer_pos();
         // We delay the cache adjustment until pop because may not need to visit the parent
         if pos < i8::MAX {
@@ -301,9 +301,14 @@ pub(crate) trait PathBuffer: Sized {
         r
     }
 
-    // for dropping the tree, post order visit, `post_callback` should dealloc on the node
+    // for dropping, post order visit, `post_callback` should dealloc on the node.
+    //   should be used in combine with push_path.
+    // used in:
+    // - Drop
+    // - IntoIter
+    // - validate
     #[inline(always)]
-    fn move_path_right_and_pop_l1<K: Ord, F>(
+    fn move_parent_right_and_pop_l1<K: Ord, F>(
         &mut self, post_callback: F,
     ) -> Option<(InterNode<K>, u8)>
     where
@@ -326,9 +331,11 @@ pub(crate) trait PathBuffer: Sized {
         }
     }
 
-    // for backward IntoIter the tree, post order visit in reversed order, `post_callback` should dealloc on the node
+    // for backward IntoIter the tree,
+    // post order visit in reversed order, `post_callback` should dealloc on the node,
+    // used in combine with push_path
     #[inline(always)]
-    fn move_path_left_and_pop_l1<K: Ord, F>(
+    fn move_parent_left_and_pop_l1<K: Ord, F>(
         &mut self, post_callback: F,
     ) -> Option<(InterNode<K>, u8)>
     where

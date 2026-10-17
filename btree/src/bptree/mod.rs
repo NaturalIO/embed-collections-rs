@@ -740,7 +740,7 @@ impl<K: Key, V: Value, S: Stats> Drop for BTree<K, V, S> {
                 // To navigate to next leaf,
                 // return None when reach the end
                 while let Some((parent, idx)) =
-                    cache.move_path_right_and_pop_l1(|_cache, node| node.dealloc::<true>())
+                    cache.move_parent_right_and_pop_l1(|_cache, node| node.dealloc::<true>())
                 {
                     cache.push_path(parent.clone(), idx);
                     cur = parent.get_child_as_leaf::<V>(idx);

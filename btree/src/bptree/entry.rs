@@ -280,7 +280,7 @@ impl<'a, K: Key, V: Value, S: Stats> OccupiedEntry<'a, K, V, S> {
             self.inner.set_idx(idx - 1);
             Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(leaf) = self.leaf.get_left_node() {
-            self.inner.get_cache().move_path_left::<K>();
+            self.inner.get_cache().move_parent_left::<K>();
             let count = leaf.key_count();
             debug_assert!(count > 0);
             self.inner.set_idx(count - 1);
@@ -300,7 +300,7 @@ impl<'a, K: Key, V: Value, S: Stats> OccupiedEntry<'a, K, V, S> {
             self.inner.set_idx(next_idx);
             Ok(Self { inner: self.inner, leaf: self.leaf })
         } else if let Some(right) = self.leaf.get_right_node() {
-            self.inner.get_cache().move_path_right::<K>();
+            self.inner.get_cache().move_parent_right::<K>();
             debug_assert!(right.key_count() > 0);
             self.inner.set_idx(0);
             Ok(Self { inner: self.inner, leaf: right })
@@ -462,7 +462,7 @@ impl<'a, K: Key, V: Value, S: Stats> VacantEntry<'a, K, V, S> {
             if let Some(left) = leaf.get_left_node() {
                 let count = left.key_count();
                 debug_assert!(count > 0);
-                self.inner.get_cache().move_path_left::<K>();
+                self.inner.get_cache().move_parent_left::<K>();
                 self.inner.set_idx(count - 1);
                 return Ok(OccupiedEntry { inner: self.inner, leaf: left });
             }
@@ -482,7 +482,7 @@ impl<'a, K: Key, V: Value, S: Stats> VacantEntry<'a, K, V, S> {
                 return Ok(OccupiedEntry { inner: self.inner, leaf: leaf.clone() });
             } else if let Some(right) = leaf.get_right_node() {
                 debug_assert!(right.key_count() > 0);
-                self.inner.get_cache().move_path_right::<K>();
+                self.inner.get_cache().move_parent_right::<K>();
                 self.inner.set_idx(0);
                 return Ok(OccupiedEntry { inner: self.inner, leaf: right });
             }

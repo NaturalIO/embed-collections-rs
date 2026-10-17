@@ -580,7 +580,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
             {
                 self.triggers |= TestFlag::LeafMoveRight as u32;
             }
-            cache.move_path_right::<K>();
+            cache.move_parent_right::<K>();
             self.update_ancestor_sep_key::<true, C>(cache, right_node.clone_first_key());
             return val_p;
         }
@@ -728,7 +728,7 @@ impl<K: Key, V: Value> BTreeInner<K, V> {
 
                 // Continue traversal like Drop does
                 while let Some((parent, idx)) =
-                    cache.move_path_right_and_pop_l1(dummy_post_callback::<K, _>)
+                    cache.move_parent_right_and_pop_l1(dummy_post_callback::<K, _>)
                 {
                     cache.push_path(parent.clone(), idx);
                     if let Node::Leaf(leaf) = parent.get_child::<V>(idx) {

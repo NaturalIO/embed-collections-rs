@@ -586,7 +586,7 @@ impl<K: Key, V: Value, S: Stats> IntoIterBase<K, V, S> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self
             .cache
-            .move_path_right_and_pop_l1::<K, _>(|_cache, node| {
+            .move_parent_right_and_pop_l1::<K, _>(|_cache, node| {
                 node.dealloc::<true>();
             })
             .unwrap();
@@ -602,7 +602,7 @@ impl<K: Key, V: Value, S: Stats> IntoIterBase<K, V, S> {
         _leaf.dealloc::<false>();
         let (parent, idx) = self
             .cache
-            .move_path_left_and_pop_l1::<K, _>(|_cache, node| node.dealloc::<true>())
+            .move_parent_left_and_pop_l1::<K, _>(|_cache, node| node.dealloc::<true>())
             .unwrap();
         self.cache.push_path(parent.clone(), idx);
         let new_leaf = parent.get_child_as_leaf(idx);
@@ -693,7 +693,7 @@ impl<K: Key, V: Value, S: Stats> Drop for IntoIterBase<K, V, S> {
             // We should free the rest internal nodes even after leaf iteration done
             if is_forward {
                 while let Some((parent, idx)) =
-                    self.cache.move_path_right_and_pop_l1::<K, _>(|_cache, _node| {
+                    self.cache.move_parent_right_and_pop_l1::<K, _>(|_cache, _node| {
                         _node.dealloc::<true>();
                     })
                 {
@@ -704,7 +704,7 @@ impl<K: Key, V: Value, S: Stats> Drop for IntoIterBase<K, V, S> {
                 }
             } else {
                 while let Some((parent, idx)) =
-                    self.cache.move_path_left_and_pop_l1::<K, _>(|_cache, _node| {
+                    self.cache.move_parent_left_and_pop_l1::<K, _>(|_cache, _node| {
                         _node.dealloc::<true>();
                     })
                 {
