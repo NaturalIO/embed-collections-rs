@@ -74,17 +74,22 @@
 //! // Using NonNull<T> (raw pointers without ownership)
 //! {
 //!     let mut list = DLinkedList::<NonNull<MyItem>, ()>::new();
-//!     let item1 = Box::leak(Box::new(MyItem::new(1, "First")));
-//!     let item2 = Box::leak(Box::new(MyItem::new(2, "Second")));
-//!     let item3 = Box::leak(Box::new(MyItem::new(3, "Third")));
-//!     list.push_back(NonNull::from(item1));
-//!     list.push_front(NonNull::from(item2));
-//!     list.push_back(NonNull::from(item3));
+//!     let item1 = Box::into_raw(Box::new(MyItem::new(1, "First")));
+//!     let item2 = Box::into_raw(Box::new(MyItem::new(2, "Second")));
+//!     let item3 = Box::into_raw(Box::new(MyItem::new(3, "Third")));
+//!     list.push_back(unsafe{NonNull::new_unchecked(item1)});
+//!     list.push_front(unsafe{NonNull::new_unchecked(item2)});
+//!     list.push_back(unsafe{NonNull::new_unchecked(item3)});
 //!     assert_eq!(list.len(), 3);
 //!     assert_eq!(unsafe { list.pop_front().unwrap().as_ref().id }, 2);
 //!     assert_eq!(unsafe { list.pop_back().unwrap().as_ref().id }, 3);
 //!     assert_eq!(unsafe { list.pop_front().unwrap().as_ref().id }, 1);
 //!     assert!(list.is_empty());
+//!     unsafe{
+//!         let _ = Box::from_raw(item1);
+//!         let _ = Box::from_raw(item2);
+//!         let _ = Box::from_raw(item3);
+//!     }
 //! }
 //! ```
 
