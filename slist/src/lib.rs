@@ -72,17 +72,22 @@
 //! // Using NonNull<T> (raw pointers without ownership)
 //! {
 //!     let mut task_queue = SLinkedList::<NonNull<MyTask>, ()>::new();
-//!     let task1 = Box::leak(Box::new(MyTask::new(1, "Handle user login")));
-//!     let task2 = Box::leak(Box::new(MyTask::new(2, "Process analytics data")));
-//!     let task3 = Box::leak(Box::new(MyTask::new(1, "Send welcome email")));
-//!     task_queue.push_back(NonNull::from(task1));
-//!     task_queue.push_back(NonNull::from(task2));
-//!     task_queue.push_back(NonNull::from(task3));
+//!     let task1 = Box::into_raw(Box::new(MyTask::new(1, "Handle user login")));
+//!     let task2 = Box::into_raw(Box::new(MyTask::new(2, "Process analytics data")));
+//!     let task3 = Box::into_raw(Box::new(MyTask::new(1, "Send welcome email")));
+//!     task_queue.push_back(unsafe{NonNull::new_unchecked(task1)});
+//!     task_queue.push_back(unsafe{NonNull::new_unchecked(task2)});
+//!     task_queue.push_back(unsafe{NonNull::new_unchecked(task3)});
 //!     assert_eq!(task_queue.len(), 3);
 //!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Handle user login");
 //!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Process analytics data");
 //!     assert_eq!(unsafe { &task_queue.pop_front().unwrap().as_ref().description }, "Send welcome email");
 //!     assert!(task_queue.is_empty());
+//!     unsafe{
+//!         let _ = Box::from_raw(task1);
+//!         let _ = Box::from_raw(task2);
+//!         let _ = Box::from_raw(task3);
+//!     }
 //! }
 //! ```
 
