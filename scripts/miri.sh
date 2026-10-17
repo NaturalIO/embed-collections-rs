@@ -13,4 +13,4 @@ MIRIFLAGS="$MIRIFLAGS -Zmiri-seed=$MIRI_SEED -Zmiri-disable-isolation -Zmiri-no-
 export MIRIFLAGS
 echo $MIRIFLAGS
 # --lib: to skip doctest
-RUST_BACKTRACE=1 cargo +${NIGHTLY_VERSION:-nightly} miri test --lib $@ -- --no-capture --test-threads=1
+RUST_BACKTRACE=1 cargo +${NIGHTLY_VERSION:-nightly} miri test $@ -- --no-capture --test-threads=1
