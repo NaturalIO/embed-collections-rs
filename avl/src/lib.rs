@@ -1263,6 +1263,20 @@ where
     }
 }
 
+impl<'a, P, Tag> core::iter::IntoIterator for &'a AvlTree<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    type Item = NodeRef<'a, P>;
+    type IntoIter = AvlIter<'a, P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// A Reference to `P`
 pub struct NodeRef<'a, P: Pointer> {
     node: NonNull<P::Target>,
