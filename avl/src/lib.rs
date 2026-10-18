@@ -677,7 +677,7 @@ where
     }
 
     #[inline]
-    pub fn get<'a, K>(&'a self, key: &K) -> Option<NodeRef<'a, P>>
+    pub fn get<'a, K>(&'a self, key: &K) -> Option<AvlNodeRef<'a, P>>
     where
         P::Target: Borrow<K>,
         K: Ord,
@@ -685,7 +685,7 @@ where
         self.get_with(|node| key.cmp(node.borrow()))
     }
 
-    pub fn get_with<'a, F>(&'a self, cmp_f: F) -> Option<NodeRef<'a, P>>
+    pub fn get_with<'a, F>(&'a self, cmp_f: F) -> Option<AvlNodeRef<'a, P>>
     where
         F: Fn(&P::Target) -> Ordering,
     {
@@ -696,7 +696,7 @@ where
                 let dir = match cmp_f(unsafe { &*node }.as_ref()) {
                     Ordering::Greater => DIR_RIGHT,
                     Ordering::Less => DIR_LEFT,
-                    Ordering::Equal => return Some(NodeRef::new(node)),
+                    Ordering::Equal => return Some(AvlNodeRef::new(node)),
                 };
                 let child = unsafe { (*node).get_node() }.get_child(dir);
                 if !child.is_null() {
@@ -1068,7 +1068,7 @@ where
 
     /// return a iterator to get the reference
     ///
-    /// NOTE: The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
+    /// NOTE: The iterator yield [AvlNodeRef], so that you can clone the reference if it's `Arc`
     #[inline]
     pub fn iter(&self) -> AvlIter<'_, P, Tag> {
         let first_p = if !self.root.is_null() {
@@ -1081,7 +1081,7 @@ where
 
     /// return a reversed iterator to get the reference.
     ///
-    /// NOTE: The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
+    /// NOTE: The iterator yield [AvlNodeRef], so that you can clone the reference if it's `Arc`
     #[inline]
     pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
         let last_p = if !self.root.is_null() {
@@ -1093,13 +1093,13 @@ where
     }
 
     #[inline]
-    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_LEFT).map(|p| NodeRef::new(p.as_ptr()))
+    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
+        self._walk_dir(data.into(), DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
     #[inline]
-    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<NodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_RIGHT).map(|p| NodeRef::new(p.as_ptr()))
+    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
+        self._walk_dir(data.into(), DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
     fn _walk_dir(&self, mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
@@ -1131,20 +1131,20 @@ where
     }
 
     #[inline]
-    pub fn first<'a>(&'a self) -> Option<NodeRef<'a, P>> {
+    pub fn first<'a>(&'a self) -> Option<AvlNodeRef<'a, P>> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
-            Some(NodeRef::<'a, P>::new(p.as_ptr()))
+            Some(AvlNodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn last<'a>(&'a self) -> Option<NodeRef<'a, P>> {
+    pub fn last<'a>(&'a self) -> Option<AvlNodeRef<'a, P>> {
         if !self.root.is_null() {
             let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
-            Some(NodeRef::<'a, P>::new(p.as_ptr()))
+            Some(AvlNodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
         }
@@ -1268,7 +1268,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    type Item = NodeRef<'a, P>;
+    type Item = AvlNodeRef<'a, P>;
     type IntoIter = AvlIter<'a, P, Tag>;
 
     #[inline]
@@ -1278,19 +1278,29 @@ where
 }
 
 /// A Reference to `P`
-pub struct NodeRef<'a, P: Pointer> {
+pub struct AvlNodeRef<'a, P: Pointer> {
     node: NonNull<P::Target>,
     _phan: PhantomData<&'a P>,
 }
 
-impl<'a, P: Pointer> AsRef<P::Target> for NodeRef<'a, P> {
+impl<'a, P: Pointer> fmt::Debug for AvlNodeRef<'a, P>
+where
+    P::Target: fmt::Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.as_ref().fmt(f)
+    }
+}
+
+impl<'a, P: Pointer> AsRef<P::Target> for AvlNodeRef<'a, P> {
     #[inline(always)]
     fn as_ref(&self) -> &P::Target {
         unsafe { self.node.as_ref() }
     }
 }
 
-impl<'a, P: Pointer> Deref for NodeRef<'a, P> {
+impl<'a, P: Pointer> Deref for AvlNodeRef<'a, P> {
     type Target = P::Target;
 
     #[inline(always)]
@@ -1299,14 +1309,14 @@ impl<'a, P: Pointer> Deref for NodeRef<'a, P> {
     }
 }
 
-impl<'a, P: Pointer> NodeRef<'a, P> {
+impl<'a, P: Pointer> AvlNodeRef<'a, P> {
     #[inline]
     fn new(p: *mut P::Target) -> Self {
         Self { node: unsafe { NonNull::new_unchecked(p) }, _phan: Default::default() }
     }
 }
 
-impl<'a, P: CloneablePointer> NodeRef<'a, P> {
+impl<'a, P: CloneablePointer> AvlNodeRef<'a, P> {
     /// If P is `Rc`/`Arc`, you can clone the reference out
     #[inline]
     pub fn clone_ref(&self) -> P {

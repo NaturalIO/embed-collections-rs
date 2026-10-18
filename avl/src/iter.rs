@@ -174,7 +174,7 @@ where
 
 /// A lending iterator for AvlTree
 ///
-/// The iterator yield [NodeRef], so that you can clone the reference if it's `Arc`
+/// The iterator yield [AvlNodeRef], so that you can clone the reference if it's `Arc`
 impl<'a, P, Tag> AvlIter<'a, P, Tag>
 where
     P: Pointer,
@@ -200,13 +200,13 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    type Item = NodeRef<'a, P>;
+    type Item = AvlNodeRef<'a, P>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cur: NonNull<P::Target> = self.cur.take()?;
         self.left -= 1;
         self.cur = self.tree._walk_dir(cur, self.dir);
-        Some(NodeRef::<'a, P>::new(cur.as_ptr()))
+        Some(AvlNodeRef::<'a, P>::new(cur.as_ptr()))
     }
 }
 
