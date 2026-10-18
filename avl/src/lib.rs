@@ -1110,23 +1110,21 @@ where
             unsafe { Some(self.bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
         } else {
             let mut parent = node.parent;
-            if parent.is_null() {
-                return None;
-            }
-            loop {
+            while !parent.is_null() {
                 let pdir = AvlNode::<P::Target, Tag>::child_direction(parent, data_ptr.as_ptr());
                 if pdir == dir_inverse {
                     return Some(unsafe { NonNull::new_unchecked(parent) });
                 }
+                // move to upper parent
                 let data_ptr_raw = parent;
-                parent = unsafe { (*parent).get_node() }.parent;
-                if parent.is_null() {
-                    return None;
-                }
                 unsafe {
+                    parent = (*parent).get_node().parent;
                     data_ptr = NonNull::new_unchecked(data_ptr_raw);
                 }
             }
+            // reach root
+            debug_assert!(parent.is_null());
+            return None;
         }
     }
 
