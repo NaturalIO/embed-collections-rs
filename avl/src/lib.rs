@@ -547,15 +547,6 @@ where
         AvlTree { count: 0, root: null_mut(), _phan: Default::default() }
     }
 
-    /// Returns an iterator that removes all elements from the tree in post-order.
-    ///
-    /// This is an optimized, non-recursive, and stack-less traversal that preserves
-    /// tree invariants during destruction.
-    #[inline]
-    pub fn drain(&mut self) -> AvlDrain<'_, P, Tag> {
-        AvlDrain::new(self)
-    }
-
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.count == 0
@@ -1095,6 +1086,14 @@ where
         AvlIter::new(self, last_p, DIR_LEFT)
     }
 
+    /// Into reversed order iterator that consume the items
+    #[inline]
+    pub fn into_iter_rev(self) -> AvlIntoIter<P, Tag> {
+        let node = self.root;
+        core::mem::forget(self);
+        AvlIntoIter::new(node, DIR_RIGHT)
+    }
+
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
         self._walk_dir(data.into(), DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
@@ -1258,9 +1257,8 @@ where
     P::Target: AvlItem<Tag>,
 {
     fn drop(&mut self) {
-        if mem::needs_drop::<P>() {
-            for _ in self.drain() {}
-        }
+        let mut d = AvlDrain::new(self);
+        while let Some(_node) = d.next() {}
     }
 }
 
@@ -1275,6 +1273,22 @@ where
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+impl<P, Tag> core::iter::IntoIterator for AvlTree<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    type Item = P;
+    type IntoIter = AvlIntoIter<P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        let node = self.root;
+        core::mem::forget(self);
+        AvlIntoIter::new(node, DIR_LEFT)
     }
 }
 

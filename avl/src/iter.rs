@@ -1,10 +1,86 @@
 use super::*;
+use core::marker::PhantomData;
 use core::ptr::null_mut;
 use pointers::Pointer;
 
-// TODO IntoIter
+pub struct AvlIntoIter<P: Pointer, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    node: *mut P::Target,
+    dir: Dir,
+    _phan: PhantomData<fn(&Tag)>,
+}
 
-pub struct AvlDrain<'a, P: Pointer, Tag>
+impl<P, Tag> AvlIntoIter<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    pub(crate) fn new(root: *mut P::Target, dir: Dir) -> Self {
+        Self { node: root, dir, _phan: Default::default() }
+    }
+}
+
+impl<P, Tag> Iterator for AvlIntoIter<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    type Item = P;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.node.is_null() {
+            unsafe {
+                // self.node was the parent of last visited node
+                let item =
+                    AvlTree::<P, Tag>::bottom_child(NonNull::new_unchecked(self.node), self.dir);
+                let _node = item.as_ref().get_node();
+                let right_child = _node.get_child(self.dir.reverse());
+                let parent = _node.get_parent();
+                _node.detach();
+                if !parent.is_null() {
+                    if right_child.is_null() {
+                        (*parent).get_node().set_child(self.dir, null_mut());
+                        self.node = parent;
+                    } else {
+                        (*parent).get_node().set_child2::<P>(self.dir, right_child, parent);
+                        self.node = right_child;
+                    }
+                } else {
+                    // I'm the root
+                    if !right_child.is_null() {
+                        self.node = right_child;
+                        (*right_child).get_node().parent = null_mut();
+                    } else {
+                        self.node = null_mut();
+                    }
+                }
+                Some(P::from_raw(item.as_ptr()))
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl<P, Tag> Drop for AvlIntoIter<P, Tag>
+where
+    P: Pointer,
+    P::Target: AvlItem<Tag>,
+{
+    #[inline]
+    fn drop(&mut self) {
+        if self.node.is_null() {
+            return;
+        }
+        while let Some(_node) = self.next() {}
+    }
+}
+
+pub(crate) struct AvlDrain<'a, P: Pointer, Tag>
 where
     P::Target: AvlItem<Tag>,
 {
@@ -202,6 +278,7 @@ where
 {
     type Item = AvlNodeRef<'a, P>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let cur: NonNull<P::Target> = self.cur.take()?;
         self.left -= 1;

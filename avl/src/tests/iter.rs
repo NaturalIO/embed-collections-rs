@@ -12,7 +12,7 @@ use std::sync::Arc;
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn test_drain<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+fn test_into_iter<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -23,16 +23,98 @@ where
             tree.add_int_node(_new_node(i));
         }
         assert_eq!(tree.len(), 100);
-
-        let mut count = 0;
-        for node in tree.drain() {
-            assert!(node.value >= 0 && node.value < 100);
-            count += 1;
+        let mut i = 0;
+        for node in tree.0 {
+            assert_eq!(node.value, i);
+            i += 1;
         }
-        assert_eq!(count, 100);
-        assert_eq!(tree.len(), 0);
-        assert!(tree.first().is_none());
-        drop(tree);
+        assert_eq!(i, 100);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn test_into_iter_drop_early<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        for i in 0..100 {
+            tree.add_int_node(_new_node(i));
+        }
+        assert_eq!(tree.len(), 100);
+        let mut i = 0;
+        let stop = fastrand::i64(1..100);
+        println!("test stop at {stop}");
+        for node in tree.0 {
+            assert_eq!(node.value, i);
+            i += 1;
+            if i == stop {
+                break;
+            }
+        }
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn test_into_iter_rev<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        for i in 0..100 {
+            tree.add_int_node(_new_node(i));
+        }
+        assert_eq!(tree.len(), 100);
+        let mut i = 100;
+        for node in tree.0.into_iter_rev() {
+            i -= 1;
+            assert_eq!(node.value, i);
+        }
+        assert_eq!(i, 0);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
+#[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
+fn test_into_iter_rev_drop_early<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        for i in 0..100 {
+            tree.add_int_node(_new_node(i));
+        }
+        assert_eq!(tree.len(), 100);
+        let mut i = 100;
+        let stop = fastrand::i64(1..100);
+        println!("test stop at {stop}");
+        for node in tree.0.into_iter_rev() {
+            i -= 1;
+            assert_eq!(node.value, i);
+            if i <= stop {
+                break;
+            }
+        }
     }
     assert_eq!(alive_count(), 0);
 }
