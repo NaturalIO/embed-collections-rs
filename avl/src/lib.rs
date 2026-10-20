@@ -390,6 +390,9 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     }
 
     // set child and both child's parent
+    //
+    // # Arguments:
+    // - `parent`: this pointer to this node (we don't know the offset here)
     #[inline(always)]
     fn set_child2<P: Pointer<Target = T>>(
         &mut self, dir: Dir, child: *mut P::Target, parent: *mut P::Target,
@@ -779,7 +782,7 @@ where
                 parent = here;
             } else {
                 dir_child = dir_child.reverse();
-                parent = self.bottom_child(NonNull::new_unchecked(child), dir_child);
+                parent = Self::bottom_child(NonNull::new_unchecked(child), dir_child);
                 crate::trace_log!("find bottom {parent:p}");
             }
             self._insert(new_ptr, parent.as_ptr(), dir_child);
@@ -914,9 +917,9 @@ where
             let child_temp = del_node.get_child(dir);
 
             let dir_inverse: Dir = dir.reverse();
-            let child = self
-                .bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
-                .as_ptr();
+            let child =
+                Self::bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
+                    .as_ptr();
 
             // Fix Miri UB: Avoid calling parent_direction(child) if child's parent is del,
             // because that would create a aliasing &mut ref to del while we hold del_node.
@@ -1053,7 +1056,7 @@ where
     }
 
     #[inline(always)]
-    fn bottom_child(&self, mut data: NonNull<P::Target>, dir: Dir) -> NonNull<P::Target> {
+    fn bottom_child(mut data: NonNull<P::Target>, dir: Dir) -> NonNull<P::Target> {
         loop {
             unsafe {
                 let child = data.as_ref().get_node().get_child(dir);
@@ -1072,7 +1075,7 @@ where
     #[inline]
     pub fn iter(&self) -> AvlIter<'_, P, Tag> {
         let first_p = if !self.root.is_null() {
-            Some(self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT))
+            Some(Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT))
         } else {
             None
         };
@@ -1085,7 +1088,7 @@ where
     #[inline]
     pub fn iter_rev(&self) -> AvlIter<'_, P, Tag> {
         let last_p = if !self.root.is_null() {
-            Some(self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT))
+            Some(Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT))
         } else {
             None
         };
@@ -1107,7 +1110,7 @@ where
         let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
         if !temp.is_null() {
-            unsafe { Some(self.bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
+            unsafe { Some(Self::bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
         } else {
             let mut parent = node.parent;
             while !parent.is_null() {
@@ -1131,7 +1134,7 @@ where
     #[inline]
     pub fn first<'a>(&'a self) -> Option<AvlNodeRef<'a, P>> {
         if !self.root.is_null() {
-            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
+            let p = Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
             Some(AvlNodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
@@ -1141,7 +1144,7 @@ where
     #[inline]
     pub fn last<'a>(&'a self) -> Option<AvlNodeRef<'a, P>> {
         if !self.root.is_null() {
-            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
+            let p = Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
             Some(AvlNodeRef::<'a, P>::new(p.as_ptr()))
         } else {
             None
@@ -1154,7 +1157,7 @@ where
     #[inline]
     pub fn first_entry<'a>(&'a mut self) -> Entry<'a, P, Tag, First> {
         if !self.root.is_null() {
-            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
+            let p = Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_LEFT);
             Entry::Occupied(OccupiedEntry { node: p, tree: self })
         } else {
             Entry::Vacant(VacantEntry {
@@ -1172,7 +1175,7 @@ where
     #[inline]
     pub fn last_entry<'a>(&'a mut self) -> Entry<'a, P, Tag, Last> {
         if !self.root.is_null() {
-            let p = self.bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
+            let p = Self::bottom_child(unsafe { NonNull::new_unchecked(self.root) }, DIR_RIGHT);
             Entry::Occupied(OccupiedEntry { node: p, tree: self })
         } else {
             Entry::Vacant(VacantEntry {
