@@ -133,10 +133,10 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    tree: &'a AvlTree<P, Tag>,
     cur: Option<NonNull<P::Target>>,
     dir: Dir,
     left: usize,
+    _phan: PhantomData<fn(&'a P, &'a Tag)>,
 }
 
 /// A lending iterator for AvlTree
@@ -151,7 +151,7 @@ where
     pub(crate) fn new(
         tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Dir,
     ) -> Self {
-        Self { tree, cur: init, dir, left: tree.len() }
+        Self { cur: init, dir, left: tree.len(), _phan: Default::default() }
     }
 }
 
@@ -173,7 +173,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let cur: NonNull<P::Target> = self.cur.take()?;
         self.left -= 1;
-        self.cur = self.tree._walk_dir(cur, self.dir);
+        self.cur = AvlTree::<P, Tag>::_walk_dir(cur, self.dir);
         Some(AvlNodeRef::<'a, P>::new(cur.as_ptr()))
     }
 }

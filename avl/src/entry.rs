@@ -283,7 +283,7 @@ where
     /// Remove the next node if it exists and return the reference, without changing the current position.
     #[inline]
     pub fn remove_prev(&mut self) -> Option<P> {
-        if let Some(prev) = self.tree._walk_dir(self.node, DIR_LEFT) {
+        if let Some(prev) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             unsafe {
                 self.tree._remove(prev.as_ptr());
                 return Some(P::from_raw(prev.as_ptr()));
@@ -295,7 +295,7 @@ where
     /// Remove the next node if it exists and return the reference, without changing the current position.
     #[inline]
     pub fn remove_next(&mut self) -> Option<P> {
-        if let Some(next) = self.tree._walk_dir(self.node, DIR_RIGHT) {
+        if let Some(next) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
             unsafe {
                 self.tree._remove(next.as_ptr());
                 return Some(P::from_raw(next.as_ptr()));
@@ -306,7 +306,7 @@ where
 
     #[inline]
     pub fn peek_prev(&self) -> Option<&'a P::Target> {
-        if let Some(p) = self.tree._walk_dir(self.node, DIR_LEFT) {
+        if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -315,7 +315,7 @@ where
 
     #[inline]
     pub fn peek_next(&self) -> Option<&'a P::Target> {
-        if let Some(p) = self.tree._walk_dir(self.node, DIR_RIGHT) {
+        if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
             Some(unsafe { p.as_ref() })
         } else {
             None
@@ -324,7 +324,7 @@ where
 
     #[inline]
     pub fn move_prev(mut self) -> Option<Self> {
-        if let Some(p) = self.tree._walk_dir(self.node, DIR_LEFT) {
+        if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             self.node = p;
             Some(self)
         } else {
@@ -334,7 +334,7 @@ where
 
     #[inline]
     pub fn move_next(mut self) -> Option<Self> {
-        if let Some(p) = self.tree._walk_dir(self.node, DIR_RIGHT) {
+        if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
             self.node = p;
             Some(self)
         } else {
@@ -501,7 +501,7 @@ where
                 if self.direction == DIR_RIGHT {
                     return Some(&*self.node);
                 } else if let Some(node) =
-                    self.tree._walk_dir(NonNull::new_unchecked(self.node), DIR_LEFT)
+                    AvlTree::<P, Tag>::_walk_dir(NonNull::new_unchecked(self.node), DIR_LEFT)
                 {
                     return Some(node.as_ref());
                 }
@@ -522,7 +522,7 @@ where
                 if self.direction == DIR_LEFT {
                     return Some(&*self.node);
                 } else if let Some(node) =
-                    self.tree._walk_dir(NonNull::new_unchecked(self.node), DIR_RIGHT)
+                    AvlTree::<P, Tag>::_walk_dir(NonNull::new_unchecked(self.node), DIR_RIGHT)
                 {
                     return Some(node.as_ref());
                 }
@@ -538,7 +538,7 @@ where
                 let p = NonNull::new_unchecked(self.node);
                 if self.direction == DIR_RIGHT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
-                } else if let Some(node) = self.tree._walk_dir(p, DIR_LEFT) {
+                } else if let Some(node) = AvlTree::<P, Tag>::_walk_dir(p, DIR_LEFT) {
                     return Some(OccupiedEntry { node, tree: self.tree });
                 }
             }
@@ -553,7 +553,7 @@ where
                 let p = NonNull::new_unchecked(self.node);
                 if self.direction == DIR_LEFT {
                     return Some(OccupiedEntry { node: p, tree: self.tree });
-                } else if let Some(node) = self.tree._walk_dir(p, DIR_RIGHT) {
+                } else if let Some(node) = AvlTree::<P, Tag>::_walk_dir(p, DIR_RIGHT) {
                     return Some(OccupiedEntry { node, tree: self.tree });
                 }
             }

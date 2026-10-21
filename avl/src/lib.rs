@@ -1096,15 +1096,15 @@ where
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
+        Self::_walk_dir(data.into(), DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
-        self._walk_dir(data.into(), DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
+        Self::_walk_dir(data.into(), DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
-    fn _walk_dir(&self, mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
+    fn _walk_dir(mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
         let dir_inverse = dir.reverse();
         let node = unsafe { data_ptr.as_ref().get_node() };
         let temp = node.get_child(dir);
