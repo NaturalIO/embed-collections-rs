@@ -1126,7 +1126,7 @@ where
             }
             // reach root
             debug_assert!(parent.is_null());
-            return None;
+            None
         }
     }
 
@@ -1257,8 +1257,10 @@ where
     P::Target: AvlItem<Tag>,
 {
     fn drop(&mut self) {
-        let mut d = AvlDrain::new(self);
-        while let Some(_node) = d.next() {}
+        // It's intrusive, use standard into_iter to cleanup the AvlNode by resetting pointers
+        let mut iter = AvlIntoIter::<P, Tag>::new(self.root, DIR_LEFT);
+        for _node in iter.by_ref() {}
+        core::mem::forget(iter);
     }
 }
 

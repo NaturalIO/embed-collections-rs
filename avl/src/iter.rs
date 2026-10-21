@@ -76,7 +76,7 @@ where
         if self.node.is_null() {
             return;
         }
-        while let Some(_node) = self.next() {}
+        for _node in self.by_ref() {}
     }
 }
 
