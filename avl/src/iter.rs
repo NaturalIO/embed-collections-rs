@@ -141,7 +141,7 @@ where
 
 /// A lending iterator for AvlTree
 ///
-/// The iterator yield [AvlNodeRef], so that you can clone the reference if it's `Arc`
+/// NOTE: The iterator yield [AvlNodeRef]. You can clone the reference with [AvlNodeRef::clone_ref] if it's `Arc`
 impl<'a, P, Tag> AvlIter<'a, P, Tag>
 where
     P: Pointer,
