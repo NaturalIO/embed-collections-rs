@@ -348,10 +348,6 @@ impl From<bool> for Dir {
     }
 }
 
-macro_rules! balance_to_child {
-    ($balance: expr) => {{ ($balance > 1).into() }};
-}
-
 pub struct AvlNode<T: AvlItem<Tag>, Tag> {
     pub parent: *mut T,
     pub children: [*mut T; 2],
@@ -423,6 +419,10 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
 
     #[inline(always)]
     fn child_direction(parent: *mut T, child_p: *mut T) -> Dir {
+        // Avoid Miri stack borrowing rule:
+        // as we are holding del_node reference, don't call this with a ref again to avoid the
+        // borrow checker.
+        // Use raw pointer, as use in deletion.
         if !parent.is_null() {
             unsafe { (*parent).get_node() }._child_direction(child_p)
         } else {
@@ -433,6 +433,11 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     #[inline(always)]
     fn parent_direction(node: *mut T) -> Dir {
         // this is AvlTree::parent_direction2 in previous version
+
+        // Avoid Miri stack borrowing rule:
+        // as we are holding del_node reference, don't call this with a ref again to avoid the
+        // borrow checker.
+        // Use raw pointer, as use in deletion.
         let parent = unsafe { (*node).get_node() }.get_parent();
         Self::child_direction(parent, node)
     }
@@ -798,10 +803,42 @@ where
 
         let which_child = AvlNode::<P::Target, Tag>::child_direction(parent, data);
 
-        // node is overly left heavy, the left child is balanced or also left heavy.
+        /*
+         * case 1 : node is overly left heavy, the left child is balanced or
+         * also left heavy. This requires the following rotation.
+         *
+         *                   (node bal:-2)
+         *                    /           \
+         *                   /             \
+         *              (child bal:0 or -1)
+         *              /    \
+         *             /      \
+         *                     cright
+         *
+         * becomes:
+         *
+         *              (child bal:1 or 0)
+         *              /        \
+         *             /          \
+         *                        (node bal:-1 or 0)
+         *                         /     \
+         *                        /       \
+         *                     cright
+         *
+         * we detect this situation by noting that child's balance is not
+         * right_heavy.
+         */
+
         if child_balance != right_heavy {
+            /*
+             * compute new balance of nodes
+             *
+             * If child used to be left heavy (now balanced) we reduced
+             * the height of this sub-tree -- used in "return...;" below
+             */
             child_balance += right_heavy;
 
+            // move "cright" to be node's left child
             let c_right = child_node.get_child(dir_inverse);
             node.set_child2::<P>(dir, c_right, data);
             // move node to be child's right child
@@ -821,9 +858,40 @@ where
             }
             return child_balance == 0;
         }
-        // When node is left heavy, but child is right heavy we use
-        // a different rotation.
 
+        /* case 2 : When node is left heavy, but child is right heavy we use
+         * a different rotation.
+         *
+         *                   (node b:-2)
+         *                    /   \
+         *                   /     \
+         *                  /       \
+         *             (child b:+1)
+         *              /     \
+         *             /       \
+         *                   (gchild b: != 0)
+         *                     /  \
+         *                    /    \
+         *                 gleft   gright
+         *
+         * becomes:
+         *
+         *              (gchild b:0)
+         *              /       \
+         *             /         \
+         *            /           \
+         *        (child b:?)   (node b:?)
+         *         /  \          /   \
+         *        /    \        /     \
+         *            gleft   gright
+         *
+         * computing the new balances is more complicated. As an example:
+         *	 if gchild was right_heavy, then child is now left heavy
+         *		else it is balanced
+         */
+
+        // move gright to left child of node and
+        // move gleft to right child of node
         let g_child = child_node.get_child(dir_inverse);
         let g_child_node = unsafe { (*g_child).get_node() };
         let g_left = g_child_node.get_child(dir);
@@ -887,163 +955,144 @@ where
          * is right heavy, otherwise the left neighbor. This reduces the
          * number of rotations needed.
          */
-        if self.count == 0 {
-            return;
-        }
-        if self.count == 1 && self.root == del {
-            self.root = null_mut();
-            self.count = 0;
-            unsafe { (*del).get_node().detach() };
-            return;
-        }
-        let mut which_child: Dir;
+        let has_detach: bool;
+        let del_node = unsafe { (*del).get_node() };
+        let old_parent = del_node.get_parent();
+        let old_dir = AvlNode::<P::Target, Tag>::child_direction(old_parent, del);
+        let imm_parent;
+        let mut imm_dir = old_dir;
 
         // Use reference directly to get node, avoiding unsafe dereference of raw pointer
-        let del_node = unsafe { (*del).get_node() };
-
-        let node_swap_flag = !del_node.left().is_null() && !del_node.right().is_null();
-
-        if node_swap_flag {
-            let dir: Dir = balance_to_child!(del_node.balance + 1);
-            let child_temp = del_node.get_child(dir);
-
+        if del_node.left().is_null() || del_node.right().is_null() {
+            has_detach = false;
+            imm_parent = old_parent;
+        } else {
+            // node has two child, to the swap
+            // balance == 1, choose right, otherwise choose left
+            let dir: Dir = (del_node.balance == 1).into();
             let dir_inverse: Dir = dir.reverse();
+            let child_temp = del_node.get_child(dir);
             let child =
                 Self::bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
                     .as_ptr();
 
-            // Fix Miri UB: Avoid calling parent_direction(child) if child's parent is del,
-            // because that would create a aliasing &mut ref to del while we hold del_node.
-            let dir_child_temp = if child == child_temp {
-                dir
-            } else {
-                AvlNode::<P::Target, Tag>::parent_direction(child)
-            };
+            if child != child_temp {
+                has_detach = false;
+                // del & child is not direct parenthold
+                // if we choose right, when the node swap must have no left child
 
-            // Fix Miri UB: Do not call parent_direction(del) as it creates a new &mut AvlNode
-            // alias while we hold del_node. Use del_node to find parent direction.
-            let parent = del_node.get_parent();
-            let dir_child_del = AvlNode::<P::Target, Tag>::child_direction(parent, del);
+                // keep the parent direction of `child`, after swap it become the parent directonly del_node.
+                let dir_child = AvlNode::<P::Target, Tag>::parent_direction(child);
+                let child_node = unsafe { (*child).get_node() };
+                child_node.swap(del_node);
 
-            let child_node = unsafe { (*child).get_node() };
-            child_node.swap(del_node);
-
-            // move 'node' to delete's spot in the tree
-            if child_node.get_child(dir) == child {
-                // if node(d) left child is node(c)
-                child_node.set_child(dir, del);
-            }
-
-            let c_dir = child_node.get_child(dir);
-            if c_dir == del {
-                del_node.parent = child;
-            } else if !c_dir.is_null() {
+                // change the parent of delete's old child;
+                let c_dir = child_node.get_child(dir);
+                debug_assert!(!c_dir.is_null());
                 unsafe { (*c_dir).get_node() }.parent = child;
-            }
-
-            let c_inv = child_node.get_child(dir_inverse);
-            if c_inv == del {
-                del_node.parent = child;
-            } else if !c_inv.is_null() {
+                let c_inv = child_node.get_child(dir_inverse);
+                debug_assert!(!c_inv.is_null());
                 unsafe { (*c_inv).get_node() }.parent = child;
+                imm_parent = del_node.parent;
+                let new_parent = del_node.get_parent();
+                unsafe { (*new_parent).get_node() }.set_child(dir_child, del);
+                imm_dir = dir_child;
+                // The child we choose to swap is logical next, it always has a parent and at most 1 child.
+            } else {
+                // the child is already leaf
+                // Directly replace del with child, merge field manually
+                let child_node = unsafe { (*child).get_node() };
+                child_node.parent = old_parent;
+                child_node.balance = del_node.balance;
+                let other_child = del_node.get_child(dir_inverse);
+                debug_assert!(!other_child.is_null());
+                child_node.set_child(dir_inverse, other_child);
+                unsafe { (*other_child).get_node() }.parent = child;
+                has_detach = true;
+                imm_parent = child;
+                imm_dir = dir;
             }
-
-            let parent = child_node.get_parent();
-            if !parent.is_null() {
-                unsafe { (*parent).get_node() }.set_child(dir_child_del, child);
+            if !old_parent.is_null() {
+                // hookup parent and the swap node
+                unsafe { (*old_parent).get_node() }.set_child(old_dir, child);
             } else {
                 self.root = child;
             }
-
-            // Put tmp where node used to be (just temporary).
-            // It always has a parent and at most 1 child.
-            let parent = del_node.get_parent();
-            unsafe { (*parent).get_node() }.set_child(dir_child_temp, del);
-            // if right exist, go to right
-            which_child = Dir(!del_node.right().is_null());
-            let child = del_node.get_child(which_child);
-            if !child.is_null() {
-                unsafe { (*child).get_node() }.parent = del;
-            }
-            which_child = dir_child_temp;
-        } else {
-            let parent = del_node.get_parent();
-            which_child = AvlNode::<P::Target, Tag>::child_direction(parent, del);
         }
-
-        // Here we know "delete" is at least partially a leaf node. It can
-        // be easily removed from the tree.
-        let parent: *mut P::Target = del_node.get_parent();
-
-        let mut imm_data: *mut P::Target = del_node.left();
-        if !imm_data.is_null() {
-            let imm_node = unsafe { (*imm_data).get_node() };
-            imm_node.parent = parent;
-        } else {
-            imm_data = del_node.right();
+        if !has_detach {
+            // Here we know "delete" is at least partially a leaf node. It can
+            // be easily removed from the tree.
+            let mut imm_data: *mut P::Target = del_node.left();
             if !imm_data.is_null() {
-                let imm_node = unsafe { (*imm_data).get_node() };
-                imm_node.parent = parent;
+                unsafe { (*imm_data).get_node() }.parent = imm_parent;
+            } else {
+                imm_data = del_node.right();
+                if !imm_data.is_null() {
+                    unsafe { (*imm_data).get_node() }.parent = imm_parent;
+                }
+            }
+            if !imm_parent.is_null() {
+                unsafe { (*imm_parent).get_node() }.set_child(imm_dir, imm_data);
+            } else {
+                self.root = imm_data;
             }
         }
-        // Connect parent directly to node (leaving out delete).
-
-        if !parent.is_null() {
-            assert!(self.count > 0);
-            self.count -= 1;
-
-            let parent_node = unsafe { (*parent).get_node() };
-            parent_node.set_child(which_child, imm_data);
-
-            //Since the subtree is now shorter, begin adjusting parent balances
-            //and performing any needed rotations.
-            let mut node_data: *mut P::Target = parent;
-            loop {
-                // Move up the tree and adjust the balance.
-                // Capture the parent and which_child values for the next
-                // iteration before any rotations occur.
-                let node = unsafe { (*node_data).get_node() };
-                let balance_delta = -which_child.to_balance();
-                let old_balance = node.balance;
-
-                //If a node was in perfect balance but isn't anymore then
-                //we can stop, since the height didn't change above this point
-                //due to a deletion.
-                if old_balance == 0 {
-                    node.balance = balance_delta;
-                    break;
-                }
-                let new_balance = old_balance + balance_delta;
-
-                let parent = node.get_parent();
-                which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
-
-                //If the new balance is zero, we don't need to rotate
-                //else
-                //need a rotation to fix the balance.
-                //If the rotation doesn't change the height
-                //of the sub-tree we have finished adjusting.
-                if new_balance == 0 {
-                    node.balance = 0;
-                } else if !self.rotate(node_data, new_balance) {
-                    break;
-                }
-
-                if !parent.is_null() {
-                    node_data = parent;
-                    continue;
-                }
-                break;
-            }
-        } else if !imm_data.is_null() {
-            debug_assert!(self.count > 0);
-            self.count -= 1;
-            self.root = imm_data;
-        }
-        if self.root.is_null() && self.count > 0 {
-            panic!("AvlTree {} nodes left after remove but tree.root == nil", self.count);
+        if !imm_parent.is_null() {
+            self._post_remove(imm_parent, imm_dir);
         }
         del_node.detach();
+        self.count -= 1;
+    }
+
+    /// update balance & rotate
+    #[inline]
+    fn _post_remove(&mut self, parent: *mut P::Target, mut which_child: Dir) {
+        debug_assert!(!parent.is_null());
+        // Connect parent directly to node (leaving out delete).
+        //Since the subtree is now shorter, begin adjusting parent balances
+        //and performing any needed rotations.
+        let mut node_data: *mut P::Target = parent;
+        loop {
+            // Move up the tree and adjust the balance.
+            // Capture the parent and which_child values for the next
+            // iteration before any rotations occur.
+            let node = unsafe { (*node_data).get_node() };
+            let balance_delta = -which_child.to_balance();
+            let old_balance = node.balance;
+
+            //If a node was in perfect balance but isn't anymore then
+            //we can stop, since the height didn't change above this point
+            //due to a deletion.
+            if old_balance == 0 {
+                node.balance = balance_delta;
+                break;
+            }
+            let new_balance = old_balance + balance_delta;
+
+            let parent = node.get_parent();
+            which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
+            //If the new balance is zero, we don't need to rotate
+            //else
+            //need a rotation to fix the balance.
+            if new_balance == 0 {
+                node.balance = 0;
+            } else if !self.rotate(node_data, new_balance) {
+                //If the rotation doesn't change the height
+                //of the sub-tree we have finished adjusting.
+                break;
+            }
+            if !parent.is_null() {
+                node_data = parent;
+                continue;
+            }
+            break;
+        }
+        #[cfg(debug_assertions)]
+        {
+            if self.root.is_null() && self.count > 0 {
+                panic!("AvlTree {} nodes left after remove but tree.root == nil", self.count);
+            }
+        }
     }
 
     #[inline(always)]
