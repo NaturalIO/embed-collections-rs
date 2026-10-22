@@ -1028,7 +1028,12 @@ where
                 // Directly replace del with child, swap del_node's other child to the child at the
                 // same direction
                 let child_node = unsafe { (*child).get_node() };
-                crate::trace_log!("del {:?} swap with direct child {:?}", del_node, child_node);
+                crate::trace_log!(
+                    "del {:?} swap with direct child {:?} at {:?}",
+                    del_node,
+                    child_node,
+                    dir_child
+                );
                 child_node.parent = old_parent;
                 child_node.balance = del_node.balance;
                 let other_child = del_node.get_child(dir_child_inverse);
@@ -1042,9 +1047,9 @@ where
                 }
                 del_dir = dir_child;
                 // child.get_node().parent is already set
-                imm_child = null_mut();
-                // since we delete del_node from child (after virtual swap), we need to update the
-                // child.get_node().balance
+                imm_child = child_node.get_child(dir_child);
+                // We should keep child's original child of dir_child, but we allow the following to set with
+                // the same value
                 imm_parent = child;
                 // since imm_parent is not null, root will not set again.
             }
@@ -1082,17 +1087,18 @@ where
             //we can stop, since the height didn't change above this point
             //due to a deletion.
             if old_balance == 0 {
+                crate::trace_log!("{node:?} update balance dir{which_child:?} {balance_delta} ");
                 node.balance = balance_delta;
                 break;
             }
             let new_balance = old_balance + balance_delta;
 
             let parent = node.get_parent();
-            which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
             //If the new balance is zero, we don't need to rotate
             //else
             //need a rotation to fix the balance.
             if new_balance == 0 {
+                crate::trace_log!("{node:?} update balance dir{which_child:?} 0");
                 node.balance = 0;
             } else if !self.rotate(node_data, new_balance) {
                 //If the rotation doesn't change the height
@@ -1100,6 +1106,8 @@ where
                 break;
             }
             if !parent.is_null() {
+                which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
+                crate::trace_log!("move up {parent:?} for dir{which_child:?}");
                 node_data = parent;
                 continue;
             }
