@@ -1247,60 +1247,96 @@ where
         self.validate_with(P::Target::cmp)
     }
 
-    pub fn validate_with<F>(&self, cmp_f: F)
+    fn validate_with<F>(&self, cmp_f: F)
     where
         F: Fn(&P::Target, &P::Target) -> Ordering,
     {
-        let validate_node = |data: *mut P::Target| unsafe {
-            let node = (*data).get_node();
-            let left = node.left();
-            if !left.is_null() {
-                assert!(cmp_f(&*left, &*data) != Ordering::Greater);
-                assert_eq!((*left).get_node().get_parent(), data);
-            }
-            let right = node.right();
-            if !right.is_null() {
-                assert!(cmp_f(&*right, &*data) != Ordering::Less);
-                assert_eq!((*right).get_node().get_parent(), data);
-            }
-        };
-        let c = {
-            #[cfg(feature = "std")]
-            {
-                ((self.len() + 10) as f32).log2() as usize
-            }
-            #[cfg(not(feature = "std"))]
-            {
-                100
-            }
-        };
-        let mut stack: Vec<*mut P::Target> = Vec::with_capacity(c);
+        use alloc::collections::BTreeMap;
+        let mut height_map = BTreeMap::<*mut P::Target, usize>::new();
+        let mut visited_stack: Vec<*mut P::Target> = Vec::with_capacity(100);
+        let mut to_visit_stack: Vec<*mut P::Target> = Vec::with_capacity(100);
+        let mut visit_count = 0;
         if self.root.is_null() {
             assert_eq!(self.count, 0);
             return;
         }
-        let mut data = self.root;
-        let mut visited = 0;
-        loop {
-            if !data.is_null() {
-                let left = unsafe { (*data).get_node() }.get_child(DIR_LEFT);
-                if !left.is_null() {
-                    crate::trace_log!("validate: push {data:p}");
-                    stack.push(data);
-                    data = left;
-                    continue;
+        let mut push_stack =
+            |data: *mut P::Target,
+             _to_visit: &mut Vec<*mut P::Target>,
+             _visited: &mut Vec<*mut P::Target>,
+             _height_map: &mut BTreeMap<*mut P::Target, usize>| {
+                unsafe {
+                    let node = (*data).get_node();
+                    let left = node.left();
+                    let mut has_child = false;
+                    if !left.is_null() {
+                        has_child = true;
+                        assert!(
+                            cmp_f(&*left, &*data) != Ordering::Greater,
+                            "node {node:?} left not smaller"
+                        );
+                        assert_eq!(
+                            (*left).get_node().get_parent(),
+                            data,
+                            "node {node:?} left parent not match"
+                        );
+                        _to_visit.push(left);
+                    }
+                    let right = node.right();
+                    if !right.is_null() {
+                        has_child = true;
+                        assert!(
+                            cmp_f(&*right, &*data) != Ordering::Less,
+                            "node {node:?} right not larger"
+                        );
+                        assert_eq!(
+                            (*right).get_node().get_parent(),
+                            data,
+                            "node {node:?} right parent not match"
+                        );
+                        _to_visit.push(right);
+                    }
+                    if !has_child {
+                        // leaf
+                        _height_map.insert(data, 1);
+                        assert_eq!(
+                            node.balance, 0,
+                            "leaf node {node:?} balance is not zero as leaf"
+                        );
+                    } else {
+                        _visited.push(data);
+                    }
                 }
-            } else if !stack.is_empty() {
-                data = stack.pop().unwrap();
-            } else {
-                break;
-            }
-            crate::trace_log!("validate: {data:p}");
-            validate_node(data);
-            visited += 1;
-            data = unsafe { (*data).get_node() }.get_child(DIR_RIGHT);
+                visit_count += 1;
+            };
+        push_stack(self.root, &mut to_visit_stack, &mut visited_stack, &mut height_map);
+        while let Some(data) = to_visit_stack.pop() {
+            push_stack(data, &mut to_visit_stack, &mut visited_stack, &mut height_map);
         }
-        assert_eq!(visited, self.count);
+        while let Some(data) = visited_stack.pop() {
+            unsafe {
+                let node = (*data).get_node();
+                let left = node.left();
+                let mut balance: isize = 0;
+                let mut my_height = 0;
+                if !left.is_null() {
+                    let left_height = *height_map.get(&left).unwrap();
+                    balance -= left_height as isize;
+                    my_height = left_height;
+                }
+                let right = node.right();
+                if !right.is_null() {
+                    let right_height = *height_map.get(&right).unwrap();
+                    balance += right_height as isize;
+                    if my_height < right_height {
+                        my_height = right_height;
+                    }
+                }
+                height_map.insert(data, my_height + 1);
+                assert_eq!(node.balance, balance as i8, "non-leaf node {node:?} balance wrong");
+            }
+        }
+        assert_eq!(visit_count, self.count);
     }
 }
 
