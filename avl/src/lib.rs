@@ -171,6 +171,7 @@ pub use iter::*;
 #[cfg(test)]
 mod tests;
 
+use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 use core::{
@@ -1236,6 +1237,31 @@ where
                 direction: DIR_RIGHT,
                 key: Last(),
             })
+        }
+    }
+
+    pub fn dump<F>(&self, print_cb: F)
+    where
+        F: Fn(&P::Target, usize),
+    {
+        let mut to_visit_stack: VecDeque<(*mut P::Target, usize)> = VecDeque::with_capacity(100);
+        if self.root.is_null() {
+            return;
+        }
+        to_visit_stack.push_front((self.root, 0));
+        while let Some((data, level)) = to_visit_stack.pop_front() {
+            unsafe {
+                let node = (*data).get_node();
+                let left = node.left();
+                if !left.is_null() {
+                    to_visit_stack.push_back((left, level + 1));
+                }
+                let right = node.right();
+                if !right.is_null() {
+                    to_visit_stack.push_back((right, level + 1));
+                }
+                print_cb(&*data, level);
+            }
         }
     }
 

@@ -10,7 +10,7 @@ use pointers::{Pointer, SmartPointer};
 use std::println;
 
 #[derive(format_attr::DebugAttr)]
-#[fmt("IntAvlNode {value} {node:#?}")]
+#[fmt("IntAvlNode {value} {:?}", self.get_node())]
 pub struct IntAvlNode {
     pub value: i64,
     pub node: UnsafeCell<AvlNode<Self, ()>>,
@@ -73,6 +73,13 @@ where
 
     pub fn validate_tree(&self) {
         self.0.validate();
+    }
+
+    pub fn dump(&self) {
+        crate::trace_log!("--dump tree--");
+        self.0.dump(|node: &P::Target, level: usize| {
+            crate::trace_log!("[l{level}] {:?}", node);
+        })
     }
 }
 
