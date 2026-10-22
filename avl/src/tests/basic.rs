@@ -126,7 +126,6 @@ where
             count += 1;
         }
         assert_eq!(count, max);
-
         {
             assert_eq!(tree.get(&5).unwrap().value, 5);
             tree.remove_int(5);
@@ -249,6 +248,7 @@ where
         5421964435552326859,
         8357131494956206805,
     ];
+
     let _new_node = IntAvlTree::<P>::new_node;
     {
         tree.validate_tree();
@@ -257,9 +257,11 @@ where
             tree.add_int_node(_new_node(*i));
             tree.validate_tree();
         }
+        tree.dump();
         for i in &test_data {
             crate::trace_log!("remove {i}");
             tree.remove_int(*i);
+            tree.dump();
             tree.validate_tree();
         }
         drop(tree);
