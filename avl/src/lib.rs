@@ -463,17 +463,17 @@ impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
 #[allow(unused_must_use)]
 impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(")?;
+        write!(f, "( {:p} parent: {:p} balance: {}", self, self.parent, self.balance)?;
         if !self.left().is_null() {
-            write!(f, "left: {:p}", self.left())?;
+            write!(f, " left: {:p}", self.left())?;
         } else {
-            write!(f, "left: none ")?;
+            write!(f, " left: none")?;
         }
 
         if !self.right().is_null() {
-            write!(f, "right: {:p}", self.right())?;
+            write!(f, " right: {:p}", self.right())?;
         } else {
-            write!(f, "right: none ")?;
+            write!(f, " right: none")?;
         }
         write!(f, ")")
     }
@@ -791,6 +791,7 @@ where
         //let dir = if balance < 0 { DIR_LEFT } else { DIR_RIGHT };
         let dir: Dir = (balance >= 0).into();
         let node = unsafe { (*data).get_node() };
+        crate::trace_log!("rotate: {data:p} {node:?} balance: {balance}");
 
         let parent = node.get_parent();
         let dir_inverse = dir.reverse();
@@ -959,7 +960,7 @@ where
         let old_parent = del_node.get_parent();
         let mut del_dir = AvlNode::<P::Target, Tag>::child_direction(old_parent, del);
         let mut imm_parent = old_parent;
-        let mut imm_child = null_mut(); // the child to connect with imm_parent
+        let imm_child; // the child to connect with imm_parent
         let has_left = !del_node.left().is_null();
         let has_right = !del_node.right().is_null();
         if !has_left || !has_right {
