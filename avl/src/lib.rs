@@ -976,12 +976,14 @@ where
         } else {
             // node has two child, to the swap
             // balance == 1, choose right, otherwise choose left
-            let dir: Dir = (del_node.balance == 1).into();
-            let dir_inverse: Dir = dir.reverse();
-            let child_temp = del_node.get_child(dir);
-            let child =
-                Self::bottom_child(unsafe { NonNull::new_unchecked(child_temp) }, dir_inverse)
-                    .as_ptr();
+            let dir_child: Dir = (del_node.balance == 1).into();
+            let dir_child_inverse: Dir = dir_child.reverse();
+            let child_temp = del_node.get_child(dir_child);
+            let child = Self::bottom_child(
+                unsafe { NonNull::new_unchecked(child_temp) },
+                dir_child_inverse,
+            )
+            .as_ptr();
 
             if child != child_temp {
                 // del & child is not direct parenthold
@@ -994,18 +996,18 @@ where
                 crate::trace_log!(
                     "del {:?} swap with indirect child dir {:?} {:?} which parent_dir: {:?}",
                     del_node,
-                    dir,
+                    dir_child,
                     child_node,
                     parent_dir_child
                 );
-                debug_assert!(child_node.get_child(dir_inverse).is_null());
+                debug_assert!(child_node.get_child(dir_child_inverse).is_null());
                 child_node.swap(del_node);
 
                 // change the parent of delete's old child;
-                let c_dir = child_node.get_child(dir);
+                let c_dir = child_node.get_child(dir_child);
                 debug_assert!(!c_dir.is_null());
                 unsafe { (*c_dir).get_node() }.parent = child;
-                let c_inv = child_node.get_child(dir_inverse);
+                let c_inv = child_node.get_child(dir_child_inverse);
                 debug_assert!(!c_inv.is_null());
                 unsafe { (*c_inv).get_node() }.parent = child;
                 if !old_parent.is_null() {
@@ -1016,24 +1018,35 @@ where
                 }
                 // we can forget old_parent now
                 del_dir = parent_dir_child;
-                imm_child = del_node.get_child(dir);
-                debug_assert!(del_node.get_child(dir_inverse).is_null());
+                imm_child = del_node.get_child(dir_child);
+                debug_assert!(del_node.get_child(dir_child_inverse).is_null());
                 //let new_parent = del_node.get_parent();
                 //unsafe { (*new_parent).get_node() }.set_child(dir_child, del);
                 // The child we choose to swap is logical next, it always has a parent and at most 1 child.
             } else {
-                imm_child = child;
                 // the child is already leaf
                 // Directly replace del with child, swap del_node's other child to the child at the
                 // same direction
                 let child_node = unsafe { (*child).get_node() };
                 crate::trace_log!("del {:?} swap with direct child {:?}", del_node, child_node);
-                //child_node.parent = old_parent;
+                child_node.parent = old_parent;
                 child_node.balance = del_node.balance;
-                let other_child = del_node.get_child(dir_inverse);
+                let other_child = del_node.get_child(dir_child_inverse);
                 debug_assert!(!other_child.is_null());
-                child_node.set_child(dir_inverse, other_child);
+                child_node.set_child(dir_child_inverse, other_child);
                 unsafe { (*other_child).get_node() }.parent = child;
+                if !old_parent.is_null() {
+                    unsafe { (*old_parent).get_node() }.set_child(del_dir, child);
+                } else {
+                    self.root = child;
+                }
+                del_dir = dir_child;
+                // child.get_node().parent is already set
+                imm_child = null_mut();
+                // since we delete del_node from child (after virtual swap), we need to update the
+                // child.get_node().balance
+                imm_parent = child;
+                // since imm_parent is not null, root will not set again.
             }
         }
         self.count -= 1;
