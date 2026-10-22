@@ -955,17 +955,16 @@ where
          * is right heavy, otherwise the left neighbor. This reduces the
          * number of rotations needed.
          */
-        let has_detach: bool;
         let del_node = unsafe { (*del).get_node() };
         let old_parent = del_node.get_parent();
-        let old_dir = AvlNode::<P::Target, Tag>::child_direction(old_parent, del);
-        let imm_parent;
-        let mut imm_dir = old_dir;
-
-        // Use reference directly to get node, avoiding unsafe dereference of raw pointer
-        if del_node.left().is_null() || del_node.right().is_null() {
-            has_detach = false;
-            imm_parent = old_parent;
+        let mut del_dir = AvlNode::<P::Target, Tag>::child_direction(old_parent, del);
+        let mut imm_parent = old_parent;
+        let mut imm_child = null_mut(); // the child to connect with imm_parent
+        let has_left = !del_node.left().is_null();
+        let has_right = !del_node.right().is_null();
+        if !has_left || !has_right {
+            // one of the child is empty, or all of them empty
+            imm_child = del_node.get_child(has_right.into());
         } else {
             // node has two child, to the swap
             // balance == 1, choose right, otherwise choose left
@@ -977,13 +976,13 @@ where
                     .as_ptr();
 
             if child != child_temp {
-                has_detach = false;
                 // del & child is not direct parenthold
                 // if we choose right, when the node swap must have no left child
 
                 // keep the parent direction of `child`, after swap it become the parent directonly del_node.
                 let dir_child = AvlNode::<P::Target, Tag>::parent_direction(child);
                 let child_node = unsafe { (*child).get_node() };
+                imm_parent = child_node.parent;
                 child_node.swap(del_node);
 
                 // change the parent of delete's old child;
@@ -993,55 +992,42 @@ where
                 let c_inv = child_node.get_child(dir_inverse);
                 debug_assert!(!c_inv.is_null());
                 unsafe { (*c_inv).get_node() }.parent = child;
-                imm_parent = del_node.parent;
-                let new_parent = del_node.get_parent();
-                unsafe { (*new_parent).get_node() }.set_child(dir_child, del);
-                imm_dir = dir_child;
+                if !old_parent.is_null() {
+                    // hookup parent and the swap node
+                    unsafe { (*old_parent).get_node() }.set_child(del_dir, child);
+                } else {
+                    self.root = child;
+                }
+                // we can forget old_parent now
+                del_dir = dir_child;
+                //let new_parent = del_node.get_parent();
+                //unsafe { (*new_parent).get_node() }.set_child(dir_child, del);
                 // The child we choose to swap is logical next, it always has a parent and at most 1 child.
             } else {
+                imm_child = child;
                 // the child is already leaf
-                // Directly replace del with child, merge field manually
+                // Directly replace del with child, swap del_node's other child to the child at the
+                // same direction
                 let child_node = unsafe { (*child).get_node() };
-                child_node.parent = old_parent;
+                //child_node.parent = old_parent;
                 child_node.balance = del_node.balance;
                 let other_child = del_node.get_child(dir_inverse);
                 debug_assert!(!other_child.is_null());
                 child_node.set_child(dir_inverse, other_child);
                 unsafe { (*other_child).get_node() }.parent = child;
-                has_detach = true;
-                imm_parent = child;
-                imm_dir = dir;
-            }
-            if !old_parent.is_null() {
-                // hookup parent and the swap node
-                unsafe { (*old_parent).get_node() }.set_child(old_dir, child);
-            } else {
-                self.root = child;
             }
         }
-        if !has_detach {
-            // Here we know "delete" is at least partially a leaf node. It can
-            // be easily removed from the tree.
-            let mut imm_data: *mut P::Target = del_node.left();
-            if !imm_data.is_null() {
-                unsafe { (*imm_data).get_node() }.parent = imm_parent;
-            } else {
-                imm_data = del_node.right();
-                if !imm_data.is_null() {
-                    unsafe { (*imm_data).get_node() }.parent = imm_parent;
-                }
-            }
-            if !imm_parent.is_null() {
-                unsafe { (*imm_parent).get_node() }.set_child(imm_dir, imm_data);
-            } else {
-                self.root = imm_data;
-            }
+        self.count -= 1;
+        del_node.detach();
+        if !imm_child.is_null() {
+            unsafe { (*imm_child).get_node() }.parent = imm_parent;
         }
         if !imm_parent.is_null() {
-            self._post_remove(imm_parent, imm_dir);
+            unsafe { (*imm_parent).get_node() }.set_child(del_dir, imm_child);
+            self._post_remove(imm_parent, del_dir);
+        } else {
+            self.root = imm_child;
         }
-        del_node.detach();
-        self.count -= 1;
     }
 
     /// update balance & rotate
