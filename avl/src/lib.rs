@@ -965,6 +965,12 @@ where
         if !has_left || !has_right {
             // one of the child is empty, or all of them empty
             imm_child = del_node.get_child(has_right.into());
+            crate::trace_log!(
+                "del {:?} direct with dir {} child {:p}",
+                del_node,
+                has_right,
+                imm_child
+            );
         } else {
             // node has two child, to the swap
             // balance == 1, choose right, otherwise choose left
@@ -980,9 +986,17 @@ where
                 // if we choose right, when the node swap must have no left child
 
                 // keep the parent direction of `child`, after swap it become the parent directonly del_node.
-                let dir_child = AvlNode::<P::Target, Tag>::parent_direction(child);
+                let parent_dir_child = AvlNode::<P::Target, Tag>::parent_direction(child);
                 let child_node = unsafe { (*child).get_node() };
-                imm_parent = child_node.parent;
+                imm_parent = child_node.get_parent();
+                crate::trace_log!(
+                    "del {:?} swap with indirect child dir {:?} {:?} which parent_dir: {:?}",
+                    del_node,
+                    dir,
+                    child_node,
+                    parent_dir_child
+                );
+                debug_assert!(child_node.get_child(dir_inverse).is_null());
                 child_node.swap(del_node);
 
                 // change the parent of delete's old child;
@@ -999,7 +1013,9 @@ where
                     self.root = child;
                 }
                 // we can forget old_parent now
-                del_dir = dir_child;
+                del_dir = parent_dir_child;
+                imm_child = del_node.get_child(dir);
+                debug_assert!(del_node.get_child(dir_inverse).is_null());
                 //let new_parent = del_node.get_parent();
                 //unsafe { (*new_parent).get_node() }.set_child(dir_child, del);
                 // The child we choose to swap is logical next, it always has a parent and at most 1 child.
@@ -1009,6 +1025,7 @@ where
                 // Directly replace del with child, swap del_node's other child to the child at the
                 // same direction
                 let child_node = unsafe { (*child).get_node() };
+                crate::trace_log!("del {:?} swap with direct child {:?}", del_node, child_node);
                 //child_node.parent = old_parent;
                 child_node.balance = del_node.balance;
                 let other_child = del_node.get_child(dir_inverse);
