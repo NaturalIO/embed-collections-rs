@@ -303,7 +303,34 @@ fn bench_iter_arc(c: &mut Criterion) {
     }
 }
 
-fn bench_remove_box(c: &mut Criterion) {
+fn bench_remove_seq_box(c: &mut Criterion) {
+    for &size in &SIZES {
+        let desc = size_desc(size);
+        // the speed of remove in ordering is stable to compare because the dataset is fixed
+        let mut group = c.benchmark_group("remove_seq_box");
+        group.throughput(Throughput::Elements(size as u64));
+        group.bench_function(format!("{}", desc), |b| {
+            b.iter_batched(
+                || {
+                    let mut tree = IntAvlTreeBox::new();
+                    for i in 0..size {
+                        let _ = tree.add(new_intnode_box(i as u32));
+                    }
+                    tree
+                },
+                |mut tree: IntAvlTreeBox| {
+                    for i in 0..size {
+                        black_box(tree.remove_by_key(&(i as u32)));
+                    }
+                },
+                criterion::BatchSize::LargeInput,
+            );
+        });
+        group.finish();
+    }
+}
+
+fn bench_remove_rand_box(c: &mut Criterion) {
     for &size in &SIZES {
         let data = TestData::new_random(size);
         let desc = size_desc(size);
@@ -331,7 +358,7 @@ fn bench_remove_box(c: &mut Criterion) {
     }
 }
 
-fn bench_remove_arc(c: &mut Criterion) {
+fn bench_remove_rand_arc(c: &mut Criterion) {
     for &size in &SIZES {
         let data = TestData::new_random(size);
         let desc = size_desc(size);
@@ -431,8 +458,9 @@ criterion_group!(
     bench_get_sequential_arc,
     bench_iter_box,
     bench_iter_arc,
-    bench_remove_box,
-    bench_remove_arc,
+    bench_remove_seq_box,
+    bench_remove_rand_box,
+    bench_remove_rand_arc,
     bench_into_iter_box,
     bench_drop_box
 );
