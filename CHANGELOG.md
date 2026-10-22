@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-avl 0.4.0] - 2026-10-22
+
+### Added
+
+- avl: Add IntoIterator for AvlTree and &AvlTree
+
+### Changed
+
+- avl: AvlTree::drop use new into iter logic (which is faster than post order delete)
+
+### Removed
+
+- avl: remove post-order drain() which is unsafe for half-way drop (should use Entry API instead)
+
 ## [embed-avl 0.3.0] - 2026-10-16
 
 ### Changed
