@@ -415,7 +415,7 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
         #[cfg(debug_assertions)]
         {
             if !is_right {
-                debug_assert!(self.children[0] == child_p);
+                debug_assert!(self.children[0] == child_p, "{self:?} find child {child_p:p}");
             }
         }
         is_right.into()
@@ -458,17 +458,17 @@ impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
 #[allow(unused_must_use)]
 impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "(")?;
+        write!(f, "( {:p} parent: {:p} balance: {}", self, self.parent, self.balance)?;
         if !self.left().is_null() {
-            write!(f, "left: {:p}", self.left())?;
+            write!(f, " left: {:p}", self.left())?;
         } else {
-            write!(f, "left: none ")?;
+            write!(f, " left: none")?;
         }
 
         if !self.right().is_null() {
-            write!(f, "right: {:p}", self.right())?;
+            write!(f, " right: {:p}", self.right())?;
         } else {
-            write!(f, "right: none ")?;
+            write!(f, " right: none")?;
         }
         write!(f, ")")
     }
@@ -786,6 +786,7 @@ where
         //let dir = if balance < 0 { DIR_LEFT } else { DIR_RIGHT };
         let dir: Dir = (balance >= 0).into();
         let node = unsafe { (*data).get_node() };
+        crate::trace_log!("rotate: {data:p} {node:?} balance: {balance}");
 
         let parent = node.get_parent();
         let dir_inverse = dir.reverse();
