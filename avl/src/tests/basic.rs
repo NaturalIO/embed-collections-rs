@@ -10,6 +10,7 @@ use std::println;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
+use std::vec;
 
 #[logfn]
 #[rstest]
@@ -47,11 +48,12 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_basic<P>(#[case] mut tree: IntAvlTree<P>)
+fn int_avl_tree_basic<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -61,6 +63,7 @@ where
         assert!(tree.get(&0).is_none());
 
         tree.add_int_node(_new_node(0));
+        tree.validate_tree();
         assert_eq!(tree.entry(0).unwrap_occupied().value, 0);
         let res = tree.get(&0);
         assert!(res.is_some());
@@ -74,6 +77,7 @@ where
         assert!(ent.peek_next().is_none());
 
         tree.add_int_node(_new_node(2));
+        tree.validate_tree();
         let ent = tree.entry(1).unwrap_vacant();
         assert_eq!(ent.peek_prev().unwrap().value, 0);
         assert_eq!(ent.peek_next().unwrap().value, 2);
@@ -83,11 +87,12 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_order<P>(#[case] mut tree: IntAvlTree<P>)
+fn int_avl_tree_order<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -127,6 +132,7 @@ where
             tree.remove_int(5);
             let ent = tree.entry(5).unwrap_vacant();
             assert_eq!(ent.peek_next().unwrap().value, 6);
+            tree.validate_tree();
             tree.add_int_node(_new_node(5));
         }
 
@@ -149,11 +155,12 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_fixed1<P>(#[case] mut tree: IntAvlTree<P>)
+fn int_avl_tree_fixed1<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -163,11 +170,13 @@ where
         let arr = [4719789032060327248, 7936680652950253153, 5197008094511783121];
         for i in arr.iter() {
             tree.add_int_node(_new_node(*i));
+            tree.validate_tree();
             assert_eq!(tree.get(i).unwrap().value, *i);
         }
         assert_eq!(tree.len(), arr.len());
         for i in arr.iter() {
             assert!(tree.remove_int(*i));
+            tree.validate_tree();
         }
         assert_eq!(tree.len(), 0);
         drop(tree);
@@ -175,11 +184,12 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_fixed2<P>(#[case] mut tree: IntAvlTree<P>)
+fn int_avl_tree_fixed2<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -218,11 +228,51 @@ where
     assert_eq!(alive_count(), 0);
 }
 
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+fn int_avl_tree_fixed3<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    // test will cover all branch of remove
+    let test_data: Vec<i64> = vec![
+        6701132600390042969,
+        16037547747698279,
+        6968470155198969672,
+        3994714700825908325,
+        -3562517043415005434,
+        -3045537343578687951,
+        2524319250247492254,
+        1978356101225525588,
+        5421964435552326859,
+        8357131494956206805,
+    ];
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        tree.validate_tree();
+        for i in &test_data {
+            crate::trace_log!("insert {i}");
+            tree.add_int_node(_new_node(*i));
+            tree.validate_tree();
+        }
+        for i in &test_data {
+            crate::trace_log!("remove {i}");
+            tree.remove_int(*i);
+            tree.validate_tree();
+        }
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
 #[rstest]
 #[case(IntAvlTree::<Box<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Arc<IntAvlNode>>::new())]
 #[case(IntAvlTree::<Rc<IntAvlNode>>::new())]
-fn int_avl_tree_random<P>(#[case] mut tree: IntAvlTree<P>)
+fn int_avl_tree_random<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
 where
     P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
 {
@@ -239,42 +289,49 @@ where
                 10000
             }
         };
-        let mut test_list: Vec<i64> = Vec::with_capacity(count);
+        let mut test_data: Vec<i64> = Vec::with_capacity(count);
         let mut rng = Rng::new();
-        tree.validate_tree();
+        // random add
         for _ in 0..count {
             let node_value: i64 = rng.i64(..);
-            if !test_list.contains(&node_value) {
-                test_list.push(node_value);
+            if !test_data.contains(&node_value) {
+                test_data.push(node_value);
+                crate::trace_log!("insert {node_value}");
                 tree.add_int_node(_new_node(node_value));
             }
         }
         tree.validate_tree();
-        test_list.sort();
-        for index in 0..test_list.len() {
-            let node_ref = tree.get(&test_list[index]).unwrap();
+        let mut ordered = test_data.clone();
+        ordered.sort();
+        // test order
+        for index in 0..ordered.len() {
+            let node_ref = tree.get(&ordered[index]).unwrap();
             let prev = tree.prev(&node_ref);
             let next = tree.next(&node_ref);
             if index == 0 {
                 // first node
                 assert!(prev.is_none());
                 assert!(next.is_some());
-                assert_eq!(next.unwrap().value, test_list[index + 1]);
-            } else if index == test_list.len() - 1 {
+                assert_eq!(next.unwrap().value, ordered[index + 1]);
+            } else if index == ordered.len() - 1 {
                 // last node
                 assert!(prev.is_some());
-                assert_eq!(prev.unwrap().value, test_list[index - 1]);
+                assert_eq!(prev.unwrap().value, ordered[index - 1]);
                 assert!(next.is_none());
             } else {
                 // middle node
                 assert!(prev.is_some());
-                assert_eq!(prev.unwrap().value, test_list[index - 1]);
+                assert_eq!(prev.unwrap().value, ordered[index - 1]);
                 assert!(next.is_some());
-                assert_eq!(next.unwrap().value, test_list[index + 1]);
+                assert_eq!(next.unwrap().value, ordered[index + 1]);
             }
         }
-        for index in 0..test_list.len() {
-            assert!(tree.remove_int(test_list[index]));
+        // random remove
+        for index in 0..test_data.len() {
+            let key = &test_data[index];
+            crate::trace_log!("remove {key:?}");
+            assert!(tree.remove_int(*key));
+            //tree.validate_tree();
         }
         tree.validate_tree();
         assert_eq!(0, tree.len());
