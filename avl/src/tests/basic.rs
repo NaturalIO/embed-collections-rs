@@ -261,6 +261,48 @@ where
         for i in &test_data {
             crate::trace_log!("remove {i}");
             tree.remove_int(*i);
+            //tree.dump();
+            tree.validate_tree();
+        }
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+#[case(IntAvlTree::<Box<IntAvlNode>>::new())]
+fn int_avl_tree_fixed4<P>(#[case] mut tree: IntAvlTree<P>, setup_log: ())
+where
+    P: SmartPointer<Target = IntAvlNode> + Deref<Target = IntAvlNode> + Debug,
+{
+    reset_alive_count();
+    // test will cover all branch of remove
+    let test_data: Vec<i64> = vec![
+        8164138468436616743,
+        1603795074036196888,
+        1951078166134631636,
+        5235432967791333939,
+        8512260078720196126,
+        -4426622512102220989,
+        2582513498645296024,
+        8412613000280864973,
+        590643536292606382,
+        -3891566076098086280,
+    ];
+
+    let _new_node = IntAvlTree::<P>::new_node;
+    {
+        tree.validate_tree();
+        for i in &test_data {
+            crate::trace_log!("insert {i}");
+            tree.add_int_node(_new_node(*i));
+            tree.validate_tree();
+        }
+        tree.dump();
+        for i in &test_data {
+            crate::trace_log!("remove {i}");
+            tree.remove_int(*i);
             tree.dump();
             tree.validate_tree();
         }
