@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-avl 0.4.1] - 2026-10-24
+
+### Changed
+
+-avl: Minor optimize for remove(), the swapping node branch
+
 ## [embed-avl 0.4.0] - 2026-10-22
 
 ### Added
