@@ -41,7 +41,11 @@ name = "btree"
 harness = false
 
 [[bench]]
-name = "btree_std"
+name = "btreemap_std"
+harness = false
+
+[[bench]]
+name = "btreeset_std"
 harness = false
 
 [package.metadata.docs.rs]
