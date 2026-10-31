@@ -244,6 +244,7 @@ extern crate std;
 
 use core::marker::PhantomData;
 use core::{
+    borrow::BorrowMut,
     fmt,
     mem::{self, MaybeUninit},
     ptr::{self, null_mut},
@@ -609,9 +610,10 @@ where
     /// invalidate internal pointers (such as removing elements or dropping
     /// items) for the duration of the iterator's use.
     #[inline(always)]
-    pub fn iter<'a>(&'a self) -> DLinkedListIterator<'a, P, Tag> {
-        DLinkedListIterator {
+    pub fn iter<'a>(&'a self) -> DLinkedListIter<'a, P, Tag> {
+        DLinkedListIter {
             next_p: self.head,
+            len: self.len(),
             _phan: Default::default(),
             cur: MaybeUninit::uninit(),
         }
@@ -625,7 +627,7 @@ where
     /// The iterator removes elements from the **front** of the list (FIFO order),
     #[inline(always)]
     pub fn drain<'a>(&'a mut self) -> DLinkedListDrainer<'a, P, Tag> {
-        DLinkedListDrainer { list: self }
+        DLinkedListDrainer { list: self, _phan: Default::default() }
     }
 }
 
@@ -644,34 +646,35 @@ where
     }
 }
 
-pub struct DLinkedListIterator<'a, P, Tag>
+pub struct DLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
     next_p: *mut u8,
     cur: MaybeUninit<P>,
+    len: usize,
     _phan: PhantomData<&'a DLinkedList<P, Tag>>,
 }
 
-unsafe impl<'a, P, Tag> Send for DLinkedListIterator<'a, P, Tag>
+unsafe impl<'a, P, Tag> Send for DLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
 }
 
-impl<'a, P, Tag> Iterator for DLinkedListIterator<'a, P, Tag>
+impl<'a, P, Tag> Iterator for DLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: DListItem<Tag>,
-    Self: 'a,
 {
     type Item = &'a P;
 
     #[inline]
     fn next(&mut self) -> Option<&'a P> {
         if !self.next_p.is_null() {
+            self.len -= 1;
             let cur = self.next_p;
             unsafe {
                 self.next_p = <P::Target as DListItem<Tag>>::get_node_from_ptr(cur).next;
@@ -682,25 +685,36 @@ where
         }
         None
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
 }
 
-pub struct DLinkedListDrainer<'a, P, Tag>
+impl<'a, P, Tag> ExactSizeIterator for DLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
-    list: &'a mut DLinkedList<P, Tag>,
 }
 
-unsafe impl<'a, P, Tag> Send for DLinkedListDrainer<'a, P, Tag>
+pub type DLinkedListDrainer<'a, P, Tag> = Drainer<&'a mut DLinkedList<P, Tag>, P, Tag>;
+pub type DLinkedListIntoIter<P, Tag> = Drainer<DLinkedList<P, Tag>, P, Tag>;
+
+pub struct Drainer<L, P, Tag>
 where
+    L: BorrowMut<DLinkedList<P, Tag>>,
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
+    list: L,
+    _phan: PhantomData<(P, Tag)>,
 }
 
-impl<'a, P, Tag> Iterator for DLinkedListDrainer<'a, P, Tag>
+impl<L, P, Tag> Iterator for Drainer<L, P, Tag>
 where
+    L: BorrowMut<DLinkedList<P, Tag>>,
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
@@ -708,7 +722,49 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<P> {
-        self.list.pop_front()
+        self.list.borrow_mut().pop_front()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = self.list.borrow().len();
+        (l, Some(l))
+    }
+}
+
+impl<L, P, Tag> ExactSizeIterator for Drainer<L, P, Tag>
+where
+    L: BorrowMut<DLinkedList<P, Tag>>,
+    P: Pointer,
+    P::Target: DListItem<Tag>,
+{
+}
+
+impl<'a, P, Tag> IntoIterator for &'a DLinkedList<P, Tag>
+where
+    P: Pointer,
+    P::Target: DListItem<Tag>,
+{
+    type Item = &'a P;
+    type IntoIter = DLinkedListIter<'a, P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<P, Tag> IntoIterator for DLinkedList<P, Tag>
+where
+    P: Pointer,
+    P::Target: DListItem<Tag>,
+{
+    type Item = P;
+    type IntoIter = DLinkedListIntoIter<P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        Drainer { list: self, _phan: Default::default() }
     }
 }
 
