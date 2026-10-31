@@ -247,7 +247,7 @@ use core::{
     borrow::BorrowMut,
     fmt,
     mem::{self, MaybeUninit},
-    ptr::{self, null_mut},
+    ptr::{self, null, null_mut},
 };
 use pointers::Pointer;
 
@@ -479,6 +479,18 @@ where
     #[inline(always)]
     pub unsafe fn remove_node(&mut self, item: *const P::Target) -> Option<P> {
         unsafe { if self._remove_node(item as *mut u8) { Some(P::from_raw(item)) } else { None } }
+    }
+
+    /// Remove the item from the list if it's in the list, but do not recover the removed ptr to P.
+    ///
+    /// # Safety
+    ///
+    /// You have to make sure the returned item ref counter be dropped manually
+    ///
+    /// If the item was in the list, return `item` back; otherwise return `null()`
+    #[inline(always)]
+    pub unsafe fn remove_node_raw(&mut self, item: *const P::Target) -> *const P::Target {
+        if self._remove_node(item as *mut u8) { item } else { null() }
     }
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
