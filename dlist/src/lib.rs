@@ -568,12 +568,22 @@ where
         }
     }
 
+    #[inline]
+    pub fn get_front_ptr(&self) -> *const P::Target {
+        self.head as *const P::Target
+    }
+
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
         unsafe {
             if !self.head.is_null() { Some(&(*(self.head as *const P::Target))) } else { None }
         }
+    }
+
+    #[inline]
+    pub fn get_back_ptr(&self) -> *const P::Target {
+        self.tail as *const P::Target
     }
 
     /// Returns a reference to the back element.
