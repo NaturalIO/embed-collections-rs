@@ -23,10 +23,12 @@
 //! use std::sync::Arc;
 //! use core::ptr::NonNull;
 //!
+//! struct MyTag ();
+//!
 //! struct MyItem {
 //!     id: u32,
 //!     data: String,
-//!     node: UnsafeCell<DListNode<MyItem, ()>>,
+//!     node: UnsafeCell<DListNode<MyTag>>,
 //! }
 //!
 //! impl MyItem {
@@ -39,15 +41,15 @@
 //!     }
 //! }
 //!
-//! unsafe impl DListItem<()> for MyItem {
-//!     fn get_node(&self) -> &mut DListNode<Self, ()> {
+//! unsafe impl DListItem<MyTag> for MyItem {
+//!     fn get_node(&self) -> &mut DListNode<MyTag> {
 //!         unsafe { &mut *self.node.get() }
 //!     }
 //! }
 //!
 //! // Using Box<T> (owned pointers)
 //! {
-//!     let mut list = DLinkedList::<Box<MyItem>, ()>::new();
+//!     let mut list = DLinkedList::<Box<MyItem>, MyTag>::new();
 //!     list.push_back(Box::new(MyItem::new(1, "First")));
 //!     list.push_front(Box::new(MyItem::new(2, "Second")));
 //!     list.push_back(Box::new(MyItem::new(3, "Third")));
@@ -60,7 +62,7 @@
 //!
 //! // Using Arc<T> (shared ownership)
 //! {
-//!     let mut list = DLinkedList::<Arc<MyItem>, ()>::new();
+//!     let mut list = DLinkedList::<Arc<MyItem>, MyTag>::new();
 //!     list.push_back(Arc::new(MyItem::new(1, "First")));
 //!     list.push_front(Arc::new(MyItem::new(2, "Second")));
 //!     list.push_back(Arc::new(MyItem::new(3, "Third")));
@@ -71,9 +73,9 @@
 //!     assert!(list.is_empty());
 //! }
 //!
-//! // Using NonNull<T> (raw pointers without ownership)
+//! // Using NonNull<T> (ignore ownership)
 //! {
-//!     let mut list = DLinkedList::<NonNull<MyItem>, ()>::new();
+//!     let mut list = DLinkedList::<NonNull<MyItem>, MyTag>::new();
 //!     let item1 = Box::into_raw(Box::new(MyItem::new(1, "First")));
 //!     let item2 = Box::into_raw(Box::new(MyItem::new(2, "Second")));
 //!     let item3 = Box::into_raw(Box::new(MyItem::new(3, "Third")));
@@ -100,7 +102,7 @@ extern crate std;
 use core::marker::PhantomData;
 use core::{
     fmt, mem,
-    ptr::{self, null},
+    ptr::{self, null_mut},
 };
 use pointers::Pointer;
 
@@ -116,39 +118,37 @@ use pointers::Pointer;
 /// embedded within `Self`. Users must use `UnsafeCell` to hold `DListNode` to support
 /// interior mutability required by list operations.
 pub unsafe trait DListItem<Tag>: Sized {
-    fn get_node(&self) -> &mut DListNode<Self, Tag>;
+    fn get_node(&self) -> &mut DListNode<Tag>;
+
+    #[allow(unsafe_op_in_unsafe_fn)]
+    #[inline(always)]
+    unsafe fn get_node_from_ptr<'a>(p: *mut u8) -> &'a mut DListNode<Tag>
+    where
+        Self: 'a,
+    {
+        debug_assert!(!p.is_null());
+        (*(p as *const Self)).get_node()
+    }
 }
 
 /// The node structure that must be embedded in items to be stored in a `DLinkedList`.
 #[repr(C)]
-pub struct DListNode<T: Sized, Tag> {
-    prev: *const T,
-    next: *const T,
+pub struct DListNode<Tag> {
+    prev: *mut u8,
+    next: *mut u8,
     _phan: PhantomData<fn(&Tag)>,
 }
 
-unsafe impl<T, Tag> Send for DListNode<T, Tag> {}
+unsafe impl<Tag> Send for DListNode<Tag> {}
 
-impl<T: DListItem<Tag>, Tag> DListNode<T, Tag> {
-    #[inline]
-    fn get_prev<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
-        unsafe { if !self.prev.is_null() { Some((*self.prev).get_node()) } else { None } }
-    }
-
-    #[inline]
-    fn get_next<'a>(&self) -> Option<&'a mut DListNode<T, Tag>> {
-        unsafe { if !self.next.is_null() { Some((*self.next).get_node()) } else { None } }
-    }
-}
-
-impl<T, Tag> Default for DListNode<T, Tag> {
+impl<Tag> Default for DListNode<Tag> {
     #[inline(always)]
     fn default() -> Self {
-        Self { prev: null(), next: null(), _phan: Default::default() }
+        Self { prev: null_mut(), next: null_mut(), _phan: Default::default() }
     }
 }
 
-impl<T: DListItem<Tag> + fmt::Debug, Tag> fmt::Debug for DListNode<T, Tag> {
+impl<Tag> fmt::Debug for DListNode<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(")?;
         if !self.prev.is_null() {
@@ -175,9 +175,9 @@ where
     P::Target: DListItem<Tag>,
 {
     length: usize,
-    head: *const P::Target,
-    tail: *const P::Target,
-    _phan: PhantomData<fn(&Tag)>,
+    head: *mut u8,
+    tail: *mut u8,
+    _phan: PhantomData<fn(&P, &Tag)>,
 }
 
 unsafe impl<P, Tag> Send for DLinkedList<P, Tag>
@@ -216,7 +216,7 @@ where
     /// Creates a new, empty doubly linked list.
     #[inline(always)]
     pub fn new() -> Self {
-        DLinkedList { length: 0, head: null(), tail: null(), _phan: Default::default() }
+        DLinkedList { length: 0, head: null_mut(), tail: null_mut(), _phan: Default::default() }
     }
 
     /// Clears the list, dropping all of its elements if the pointer type `P` owns them.
@@ -241,31 +241,31 @@ where
     }
 
     #[inline(always)]
-    fn _remove_node(&mut self, item: *const P::Target) -> bool {
+    fn _remove_node(&mut self, item: *mut u8) -> bool {
         let mut removed = false;
         unsafe {
-            let node = (*item).get_node();
-            if let Some(prev) = node.get_prev() {
-                prev.next = node.next;
+            let node = <P::Target as DListItem<Tag>>::get_node_from_ptr(item);
+            if !node.prev.is_null() {
+                <P::Target as DListItem<Tag>>::get_node_from_ptr(node.prev).next = node.next;
                 removed = true;
             } else if self.head == item {
                 self.head = node.next;
                 removed = true;
             }
-            if let Some(next) = node.get_next() {
-                next.prev = node.prev;
+            if !node.next.is_null() {
+                <P::Target as DListItem<Tag>>::get_node_from_ptr(node.next).prev = node.prev;
                 removed = true;
             } else if self.tail == item {
                 self.tail = node.prev;
                 removed = true;
             }
             if removed {
-                node.next = null();
-                node.prev = null();
+                node.next = null_mut();
+                node.prev = null_mut();
                 self.length -= 1;
             }
-            removed
         }
+        removed
     }
 
     /// Remove a node by raw pointer from the middle of the list, and recover P from `item`
@@ -291,13 +291,13 @@ where
     /// #[derive(Debug)]
     /// pub struct TestNode {
     ///     pub value: i64,
-    ///     pub node: UnsafeCell<DListNode<Self, ()>>,
+    ///     pub node: UnsafeCell<DListNode<()>>,
     /// }
     ///
     /// unsafe impl Send for TestNode {}
     ///
     /// unsafe impl DListItem<()> for TestNode {
-    ///     fn get_node(&self) -> &mut DListNode<Self, ()> {
+    ///     fn get_node(&self) -> &mut DListNode<()> {
     ///         unsafe { &mut *self.node.get() }
     ///     }
     /// }
@@ -327,7 +327,7 @@ where
     /// ```
     #[inline(always)]
     pub unsafe fn remove_node(&mut self, item: *const P::Target) -> Option<P> {
-        if self._remove_node(item) { Some(unsafe { P::from_raw(item) }) } else { None }
+        unsafe { if self._remove_node(item as *mut u8) { Some(P::from_raw(item)) } else { None } }
     }
 
     /// Moves a node to the front of the list (e.g., for LRU updates).
@@ -340,14 +340,8 @@ where
     #[inline(always)]
     pub unsafe fn peak(&mut self, item: *const P::Target) {
         assert!(!self.head.is_null());
-        unsafe {
-            if !self.head.is_null() {
-                let head_node = (*self.head).get_node() as *const DListNode<P::Target, Tag>;
-                if ptr::eq(head_node, (*item).get_node()) {
-                    return;
-                }
-            }
-            self._remove_node(item);
+        if !ptr::eq(self.head, item as *mut u8) {
+            assert!(self._remove_node(item as *mut u8), "item is not in the list");
             self.push_front_ptr(item);
         }
     }
@@ -361,19 +355,19 @@ where
 
     #[inline]
     fn push_front_ptr(&mut self, ptr: *const P::Target) {
-        let node = unsafe { (*ptr).get_node() };
+        let node = unsafe { <P::Target as DListItem<Tag>>::get_node_from_ptr(ptr as *mut u8) };
         let head = self.head;
         node.next = head;
-        node.prev = null();
+        node.prev = null_mut();
 
         if head.is_null() {
-            self.tail = ptr;
+            self.tail = ptr as *mut u8;
         } else {
             unsafe {
-                (*head).get_node().prev = ptr;
+                <P::Target as DListItem<Tag>>::get_node_from_ptr(head).prev = ptr as *mut u8;
             }
         }
-        self.head = ptr;
+        self.head = ptr as *mut u8;
         self.length += 1;
     }
 
@@ -382,18 +376,18 @@ where
     pub fn push_back(&mut self, item: P) {
         let node = item.as_ref().get_node();
         let tail = self.tail;
-        node.prev = tail;
-        node.next = null();
-
-        let ptr = item.into_raw();
-        if tail.is_null() {
-            self.head = ptr;
-        } else {
-            unsafe {
-                (*tail).get_node().next = ptr;
+        let ptr = item.into_raw() as *mut u8;
+        unsafe {
+            let node = <P::Target as DListItem<Tag>>::get_node_from_ptr(ptr);
+            node.prev = tail;
+            node.next = null_mut();
+            if tail.is_null() {
+                self.head = ptr;
+            } else {
+                <P::Target as DListItem<Tag>>::get_node_from_ptr(tail).next = ptr;
             }
         }
-        self.tail = ptr;
+        self.tail = ptr as *mut u8;
         self.length += 1;
     }
 
@@ -401,8 +395,10 @@ where
     pub fn pop_front(&mut self) -> Option<P> {
         if !self.head.is_null() {
             let head_ptr = self.head;
-            self._remove_node(head_ptr);
-            unsafe { Some(P::from_raw(head_ptr)) }
+            unsafe {
+                self._remove_node(head_ptr);
+                Some(P::from_raw(head_ptr as *const P::Target))
+            }
         } else {
             None
         }
@@ -413,8 +409,10 @@ where
     pub fn pop_back(&mut self) -> Option<P> {
         if !self.tail.is_null() {
             let tail_ptr = self.tail;
-            self._remove_node(tail_ptr);
-            unsafe { Some(P::from_raw(tail_ptr)) }
+            unsafe {
+                self._remove_node(tail_ptr);
+                Some(P::from_raw(tail_ptr as *const P::Target))
+            }
         } else {
             None
         }
@@ -423,13 +421,17 @@ where
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
-        unsafe { if !self.head.is_null() { Some(&(*self.head)) } else { None } }
+        unsafe {
+            if !self.head.is_null() { Some(&(*(self.head as *const P::Target))) } else { None }
+        }
     }
 
     /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
-        unsafe { if !self.tail.is_null() { Some(&(*self.tail)) } else { None } }
+        unsafe {
+            if !self.tail.is_null() { Some(&(*(self.tail as *const P::Target))) } else { None }
+        }
     }
 
     /// Checks if the given node is the head of the list.
@@ -442,25 +444,8 @@ where
             // and node is &mut DListNode<T>.
             // We need to compare the node address or the wrapper address.
             // Converting head -> node and comparing addresses of DListNode is safer.
-            ptr::eq(self.head, node)
+            ptr::eq(self.head, node as *const P::Target as *mut u8)
         }
-    }
-
-    #[cfg(feature = "std")]
-    pub fn print<U: std::fmt::Debug>(&self) {
-        println!("print list begin! length={}", self.length);
-        let mut ptr = self.head;
-        while !ptr.is_null() {
-            unsafe {
-                // Assuming T can be cast to U for printing, or T implements Debug.
-                // The original code had print<T>, here print<U>.
-                // We'll just print the address for now if T is not Debug?
-                // Or assume T is Debug.
-                // println!("node={:?}", item); // Requires T: Debug
-                ptr = (*ptr).get_node().next;
-            }
-        }
-        println!("print list end:");
     }
 
     /// Returns an iterator over the list (borrowed).
@@ -476,7 +461,7 @@ where
     /// items) for the duration of the iterator's use.
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> DLinkedListIterator<'a, P, Tag> {
-        DLinkedListIterator { list: self, cur: null() }
+        DLinkedListIterator { list: self, cur: null_mut() }
     }
 
     /// Returns a draining iterator that removes items from the list.
@@ -534,14 +519,14 @@ where
             if self.list.head.is_null() {
                 return None;
             } else {
-                self.cur = self.list.head;
+                self.cur = self.list.head as *const P::Target;
             }
         } else {
             let next = unsafe { (*self.cur).get_node().next };
             if next.is_null() {
                 return None;
             } else {
-                self.cur = next;
+                self.cur = next as *const P::Target;
             }
         }
         unsafe { Some(&(*self.cur)) }
@@ -591,7 +576,7 @@ mod tests {
     #[derive(Debug)]
     pub struct TestNode {
         pub value: i64,
-        pub node: UnsafeCell<DListNode<Self, TestTag>>,
+        pub node: UnsafeCell<DListNode<TestTag>>,
     }
 
     static ACTIVE_NODE_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -605,7 +590,7 @@ mod tests {
     unsafe impl Send for TestNode {}
 
     unsafe impl DListItem<TestTag> for TestNode {
-        fn get_node(&self) -> &mut DListNode<Self, TestTag> {
+        fn get_node(&self) -> &mut DListNode<TestTag> {
             unsafe { &mut *self.node.get() }
         }
     }
