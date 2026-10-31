@@ -15,11 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-slist 0.2.0] - 2026-10-31
+
+### Changed
+
+- slist: Change `SListItem` definition, remove parent type param.
+
+- slist: Rename `SLinkedListIterator` -> `SLinkedListIter`.
+
+- slist: SLinkedListIter now yield `&P` instead of `&P::Target`
+
+### Added
+
+- slist: Add default method `DListItem::get_node_from_ptr()`. User can overwrite it for advance usage (custom pointer with flag, see module level doc example)
+
+- slist: impl ExactSizeIterator and IntoIterator.
+
+- slist: Add `get_front_ptr()` and `get_back_ptr()`
+
+## [embed-dlist 0.4.0] - 2026-10-31
+
+### Changed
+
+- dlist: Change `DListItem` definition, remove parent type param.
+
+- dlist: Rename `DLinkedListIterator` -> `DLinkedListIter`.
+
+- dlist: DLinkedListIter now yield `&P` instead of `&P::Target`
+
+### Added
+
+- dlist: Add default method `DListItem::get_node_from_ptr()`. User can overwrite it for advance usage (custom pointer with flag, see module level doc example)
+
+- dlist: impl ExactSizeIterator and IntoIterator.
+
+- dlist: Add `get_front_ptr()` and `get_back_ptr()`
+
 ## [embed-avl 0.4.1] - 2026-10-24
 
 ### Changed
 
--avl: Minor optimize for remove(), the swapping node branch
+- avl: Minor optimize for remove(), the swapping node branch
 
 ## [embed-avl 0.4.0] - 2026-10-22
 
