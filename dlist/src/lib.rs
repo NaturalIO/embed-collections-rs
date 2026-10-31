@@ -101,7 +101,8 @@ extern crate std;
 
 use core::marker::PhantomData;
 use core::{
-    fmt, mem,
+    fmt,
+    mem::{self, MaybeUninit},
     ptr::{self, null_mut},
 };
 use pointers::Pointer;
@@ -374,7 +375,6 @@ where
     /// Pushes an element to the back of the list.
     #[inline]
     pub fn push_back(&mut self, item: P) {
-        let node = item.as_ref().get_node();
         let tail = self.tail;
         let ptr = item.into_raw() as *mut u8;
         unsafe {
@@ -387,7 +387,7 @@ where
                 <P::Target as DListItem<Tag>>::get_node_from_ptr(tail).next = ptr;
             }
         }
-        self.tail = ptr as *mut u8;
+        self.tail = ptr;
         self.length += 1;
     }
 
@@ -461,7 +461,11 @@ where
     /// items) for the duration of the iterator's use.
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> DLinkedListIterator<'a, P, Tag> {
-        DLinkedListIterator { list: self, cur: null_mut() }
+        DLinkedListIterator {
+            next_p: self.head,
+            _phan: Default::default(),
+            cur: MaybeUninit::uninit(),
+        }
     }
 
     /// Returns a draining iterator that removes items from the list.
@@ -496,8 +500,9 @@ where
     P: Pointer,
     P::Target: DListItem<Tag>,
 {
-    list: &'a DLinkedList<P, Tag>,
-    cur: *const P::Target,
+    next_p: *mut u8,
+    cur: MaybeUninit<P>,
+    _phan: PhantomData<&'a DLinkedList<P, Tag>>,
 }
 
 unsafe impl<'a, P, Tag> Send for DLinkedListIterator<'a, P, Tag>
@@ -511,25 +516,22 @@ impl<'a, P, Tag> Iterator for DLinkedListIterator<'a, P, Tag>
 where
     P: Pointer,
     P::Target: DListItem<Tag>,
+    Self: 'a,
 {
-    type Item = &'a P::Target;
+    type Item = &'a P;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.cur.is_null() {
-            if self.list.head.is_null() {
-                return None;
-            } else {
-                self.cur = self.list.head as *const P::Target;
-            }
-        } else {
-            let next = unsafe { (*self.cur).get_node().next };
-            if next.is_null() {
-                return None;
-            } else {
-                self.cur = next as *const P::Target;
+    #[inline]
+    fn next(&mut self) -> Option<&'a P> {
+        if !self.next_p.is_null() {
+            let cur = self.next_p;
+            unsafe {
+                self.next_p = <P::Target as DListItem<Tag>>::get_node_from_ptr(cur).next;
+                self.cur.write(P::from_raw(cur as *const P::Target));
+                // use transmute to convert lifetime from '_ to 'a
+                return Some(mem::transmute::<&P, &P>(self.cur.assume_init_ref()));
             }
         }
-        unsafe { Some(&(*self.cur)) }
+        None
     }
 }
 
@@ -1014,14 +1016,16 @@ mod tests {
 
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
 
-        {
+        unsafe {
             let mut l = DLinkedList::<*const TestNode, TestTag>::new();
             l.push_back(node1);
             l.push_back(node2);
 
             let mut iter = l.iter();
-            assert_eq!(iter.next().unwrap().value, 10);
-            assert_eq!(iter.next().unwrap().value, 20);
+            let item = iter.next().unwrap();
+            assert_eq!((**item).value, 10);
+            let item = iter.next().unwrap();
+            assert_eq!((**item).value, 20);
             assert!(iter.next().is_none());
         } // l dropped here. Because P is *const TestNode, needs_drop is false, so drain is NOT called.
 
@@ -1055,14 +1059,14 @@ mod tests {
 
         assert_eq!(ACTIVE_NODE_COUNT.load(Ordering::SeqCst), 2);
 
-        {
+        unsafe {
             let mut l = DLinkedList::<NonNull<TestNode>, TestTag>::new();
             l.push_back(ptr1);
             l.push_back(ptr2);
 
             let mut iter = l.iter();
-            assert_eq!(iter.next().unwrap().value, 100);
-            assert_eq!(iter.next().unwrap().value, 200);
+            assert_eq!(iter.next().unwrap().as_ref().value, 100);
+            assert_eq!(iter.next().unwrap().as_ref().value, 200);
             assert!(iter.next().is_none());
         } // l dropped here. NonNull doesn't need drop, so no drain.
 
