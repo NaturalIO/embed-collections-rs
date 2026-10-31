@@ -11,3 +11,6 @@ rstest = "0"
 [features]
 # enable log for dev
 trace_log = []
+
+[lints]
+workspace = true
