@@ -95,9 +95,10 @@ extern crate alloc;
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
+use core::borrow::BorrowMut;
 use core::fmt;
 use core::marker::PhantomData;
-use core::mem;
+use core::mem::{self, MaybeUninit};
 use core::ptr::{self, null_mut};
 use pointers::Pointer;
 
@@ -115,7 +116,7 @@ pub unsafe trait SListItem<Tag>: Sized {
 
     /// # Safety
     ///
-    /// This is just map from raw pointer to `&mut DListNode`.
+    /// This is just map from raw pointer to `&mut SListNode`.
     ///
     /// You only have to implement this when using custom pointer type with abnormal address.
     /// Refer to [Mixed Type Example](index.html#mixed-types)
@@ -331,14 +332,19 @@ where
     /// invalidate internal pointers (such as removing elements or dropping
     /// items) for the duration of the iterator's use.
     #[inline(always)]
-    pub fn iter<'a>(&'a self) -> SLinkedListIterator<'a, P, Tag> {
-        SLinkedListIterator { list: self, cur: null_mut() }
+    pub fn iter<'a>(&'a self) -> SLinkedListIter<'a, P, Tag> {
+        SLinkedListIter {
+            len: self.length,
+            next_p: self.head,
+            cur: MaybeUninit::uninit(),
+            _phan: Default::default(),
+        }
     }
 
     /// Returns a draining iterator that removes items from the list.
     #[inline(always)]
     pub fn drain<'a>(&'a mut self) -> SLinkedListDrainer<'a, P, Tag> {
-        SLinkedListDrainer { list: self }
+        SLinkedListDrainer { list: self, _phan: Default::default() }
     }
 }
 
@@ -354,66 +360,74 @@ where
     }
 }
 
-pub struct SLinkedListIterator<'a, P, Tag>
+pub struct SLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
-    list: &'a SLinkedList<P, Tag>,
-    cur: *const P::Target,
+    next_p: *mut u8,
+    cur: MaybeUninit<P>,
+    len: usize,
+    _phan: PhantomData<&'a SLinkedList<P, Tag>>,
 }
 
-unsafe impl<'a, P, Tag> Send for SLinkedListIterator<'a, P, Tag>
+unsafe impl<'a, P, Tag> Send for SLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
 }
 
-impl<'a, P, Tag> Iterator for SLinkedListIterator<'a, P, Tag>
+impl<'a, P, Tag> Iterator for SLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
-    type Item = &'a P::Target;
+    type Item = &'a P;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.cur.is_null() {
-            let next = unsafe { (*self.cur).get_node().next };
-            if !next.is_null() {
-                self.cur = next as *const P::Target;
-            } else {
-                return None;
-            }
-        } else {
-            if !self.list.head.is_null() {
-                self.cur = self.list.head as *const P::Target;
-            } else {
-                return None;
+        if !self.next_p.is_null() {
+            let cur = self.next_p;
+            unsafe {
+                self.next_p = <P::Target as SListItem<Tag>>::get_node_from_ptr(cur).next;
+                self.cur.write(P::from_raw(cur as *const P::Target));
+                // use transmute to convert lifetime from '_ to 'a
+                return Some(mem::transmute::<&P, &P>(self.cur.assume_init_ref()));
             }
         }
-        unsafe { Some(&(*self.cur)) }
+        None
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
     }
 }
 
-pub struct SLinkedListDrainer<'a, P, Tag>
-where
-    P: Pointer,
-    P::Target: SListItem<Tag>,
-{
-    list: &'a mut SLinkedList<P, Tag>,
-}
-
-unsafe impl<'a, P, Tag> Send for SLinkedListDrainer<'a, P, Tag>
+impl<'a, P, Tag> ExactSizeIterator for SLinkedListIter<'a, P, Tag>
 where
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
 }
 
-impl<'a, P, Tag> Iterator for SLinkedListDrainer<'a, P, Tag>
+pub type SLinkedListDrainer<'a, P, Tag> = Drainer<&'a mut SLinkedList<P, Tag>, P, Tag>;
+pub type SLinkedListIntoIter<P, Tag> = Drainer<SLinkedList<P, Tag>, P, Tag>;
+
+pub struct Drainer<L, P, Tag>
 where
+    L: BorrowMut<SLinkedList<P, Tag>>,
+    P: Pointer,
+    P::Target: SListItem<Tag>,
+{
+    list: L,
+    _phan: PhantomData<(P, Tag)>,
+}
+
+impl<L, P, Tag> Iterator for Drainer<L, P, Tag>
+where
+    L: BorrowMut<SLinkedList<P, Tag>>,
     P: Pointer,
     P::Target: SListItem<Tag>,
 {
@@ -421,7 +435,49 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<P> {
-        self.list.pop_front()
+        self.list.borrow_mut().pop_front()
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let l = self.list.borrow().len();
+        (l, Some(l))
+    }
+}
+
+impl<L, P, Tag> ExactSizeIterator for Drainer<L, P, Tag>
+where
+    L: BorrowMut<SLinkedList<P, Tag>>,
+    P: Pointer,
+    P::Target: SListItem<Tag>,
+{
+}
+
+impl<'a, P, Tag> IntoIterator for &'a SLinkedList<P, Tag>
+where
+    P: Pointer,
+    P::Target: SListItem<Tag>,
+{
+    type Item = &'a P;
+    type IntoIter = SLinkedListIter<'a, P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<P, Tag> IntoIterator for SLinkedList<P, Tag>
+where
+    P: Pointer,
+    P::Target: SListItem<Tag>,
+{
+    type Item = P;
+    type IntoIter = SLinkedListIntoIter<P, Tag>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        Drainer { list: self, _phan: Default::default() }
     }
 }
 
