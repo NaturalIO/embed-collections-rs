@@ -94,6 +94,149 @@
 //!     }
 //! }
 //! ```
+//!
+//! # Mixed Types
+//!
+//! This example show mixed multiple types (which have the same DListNode field) in one list,
+//! with custom pointer type.
+//!
+//! ```
+//! use embed_dlist::{DLinkedList, DListItem, DListNode};
+//! use pointers::Pointer;
+//! use core::cell::UnsafeCell;
+//! use std::sync::Arc;
+//!
+//! enum MixedPointer {
+//!     Multi(Arc<ArcNode>),
+//!     One(Box<BoxNode>),
+//! }
+//!
+//! impl MixedPointer {
+//!
+//!     fn as_multi(&self) -> &Arc<ArcNode> {
+//!         if let Self::Multi(inner) = self {
+//!             inner
+//!         } else {
+//!             panic!("not Multi")
+//!         }
+//!     }
+//!
+//!     fn as_one(&self) -> &Box<BoxNode> {
+//!         if let Self::One(inner) = self {
+//!             inner
+//!         } else {
+//!             panic!("not One")
+//!         }
+//!     }
+//! }
+//!
+//! const IS_ARC: usize = 0x1;
+//! const TYPE_MASK: usize = IS_ARC;
+//!
+//! struct ArcNode {
+//!     _node: UnsafeCell<DListNode<()>>,
+//!     v: usize,
+//! }
+//!
+//! struct BoxNode {
+//!     _node: UnsafeCell<DListNode<()>>,
+//!     v: String,
+//! }
+//!
+//! impl ArcNode {
+//!     fn new(v: usize) -> Arc<Self> {
+//!         Arc::new(Self{
+//!             _node: Default::default(),
+//!             v,
+//!         })
+//!     }
+//! }
+//!
+//! impl BoxNode {
+//!     fn new(v: String) -> Box<Self> {
+//!         Box::new(Self{
+//!             _node: Default::default(),
+//!             v,
+//!         })
+//!     }
+//! }
+//!
+//! struct MixedAddr (usize);
+//!
+//! impl Pointer for MixedPointer {
+//!     type Target = MixedAddr;
+//!
+//!     fn as_ref(&self) -> &MixedAddr {
+//!         unreachable!("we don't call as_ref in DLinkedList");
+//!     }
+//!
+//!     /// # Safety
+//!     ///
+//!     /// just a mock
+//!     unsafe fn from_raw(p: *const MixedAddr) -> Self {
+//!         let real_p = (p as usize) & (!TYPE_MASK);
+//!         debug_assert!(real_p != 0);
+//!         let type_flag = (p as usize) & TYPE_MASK;
+//!         if type_flag == IS_ARC {
+//!             Self::Multi(unsafe{Arc::from_raw(real_p as *mut ArcNode)})
+//!         } else {
+//!             Self::One(unsafe{Box::from_raw(real_p as *mut BoxNode)})
+//!         }
+//!     }
+//!
+//!     /// # Safety
+//!     /// the address into_raw cannot be defer directly
+//!     fn into_raw(self) -> *const MixedAddr {
+//!         let addr: usize = match self {
+//!             MixedPointer::Multi(item)=>{Arc::into_raw(item) as usize | IS_ARC},
+//!             MixedPointer::One(item)=>{Box::into_raw(item) as usize},
+//!         };
+//!         addr as *const MixedAddr
+//!     }
+//! }
+//!
+//! unsafe impl DListItem<()> for MixedAddr {
+//!     
+//!     fn get_node(&self) -> &mut DListNode<()> {
+//!         unreachable!();
+//!     }
+//!
+//!     unsafe fn get_node_from_ptr<'a>(p: *mut u8) -> &'a mut DListNode<()>
+//!     where
+//!         Self: 'a,
+//!     {
+//!         let real_p = (p as usize) & (!TYPE_MASK);
+//!         debug_assert!(real_p != 0);
+//!         let type_flag = (p as usize) & TYPE_MASK;
+//!         if type_flag == IS_ARC {
+//!             unsafe{&mut *(*(real_p as *const ArcNode))._node.get()}
+//!         } else {
+//!             unsafe{&mut *(*(real_p as *const BoxNode))._node.get()}
+//!         }
+//!     }
+//! }
+//!
+//! // list operation
+//! let mut l = DLinkedList::<MixedPointer, ()>::new();
+//! l.push_back(MixedPointer::Multi(ArcNode::new(1)));
+//! l.push_back(MixedPointer::One(BoxNode::new("box1".to_string())));
+//! l.push_back(MixedPointer::One(BoxNode::new("box2".to_string())));
+//! l.push_back(MixedPointer::Multi(ArcNode::new(2)));
+//!
+//! let mut iter = l.iter();
+//! assert_eq!(iter.next().unwrap().as_multi().v, 1);
+//! assert_eq!(iter.next().unwrap().as_one().v.as_str(), "box1");
+//! assert_eq!(iter.next().unwrap().as_one().v.as_str(), "box2");
+//! assert_eq!(iter.next().unwrap().as_multi().v, 2);
+//! assert!(iter.next().is_none());
+//!
+//! let mut iter = l.drain();
+//! assert_eq!(iter.next().unwrap().as_multi().v, 1);
+//! assert_eq!(iter.next().unwrap().as_one().v.as_str(), "box1");
+//! assert_eq!(iter.next().unwrap().as_one().v.as_str(), "box2");
+//! assert_eq!(iter.next().unwrap().as_multi().v, 2);
+//! assert!(iter.next().is_none());
+//! ```
 
 extern crate alloc;
 #[cfg(any(feature = "std", test))]
@@ -121,6 +264,12 @@ use pointers::Pointer;
 pub unsafe trait DListItem<Tag>: Sized {
     fn get_node(&self) -> &mut DListNode<Tag>;
 
+    /// # Safety
+    ///
+    /// This is just map from raw pointer to `&mut DListNode`.
+    ///
+    /// You only have to implement this when using custom pointer type with abnormal address.
+    /// Refer to [Mixed Type Example](index.html#mixed-types)
     #[allow(unsafe_op_in_unsafe_fn)]
     #[inline(always)]
     unsafe fn get_node_from_ptr<'a>(p: *mut u8) -> &'a mut DListNode<Tag>
