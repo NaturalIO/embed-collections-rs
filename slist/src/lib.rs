@@ -24,7 +24,7 @@
 //! struct MyTask {
 //!     priority: u8,
 //!     description: String,
-//!     node: UnsafeCell<SListNode<MyTask, ()>>,
+//!     node: UnsafeCell<SListNode<()>>,
 //! }
 //!
 //! impl MyTask {
@@ -38,7 +38,7 @@
 //! }
 //!
 //! unsafe impl SListItem<()> for MyTask {
-//!     fn get_node(&self) -> &mut SListNode<Self, ()> {
+//!     fn get_node(&self) -> &mut SListNode<()> {
 //!         unsafe { &mut *self.node.get() }
 //!     }
 //! }
@@ -98,7 +98,7 @@ extern crate std;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
-use core::ptr::{self, null};
+use core::ptr::{self, null_mut};
 use pointers::Pointer;
 
 /// A trait to return internal mutable SListNode for specified list.
@@ -111,29 +111,43 @@ use pointers::Pointer;
 /// embedded within `Self`. Users must use `UnsafeCell` to hold `SListNode` to support
 /// interior mutability required by list operations.
 pub unsafe trait SListItem<Tag>: Sized {
-    fn get_node(&self) -> &mut SListNode<Self, Tag>;
+    fn get_node(&self) -> &mut SListNode<Tag>;
+
+    /// # Safety
+    ///
+    /// This is just map from raw pointer to `&mut DListNode`.
+    ///
+    /// You only have to implement this when using custom pointer type with abnormal address.
+    /// Refer to [Mixed Type Example](index.html#mixed-types)
+    #[allow(unsafe_op_in_unsafe_fn)]
+    #[inline(always)]
+    unsafe fn get_node_from_ptr<'a>(p: *mut u8) -> &'a mut SListNode<Tag>
+    where
+        Self: 'a,
+    {
+        debug_assert!(!p.is_null());
+        (*(p as *const Self)).get_node()
+    }
 }
 
 /// The node structure that must be embedded in items to be stored in a `SLinkedList`.
 ///
 #[repr(C)]
-pub struct SListNode<T: Sized, Tag> {
-    next: *const T,
+pub struct SListNode<Tag> {
+    next: *mut u8,
     _phan: PhantomData<fn(&Tag)>,
 }
 
-unsafe impl<T, Tag> Send for SListNode<T, Tag> {}
+unsafe impl<Tag> Send for SListNode<Tag> {}
 
-impl<T: SListItem<Tag>, Tag> SListNode<T, Tag> {}
-
-impl<T, Tag> Default for SListNode<T, Tag> {
+impl<Tag> Default for SListNode<Tag> {
     #[inline(always)]
     fn default() -> Self {
-        Self { next: null(), _phan: Default::default() }
+        Self { next: null_mut(), _phan: Default::default() }
     }
 }
 
-impl<T: SListItem<Tag> + fmt::Debug, Tag> fmt::Debug for SListNode<T, Tag> {
+impl<Tag> fmt::Debug for SListNode<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "(")?;
         if !self.next.is_null() {
@@ -155,9 +169,9 @@ where
     P::Target: SListItem<Tag>,
 {
     length: usize,
-    head: *const P::Target,
-    tail: *const P::Target,
-    _phan: PhantomData<fn(&Tag)>,
+    head: *mut u8,
+    tail: *mut u8,
+    _phan: PhantomData<fn(&P, &Tag)>,
 }
 
 unsafe impl<P, Tag> Send for SLinkedList<P, Tag>
@@ -196,7 +210,7 @@ where
     /// Creates a new, empty singly linked list.
     #[inline(always)]
     pub fn new() -> Self {
-        SLinkedList { length: 0, head: null(), tail: null(), _phan: Default::default() }
+        SLinkedList { length: 0, head: null_mut(), tail: null_mut(), _phan: Default::default() }
     }
 
     /// Clears the list, dropping all of its elements if the pointer type `P` owns them.
@@ -223,17 +237,17 @@ where
     /// Appends an element to the back of the list (FIFO: enqueue).
     #[inline]
     pub fn push_back(&mut self, item: P) {
-        let node = item.as_ref().get_node();
-        node.next = null();
-        let ptr = item.into_raw();
-        if !self.tail.is_null() {
-            // List is not empty, update current tail's next
-            unsafe {
-                (*self.tail).get_node().next = ptr;
+        let ptr = item.into_raw() as *mut u8;
+        unsafe {
+            let node = <P::Target as SListItem<Tag>>::get_node_from_ptr(ptr);
+            node.next = null_mut();
+            if !self.tail.is_null() {
+                // List is not empty, update current tail's next
+                <P::Target as SListItem<Tag>>::get_node_from_ptr(self.tail).next = ptr;
+            } else {
+                // List is empty
+                self.head = ptr;
             }
-        } else {
-            // List is empty
-            self.head = ptr;
         }
         self.tail = ptr;
         self.length += 1;
@@ -242,10 +256,11 @@ where
     /// Pushes an element to the front of the list.
     #[inline]
     pub fn push_front(&mut self, item: P) {
-        let ptr = item.into_raw();
-        let node = unsafe { (*ptr).get_node() };
+        let ptr = item.into_raw() as *mut u8;
+        let node = unsafe { <P::Target as SListItem<Tag>>::get_node_from_ptr(ptr) };
         node.next = self.head;
-        if self.head.is_null() {
+        if !self.head.is_null() {
+        } else {
             // List was empty
             self.tail = ptr;
         }
@@ -257,22 +272,18 @@ where
     pub fn pop_front(&mut self) -> Option<P> {
         if !self.head.is_null() {
             let head_ptr = self.head;
-            let node = unsafe { (*head_ptr).get_node() };
+            let node = unsafe { <P::Target as SListItem<Tag>>::get_node_from_ptr(head_ptr) };
             let next_ptr = node.next;
-
+            node.next = null_mut();
             // Update head to next
             self.head = next_ptr;
-
-            // If head became null (list empty), update tail to null too
-            if self.head.is_null() {
-                self.tail = null();
-            }
-
-            // Clean up the removed node's next pointer
-            node.next = null();
             self.length -= 1;
-
-            Some(unsafe { P::from_raw(head_ptr) })
+            // If head became null (list empty), update tail to null too
+            if !self.head.is_null() {
+            } else {
+                self.tail = null_mut();
+            }
+            Some(unsafe { P::from_raw(head_ptr as *const P::Target) })
         } else {
             None
         }
@@ -281,19 +292,31 @@ where
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
-        if !self.head.is_null() { unsafe { Some(&(*self.head)) } } else { None }
+        if !self.head.is_null() {
+            unsafe { Some(&(*(self.head as *const P::Target))) }
+        } else {
+            None
+        }
     }
 
     /// Returns a reference to the back element.
     #[inline]
     pub fn get_back(&self) -> Option<&P::Target> {
-        if !self.tail.is_null() { unsafe { Some(&(*self.tail)) } } else { None }
+        if !self.tail.is_null() {
+            unsafe { Some(&(*(self.tail as *const P::Target))) }
+        } else {
+            None
+        }
     }
 
     /// Checks if the given node is the head of the list.
     #[inline(always)]
     pub fn is_front(&self, node: &P::Target) -> bool {
-        if self.head.is_null() { false } else { ptr::eq(self.head, node) }
+        if !self.head.is_null() {
+            ptr::eq(self.head, node as *const P::Target as *const u8)
+        } else {
+            false
+        }
     }
 
     /// Returns an iterator over the list (borrowed).
@@ -309,7 +332,7 @@ where
     /// items) for the duration of the iterator's use.
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> SLinkedListIterator<'a, P, Tag> {
-        SLinkedListIterator { list: self, cur: null() }
+        SLinkedListIterator { list: self, cur: null_mut() }
     }
 
     /// Returns a draining iterator that removes items from the list.
@@ -359,13 +382,13 @@ where
         if !self.cur.is_null() {
             let next = unsafe { (*self.cur).get_node().next };
             if !next.is_null() {
-                self.cur = next;
+                self.cur = next as *const P::Target;
             } else {
                 return None;
             }
         } else {
             if !self.list.head.is_null() {
-                self.cur = self.list.head;
+                self.cur = self.list.head as *const P::Target;
             } else {
                 return None;
             }
@@ -414,7 +437,7 @@ mod tests {
     #[derive(Debug)]
     pub struct TestNode {
         pub value: i64,
-        pub node: UnsafeCell<SListNode<Self, TestTag>>,
+        pub node: UnsafeCell<SListNode<TestTag>>,
     }
 
     static ACTIVE_NODE_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -428,7 +451,7 @@ mod tests {
     unsafe impl Send for TestNode {}
 
     unsafe impl SListItem<TestTag> for TestNode {
-        fn get_node(&self) -> &mut SListNode<Self, TestTag> {
+        fn get_node(&self) -> &mut SListNode<TestTag> {
             unsafe { &mut *self.node.get() }
         }
     }
