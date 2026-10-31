@@ -1419,8 +1419,11 @@ where
     }
 }
 
-/// A Reference to `P`
+/// A Reference to `P::Target`
 pub struct AvlNodeRef<'a, P: Pointer> {
+    // Because we might save prev()/next() at the same time,
+    // we cannot use MaybeUninit<P> because of miri stack borrow rule.
+    // see test int_avl_tree_random.
     node: NonNull<P::Target>,
     _phan: PhantomData<&'a P>,
 }
