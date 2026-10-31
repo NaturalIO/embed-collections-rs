@@ -433,6 +433,16 @@ where
         }
     }
 
+    #[inline]
+    pub fn get_front_ptr(&self) -> *const P::Target {
+        self.head as *const P::Target
+    }
+
+    #[inline]
+    pub fn get_back_ptr(&self) -> *const P::Target {
+        self.tail as *const P::Target
+    }
+
     /// Returns a reference to the front element.
     #[inline]
     pub fn get_front(&self) -> Option<&P::Target> {
