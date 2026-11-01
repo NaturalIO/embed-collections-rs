@@ -320,7 +320,14 @@ where
 
 unsafe impl<P, Tag> Send for SLinkedList<P, Tag>
 where
-    P: Pointer,
+    P: Pointer + Send,
+    P::Target: SListItem<Tag>,
+{
+}
+
+unsafe impl<P, Tag> Sync for SLinkedList<P, Tag>
+where
+    P: Pointer + Send,
     P::Target: SListItem<Tag>,
 {
 }
@@ -526,7 +533,7 @@ where
 
 unsafe impl<'a, P, Tag> Send for SLinkedListIter<'a, P, Tag>
 where
-    P: Pointer,
+    P: Pointer + Send,
     P::Target: SListItem<Tag>,
 {
 }
@@ -576,6 +583,14 @@ where
 {
     list: L,
     _phan: PhantomData<(P, Tag)>,
+}
+
+unsafe impl<L, P, Tag> Send for Drainer<L, P, Tag>
+where
+    L: BorrowMut<SLinkedList<P, Tag>>,
+    P: Pointer + Send,
+    P::Target: SListItem<Tag>,
+{
 }
 
 impl<L, P, Tag> Iterator for Drainer<L, P, Tag>
