@@ -333,7 +333,14 @@ where
 
 unsafe impl<P, Tag> Send for DLinkedList<P, Tag>
 where
-    P: Pointer,
+    P: Pointer + Send,
+    P::Target: DListItem<Tag>,
+{
+}
+
+unsafe impl<P, Tag> Sync for DLinkedList<P, Tag>
+where
+    P: Pointer + Send,
     P::Target: DListItem<Tag>,
 {
 }
@@ -681,7 +688,7 @@ where
 
 unsafe impl<'a, P, Tag> Send for DLinkedListIter<'a, P, Tag>
 where
-    P: Pointer,
+    P: Pointer + Send,
     P::Target: DListItem<Tag>,
 {
 }
@@ -732,6 +739,14 @@ where
 {
     list: L,
     _phan: PhantomData<(P, Tag)>,
+}
+
+unsafe impl<L, P, Tag> Send for Drainer<L, P, Tag>
+where
+    L: BorrowMut<DLinkedList<P, Tag>>,
+    P: Pointer + Send,
+    P::Target: DListItem<Tag>,
+{
 }
 
 impl<L, P, Tag> Iterator for Drainer<L, P, Tag>
