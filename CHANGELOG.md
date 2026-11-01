@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+
+## [embed-dlist 0.4.2] - 2026-11-02
+
+### Fixed
+
+- dlist: Fix Send/Sync only when P has Send
+
+## [embed-slist 0.2.1] - 2026-11-02
+
+### Fixed
+
+- slist: Fix Send/Sync only when P has Send
+
+
 ## [embed-dlist 0.4.1] - 2026-11-01
 
 ### Added
