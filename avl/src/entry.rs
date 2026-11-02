@@ -1,6 +1,7 @@
 use super::*;
 use core::cmp::Ordering;
 use core::fmt::Debug;
+use core::mem::transmute;
 use core::ops::Deref;
 use pointers::{CloneablePointer, Pointer};
 
@@ -115,7 +116,7 @@ where
                     "can only append to VacantEntry when tree is empty"
                 );
                 debug_assert_eq!(ent.direction, DIR_RIGHT);
-                let p = node.into_raw() as *mut P::Target;
+                let p = node.into_raw() as *mut u8;
                 ent.tree._insert(p, null_mut(), DIR_RIGHT);
                 Self::Occupied(OccupiedEntry {
                     node: unsafe { NonNull::new_unchecked(p) },
@@ -152,7 +153,7 @@ where
                     "can only append to VacantEntry when tree is empty"
                 );
                 debug_assert_eq!(ent.direction, DIR_RIGHT);
-                let p = node.into_raw() as *mut P::Target;
+                let p = node.into_raw() as *mut u8;
                 ent.tree._insert(p, null_mut(), DIR_RIGHT);
                 Ok(Self::Occupied(OccupiedEntry {
                     node: unsafe { NonNull::new_unchecked(p) },
@@ -194,7 +195,7 @@ where
                     "can only append to VacantEntry when tree is empty"
                 );
                 debug_assert_eq!(ent.direction, DIR_LEFT);
-                let p = node.into_raw() as *mut P::Target;
+                let p = node.into_raw() as *mut u8;
                 ent.tree._insert(p, null_mut(), DIR_LEFT);
                 Self::Occupied(OccupiedEntry {
                     node: unsafe { NonNull::new_unchecked(p) },
@@ -231,7 +232,7 @@ where
                     "can only append to VacantEntry when tree is empty"
                 );
                 debug_assert_eq!(ent.direction, DIR_LEFT);
-                let p = node.into_raw() as *mut P::Target;
+                let p = node.into_raw() as *mut u8;
                 ent.tree._insert(p, null_mut(), DIR_LEFT);
                 Ok(Self::Occupied(OccupiedEntry {
                     node: unsafe { NonNull::new_unchecked(p) },
@@ -248,7 +249,7 @@ where
     P::Target: AvlItem<Tag>,
 {
     /// The matching node or the parent for insertion.
-    pub(crate) node: NonNull<P::Target>,
+    pub(crate) node: NonNull<u8>,
     pub(crate) tree: &'a mut AvlTree<P, Tag>,
 }
 
@@ -259,7 +260,7 @@ where
 {
     #[inline]
     pub fn get(&self) -> &'a P::Target {
-        unsafe { self.node.as_ref() }
+        unsafe { transmute::<NonNull<u8>, NonNull<P::Target>>(self.node).as_ref() }
     }
 
     #[inline]
@@ -267,7 +268,7 @@ where
     where
         P: CloneablePointer,
     {
-        unsafe { CloneablePointer::from_raw_and_clone(self.node.as_ptr()) }
+        unsafe { CloneablePointer::from_raw_and_clone(self.node.as_ptr() as *const P::Target) }
     }
 
     /// Remove the node from the tree
@@ -276,7 +277,7 @@ where
         let p = self.node.as_ptr();
         unsafe {
             self.tree._remove(p);
-            P::from_raw(p)
+            P::from_raw(p as *mut P::Target)
         }
     }
 
@@ -286,7 +287,7 @@ where
         if let Some(prev) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             unsafe {
                 self.tree._remove(prev.as_ptr());
-                return Some(P::from_raw(prev.as_ptr()));
+                return Some(P::from_raw(prev.as_ptr() as *mut P::Target));
             }
         }
         None
@@ -298,7 +299,7 @@ where
         if let Some(next) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
             unsafe {
                 self.tree._remove(next.as_ptr());
-                return Some(P::from_raw(next.as_ptr()));
+                return Some(P::from_raw(next.as_ptr() as *mut P::Target));
             }
         }
         None
@@ -307,7 +308,7 @@ where
     #[inline]
     pub fn peek_prev(&self) -> Option<&'a P::Target> {
         if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
-            Some(unsafe { p.as_ref() })
+            Some(unsafe { transmute::<NonNull<u8>, NonNull<P::Target>>(p).as_ref() })
         } else {
             None
         }
@@ -316,7 +317,7 @@ where
     #[inline]
     pub fn peek_next(&self) -> Option<&'a P::Target> {
         if let Some(p) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
-            Some(unsafe { p.as_ref() })
+            Some(unsafe { transmute::<NonNull<u8>, NonNull<P::Target>>(p).as_ref() })
         } else {
             None
         }
@@ -354,7 +355,7 @@ where
     #[inline]
     pub unsafe fn insert_prev_unchecked(&mut self, new_node: P) {
         unsafe {
-            let new_ptr = new_node.into_raw() as *mut P::Target;
+            let new_ptr = new_node.into_raw() as *mut u8;
             self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
         }
     }
@@ -371,7 +372,7 @@ where
     #[inline]
     pub unsafe fn insert_move_prev_unchecked(self, new_node: P) -> Self {
         unsafe {
-            let new_ptr = new_node.into_raw() as *mut P::Target;
+            let new_ptr = new_node.into_raw() as *mut u8;
             self.tree._insert_here(new_ptr, self.node, DIR_LEFT);
             Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
@@ -389,7 +390,7 @@ where
     #[inline]
     pub unsafe fn insert_next_unchecked(&mut self, new_node: P) {
         unsafe {
-            let new_ptr = new_node.into_raw() as *mut P::Target;
+            let new_ptr = new_node.into_raw() as *mut u8;
             self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);
         }
     }
@@ -406,7 +407,7 @@ where
     #[inline]
     pub unsafe fn insert_move_next_unchecked(self, new_node: P) -> Self {
         unsafe {
-            let new_ptr = new_node.into_raw() as *mut P::Target;
+            let new_ptr = new_node.into_raw() as *mut u8;
             self.tree._insert_here(new_ptr, self.node, DIR_RIGHT);
             Self { node: NonNull::new_unchecked(new_ptr), tree: self.tree }
         }
@@ -448,12 +449,12 @@ where
 ///
 /// struct MyNode {
 ///     value: i32,
-///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+///     avl_node: UnsafeCell<AvlNode<()>>,
 /// }
 ///
 /// unsafe impl AvlItem<()> for MyNode {
 ///
-///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+///     fn get_node(&self) -> &mut AvlNode<()> {
 ///         unsafe { &mut *self.avl_node.get() }
 ///     }
 /// }
@@ -477,7 +478,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    pub(crate) node: *mut P::Target,
+    pub(crate) node: *mut u8,
     pub(crate) direction: Dir,
     pub(crate) tree: &'a mut AvlTree<P, Tag>,
     pub(crate) key: K,
@@ -488,10 +489,15 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
+    #[inline]
+    fn _as_ref(&self) -> &P::Target {
+        unsafe { &*(self.node as *const P::Target) }
+    }
+
     /// Return the nearest node in the search result
     #[inline(always)]
     pub fn nearest(&self) -> Option<&P::Target> {
-        if !self.node.is_null() { unsafe { self.node.as_ref() } } else { None }
+        if !self.node.is_null() { Some(self._as_ref()) } else { None }
     }
 
     #[inline]
@@ -499,11 +505,11 @@ where
         if !self.node.is_null() {
             unsafe {
                 if self.direction == DIR_RIGHT {
-                    return Some(&*self.node);
+                    return Some(self._as_ref());
                 } else if let Some(node) =
                     AvlTree::<P, Tag>::_walk_dir(NonNull::new_unchecked(self.node), DIR_LEFT)
                 {
-                    return Some(node.as_ref());
+                    return Some(transmute::<NonNull<u8>, NonNull<P::Target>>(node).as_ref());
                 }
             }
         }
@@ -520,11 +526,11 @@ where
         if !self.node.is_null() {
             unsafe {
                 if self.direction == DIR_LEFT {
-                    return Some(&*self.node);
+                    return Some(self._as_ref());
                 } else if let Some(node) =
                     AvlTree::<P, Tag>::_walk_dir(NonNull::new_unchecked(self.node), DIR_RIGHT)
                 {
-                    return Some(node.as_ref());
+                    return Some(transmute::<NonNull<u8>, NonNull<P::Target>>(node).as_ref());
                 }
             }
         }
@@ -568,7 +574,7 @@ where
     /// ignoring `K` captured in VacantEntry
     #[inline]
     pub unsafe fn insert_node_unchecked(self, new_node: P) -> OccupiedEntry<'a, P, Tag> {
-        let new_ptr = new_node.into_raw() as *mut P::Target;
+        let new_ptr = new_node.into_raw() as *mut u8;
         self.tree._insert(new_ptr, self.node, self.direction);
         OccupiedEntry { node: unsafe { NonNull::new_unchecked(new_ptr) }, tree: self.tree }
     }
@@ -588,7 +594,7 @@ where
     #[inline]
     pub fn insert_node(self, new_node: P) -> OccupiedEntry<'a, P, Tag> {
         debug_assert!(&self.key == new_node.as_ref().borrow());
-        let new_ptr = new_node.into_raw() as *mut P::Target;
+        let new_ptr = new_node.into_raw() as *mut u8;
         self.tree._insert(new_ptr, self.node, self.direction);
         OccupiedEntry { node: unsafe { NonNull::new_unchecked(new_ptr) }, tree: self.tree }
     }

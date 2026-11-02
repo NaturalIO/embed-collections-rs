@@ -14,7 +14,7 @@ use btree_common::{SIZES, TestData, size_desc};
 #[derive(Default)]
 struct IntAvlNode {
     pub value: u32,
-    pub node: UnsafeCell<AvlNode<Self, ()>>,
+    pub node: UnsafeCell<AvlNode<()>>,
 }
 
 unsafe impl Send for IntAvlNode {}
@@ -27,7 +27,7 @@ impl fmt::Debug for IntAvlNode {
 
 unsafe impl AvlItem<()> for IntAvlNode {
     #[inline]
-    fn get_node(&self) -> &mut AvlNode<Self, ()> {
+    fn get_node(&self) -> &mut AvlNode<()> {
         unsafe { &mut *self.node.get() }
     }
 }

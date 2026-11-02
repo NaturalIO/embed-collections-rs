@@ -13,7 +13,7 @@ use std::println;
 #[fmt("IntAvlNode {value} {:?}", self.get_node())]
 pub struct IntAvlNode {
     pub value: i64,
-    pub node: UnsafeCell<AvlNode<Self, ()>>,
+    pub node: UnsafeCell<AvlNode<()>>,
 }
 
 impl IntAvlNode {
@@ -36,7 +36,7 @@ impl Borrow<i64> for IntAvlNode {
 }
 
 unsafe impl AvlItem<()> for IntAvlNode {
-    fn get_node(&self) -> &mut AvlNode<Self, ()> {
+    fn get_node(&self) -> &mut AvlNode<()> {
         unsafe { &mut *self.node.get() }
     }
 }

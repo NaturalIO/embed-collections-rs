@@ -1,4 +1,5 @@
 use super::*;
+use crate::get_node_p;
 use core::marker::PhantomData;
 use core::ptr::null_mut;
 use pointers::Pointer;
@@ -8,9 +9,9 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    node: *mut P::Target,
+    node: *mut u8,
     dir: Dir,
-    _phan: PhantomData<fn(&Tag)>,
+    _phan: PhantomData<fn(&P, &Tag)>,
 }
 
 impl<P, Tag> AvlIntoIter<P, Tag>
@@ -18,7 +19,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    pub(crate) fn new(root: *mut P::Target, dir: Dir) -> Self {
+    pub(crate) fn new(root: *mut u8, dir: Dir) -> Self {
         Self { node: root, dir, _phan: Default::default() }
     }
 }
@@ -37,28 +38,32 @@ where
                 // self.node was the parent of last visited node
                 let item =
                     AvlTree::<P, Tag>::bottom_child(NonNull::new_unchecked(self.node), self.dir);
-                let _node = item.as_ref().get_node();
+                let _node = get_node_p!(item.as_ptr(), P, Tag);
                 let right_child = _node.get_child(self.dir.reverse());
                 let parent = _node.get_parent();
                 _node.detach();
                 if !parent.is_null() {
                     if right_child.is_null() {
-                        (*parent).get_node().set_child(self.dir, null_mut());
+                        get_node_p!(parent, P, Tag).set_child(self.dir, null_mut());
                         self.node = parent;
                     } else {
-                        (*parent).get_node().set_child2::<P>(self.dir, right_child, parent);
+                        get_node_p!(parent, P, Tag).set_child2::<P::Target>(
+                            self.dir,
+                            right_child,
+                            parent,
+                        );
                         self.node = right_child;
                     }
                 } else {
                     // I'm the root
                     if !right_child.is_null() {
                         self.node = right_child;
-                        (*right_child).get_node().parent = null_mut();
+                        get_node_p!(right_child, P, Tag).parent = null_mut();
                     } else {
                         self.node = null_mut();
                     }
                 }
-                Some(P::from_raw(item.as_ptr()))
+                Some(P::from_raw(item.as_ptr() as *mut P::Target))
             }
         } else {
             None
@@ -96,7 +101,7 @@ where
 /// #[fmt("MyNode {value}")]
 /// struct MyNode {
 ///     value: i32,
-///     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+///     avl_node: UnsafeCell<AvlNode<()>>,
 /// }
 ///
 /// impl Borrow<i32> for MyNode {
@@ -106,7 +111,7 @@ where
 /// }
 ///
 /// unsafe impl AvlItem<()> for MyNode {
-///     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+///     fn get_node(&self) -> &mut AvlNode<()> {
 ///         unsafe { &mut *self.avl_node.get() }
 ///     }
 /// }
@@ -133,7 +138,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    cur: Option<NonNull<P::Target>>,
+    cur: Option<NonNull<u8>>,
     dir: Dir,
     left: usize,
     _phan: PhantomData<fn(&'a P, &'a Tag)>,
@@ -148,9 +153,7 @@ where
     P::Target: AvlItem<Tag>,
 {
     #[inline]
-    pub(crate) fn new(
-        tree: &'a AvlTree<P, Tag>, init: Option<NonNull<P::Target>>, dir: Dir,
-    ) -> Self {
+    pub(crate) fn new(tree: &'a AvlTree<P, Tag>, init: Option<NonNull<u8>>, dir: Dir) -> Self {
         Self { cur: init, dir, left: tree.len(), _phan: Default::default() }
     }
 }
@@ -171,7 +174,7 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let cur: NonNull<P::Target> = self.cur.take()?;
+        let cur: NonNull<u8> = self.cur.take()?;
         self.left -= 1;
         self.cur = AvlTree::<P, Tag>::_walk_dir(cur, self.dir);
         Some(AvlNodeRef::<'a, P>::new(cur.as_ptr()))

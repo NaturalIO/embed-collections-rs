@@ -32,17 +32,18 @@ where
         let node2 = _new_node(2);
         let node3 = _new_node(3);
 
-        let p1 = &*node1 as *const IntAvlNode as *mut IntAvlNode;
-        let p2 = &*node2 as *const IntAvlNode as *mut IntAvlNode;
-        let p3 = &*node3 as *const IntAvlNode as *mut IntAvlNode;
+        let p1 = &*node1 as *const IntAvlNode as *mut u8;
+        let p2 = &*node2 as *const IntAvlNode as *mut u8;
+        let p3 = &*node3 as *const IntAvlNode as *mut u8;
 
-        node1.get_node().set_child2::<P>(DIR_LEFT, p2, p1);
-        node2.get_node().set_child2::<P>(DIR_RIGHT, p3, p2);
+        type T<P> = <P as Pointer>::Target;
+        node1.get_node().set_child2::<T<P>>(DIR_LEFT, p2, p1);
+        node2.get_node().set_child2::<T<P>>(DIR_RIGHT, p3, p2);
 
-        assert_eq!(AvlNode::<IntAvlNode, ()>::parent_direction(p2), DIR_LEFT);
+        assert_eq!(AvlNode::<()>::parent_direction::<T<P>>(p2), DIR_LEFT);
         // This is tricky as node1 is not in a tree, its parent is not set.
         // assert_eq!(tree.parent_direction2(p1), DIR_LEFT);
-        assert_eq!(AvlNode::<IntAvlNode, ()>::parent_direction(p3), DIR_RIGHT);
+        assert_eq!(AvlNode::<()>::parent_direction::<T<P>>(p3), DIR_RIGHT);
         drop(tree);
     }
     assert_eq!(alive_count(), 0);

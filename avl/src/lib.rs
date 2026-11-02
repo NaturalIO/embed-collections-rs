@@ -37,7 +37,7 @@
 //! #[fmt("MyNode {value}")]
 //! struct MyNode {
 //!     value: i32,
-//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//!     avl_node: UnsafeCell<AvlNode<()>>,
 //! }
 //!
 //! impl Borrow<i32> for MyNode {
@@ -47,7 +47,7 @@
 //! }
 //!
 //! unsafe impl AvlItem<()> for MyNode {
-//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!     fn get_node(&self) -> &mut AvlNode<()> {
 //!         unsafe { &mut *self.avl_node.get() }
 //!     }
 //! }
@@ -79,7 +79,7 @@
 //! #[fmt("MyNode {value}")]
 //! struct MyNode {
 //!     value: i32,
-//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//!     avl_node: UnsafeCell<AvlNode<()>>,
 //! }
 //!
 //! impl Borrow<i32> for MyNode {
@@ -89,7 +89,7 @@
 //! }
 //!
 //! unsafe impl AvlItem<()> for MyNode {
-//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!     fn get_node(&self) -> &mut AvlNode<()> {
 //!         unsafe { &mut *self.avl_node.get() }
 //!     }
 //! }
@@ -127,7 +127,7 @@
 //! #[fmt("MyNode {value}")]
 //! struct MyNode {
 //!     value: i32,
-//!     avl_node: UnsafeCell<AvlNode<MyNode, ()>>,
+//!     avl_node: UnsafeCell<AvlNode<()>>,
 //! }
 //!
 //! impl Borrow<i32> for MyNode {
@@ -137,7 +137,7 @@
 //! }
 //!
 //! unsafe impl AvlItem<()> for MyNode {
-//!     fn get_node(&self) -> &mut AvlNode<MyNode, ()> {
+//!     fn get_node(&self) -> &mut AvlNode<()> {
 //!         unsafe { &mut *self.avl_node.get() }
 //!     }
 //! }
@@ -207,11 +207,11 @@ use pointers::{CloneablePointer, Pointer};
 /// #[fmt("IntAvlNode {value}")]
 /// pub struct IntAvlNode {
 ///     pub value: i64,
-///     pub node: UnsafeCell<AvlNode<Self, ()>>,
+///     pub node: UnsafeCell<AvlNode<()>>,
 /// }
 ///
 /// unsafe impl AvlItem<()> for IntAvlNode {
-///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
+///     fn get_node(&self) -> &mut AvlNode<()> {
 ///         unsafe { &mut *self.node.get() }
 ///     }
 /// }
@@ -233,7 +233,7 @@ use pointers::{CloneablePointer, Pointer};
 /// use core::cmp::Ordering;
 ///
 /// pub struct RangeSeg {
-///     node: UnsafeCell<AvlNode<Self, ()>>,
+///     node: UnsafeCell<AvlNode<()>>,
 ///     pub start: Cell<u64>,
 ///     pub end: Cell<u64>,
 /// }
@@ -264,13 +264,28 @@ use pointers::{CloneablePointer, Pointer};
 /// }
 /// unsafe impl Send for RangeSeg {}
 /// unsafe impl AvlItem<()> for RangeSeg {
-///     fn get_node(&self) -> &mut AvlNode<Self, ()> {
+///     fn get_node(&self) -> &mut AvlNode<()> {
 ///         unsafe { &mut *self.node.get() }
 ///     }
 /// }
 /// ```
 pub unsafe trait AvlItem<Tag>: Sized {
-    fn get_node(&self) -> &mut AvlNode<Self, Tag>;
+    fn get_node(&self) -> &mut AvlNode<Tag>;
+
+    /// # Safety
+    ///
+    /// This is just map from raw pointer to `&mut AvlNode<Tag>`.
+    ///
+    /// You only have to implement this when using custom pointer type with abnormal address.
+    #[allow(unsafe_op_in_unsafe_fn)]
+    #[inline(always)]
+    unsafe fn get_node_from_ptr<'a>(p: *mut u8) -> &'a mut AvlNode<Tag>
+    where
+        Self: 'a,
+    {
+        debug_assert!(!p.is_null());
+        (*(p as *const Self)).get_node()
+    }
 }
 
 /// Implement Ord with `Borrow<K>`
@@ -349,16 +364,31 @@ impl From<bool> for Dir {
     }
 }
 
-pub struct AvlNode<T: AvlItem<Tag>, Tag> {
-    pub parent: *mut T,
-    pub children: [*mut T; 2],
+pub struct AvlNode<Tag> {
+    pub parent: *mut u8,
+    pub children: [*mut u8; 2],
     pub balance: i8,
     _phan: PhantomData<fn(&Tag)>,
 }
 
-unsafe impl<T: AvlItem<Tag> + Send, Tag> Send for AvlNode<T, Tag> {}
+unsafe impl<Tag> Send for AvlNode<Tag> {}
 
-impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
+macro_rules! get_node_t {
+    ($p: expr, $T: ty, $Tag: ty) => {{ unsafe { <T as AvlItem<$Tag>>::get_node_from_ptr($p) } }};
+}
+
+macro_rules! get_node_p {
+    ($p: expr, $P: ty, $Tag: ty) => {{
+        #[allow(unused_unsafe)]
+        unsafe {
+            <<$P>::Target as AvlItem<$Tag>>::get_node_from_ptr($p)
+        }
+    }};
+}
+
+pub(crate) use get_node_p;
+
+impl<Tag> AvlNode<Tag> {
     #[inline(always)]
     pub fn detach(&mut self) {
         self.children = [null_mut(), null_mut()];
@@ -367,22 +397,22 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     }
 
     #[inline(always)]
-    fn get_child(&self, dir: Dir) -> *mut T {
+    fn get_child(&self, dir: Dir) -> *mut u8 {
         unsafe { *self.children.get_unchecked(dir.to_usize()) }
     }
 
     #[inline(always)]
-    fn set_child(&mut self, dir: Dir, child: *mut T) {
+    fn set_child(&mut self, dir: Dir, child: *mut u8) {
         self.children[dir.to_usize()] = child;
     }
 
     #[inline(always)]
-    fn left(&self) -> *mut T {
+    fn left(&self) -> *mut u8 {
         self.children[0]
     }
 
     #[inline(always)]
-    fn right(&self) -> *mut T {
+    fn right(&self) -> *mut u8 {
         self.children[1]
     }
 
@@ -391,22 +421,20 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     // # Arguments:
     // - `parent`: this pointer to this node (we don't know the offset here)
     #[inline(always)]
-    fn set_child2<P: Pointer<Target = T>>(
-        &mut self, dir: Dir, child: *mut P::Target, parent: *mut P::Target,
-    ) {
+    fn set_child2<T: AvlItem<Tag>>(&mut self, dir: Dir, child: *mut u8, parent: *mut u8) {
         if !child.is_null() {
-            unsafe { (*child).get_node().parent = parent };
+            get_node_t!(child, T, Tag).parent = parent;
         }
         self.set_child(dir, child);
     }
 
     #[inline(always)]
-    fn get_parent(&self) -> *mut T {
+    fn get_parent(&self) -> *mut u8 {
         self.parent
     }
 
     #[inline(always)]
-    fn _child_direction(&self, child_p: *mut T) -> Dir {
+    fn _child_direction(&self, child_p: *mut u8) -> Dir {
         // this is AvlTree::parent_direction in previous version
         let is_right = self.children[1] == child_p;
         #[cfg(debug_assertions)]
@@ -419,38 +447,38 @@ impl<T: AvlItem<Tag>, Tag> AvlNode<T, Tag> {
     }
 
     #[inline(always)]
-    fn child_direction(parent: *mut T, child_p: *mut T) -> Dir {
+    fn child_direction<T: AvlItem<Tag>>(parent: *mut u8, child_p: *mut u8) -> Dir {
         // Avoid Miri stack borrowing rule:
         // as we are holding del_node reference, don't call this with a ref again to avoid the
         // borrow checker.
         // Use raw pointer, as use in deletion.
         if !parent.is_null() {
-            unsafe { (*parent).get_node() }._child_direction(child_p)
+            get_node_t!(parent, T, Tag)._child_direction(child_p)
         } else {
             DIR_LEFT
         }
     }
 
     #[inline(always)]
-    fn parent_direction(node: *mut T) -> Dir {
+    fn parent_direction<T: AvlItem<Tag>>(node: *mut u8) -> Dir {
         // this is AvlTree::parent_direction2 in previous version
 
         // Avoid Miri stack borrowing rule:
         // as we are holding del_node reference, don't call this with a ref again to avoid the
         // borrow checker.
         // Use raw pointer, as use in deletion.
-        let parent = unsafe { (*node).get_node() }.get_parent();
-        Self::child_direction(parent, node)
+        let parent = get_node_t!(node, T, Tag).get_parent();
+        Self::child_direction::<T>(parent, node)
     }
 
     // Swap two node but not there value
     #[inline(always)]
-    pub fn swap(&mut self, other: &mut AvlNode<T, Tag>) {
+    pub fn swap(&mut self, other: &mut AvlNode<Tag>) {
         mem::swap(self, other);
     }
 }
 
-impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
+impl<Tag> Default for AvlNode<Tag> {
     fn default() -> Self {
         Self {
             children: [null_mut(), null_mut()],
@@ -462,7 +490,7 @@ impl<T: AvlItem<Tag>, Tag> Default for AvlNode<T, Tag> {
 }
 
 #[allow(unused_must_use)]
-impl<T: AvlItem<Tag>, Tag> fmt::Debug for AvlNode<T, Tag> {
+impl<Tag> fmt::Debug for AvlNode<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "( {:p} parent: {:p} balance: {}", self, self.parent, self.balance)?;
         if !self.left().is_null() {
@@ -489,7 +517,7 @@ where
     P: Pointer,
     P::Target: AvlItem<Tag>,
 {
-    root: *mut P::Target,
+    root: *mut u8,
     count: usize,
     _phan: PhantomData<fn(P, &Tag)>,
 }
@@ -579,23 +607,23 @@ where
             unsafe {
                 loop {
                     // match is actually better optimized than if-else or table mapping
-                    let dir = match node.as_ref().cmp((&*parent).as_ref()) {
+                    let dir = match node.as_ref().cmp(&*(parent as *const P::Target)) {
                         Ordering::Greater => DIR_RIGHT,
                         Ordering::Less => DIR_LEFT,
                         Ordering::Equal => return Err(node),
                     };
-                    let child = (*parent).get_node().get_child(dir);
+                    let child = get_node_p!(parent, P, Tag).get_child(dir);
                     if !child.is_null() {
                         parent = child;
                     } else {
-                        self._insert(node.into_raw() as *mut P::Target, parent, dir);
+                        self._insert(node.into_raw() as *mut u8, parent, dir);
                         return Ok(());
                     }
                 }
             }
         } else {
             debug_assert_eq!(self.count, 0);
-            self.root = node.into_raw() as *mut P::Target;
+            self.root = node.into_raw() as *mut u8;
             self.count = 1;
             Ok(())
         }
@@ -649,7 +677,7 @@ where
             let mut parent = self.root;
             loop {
                 // match is actually better optimized than if-else or table mapping
-                let dir = match cmp_f(&key, unsafe { &*parent }.as_ref()) {
+                let dir = match cmp_f(&key, unsafe { &*(parent as *const P::Target) }) {
                     Ordering::Greater => DIR_RIGHT,
                     Ordering::Less => DIR_LEFT,
                     Ordering::Equal => {
@@ -659,7 +687,7 @@ where
                         });
                     }
                 };
-                let child = unsafe { (*parent).get_node() }.get_child(dir);
+                let child = get_node_p!(parent, P, Tag).get_child(dir);
                 if !child.is_null() {
                     parent = child;
                 } else {
@@ -693,12 +721,12 @@ where
             let mut node = self.root;
             loop {
                 // match is actually better optimized than if-else or table mapping
-                let dir = match cmp_f(unsafe { &*node }.as_ref()) {
+                let dir = match cmp_f(unsafe { &*(node as *const P::Target) }) {
                     Ordering::Greater => DIR_RIGHT,
                     Ordering::Less => DIR_LEFT,
                     Ordering::Equal => return Some(AvlNodeRef::new(node)),
                 };
-                let child = unsafe { (*node).get_node() }.get_child(dir);
+                let child = get_node_p!(node, P, Tag).get_child(dir);
                 if !child.is_null() {
                     node = child;
                 } else {
@@ -712,16 +740,11 @@ where
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     #[inline]
-    pub(crate) fn _insert(
-        &mut self,
-        new_ptr: *mut P::Target,
-        parent: *mut P::Target, // parent
-        mut which_child: Dir,
-    ) {
+    pub(crate) fn _insert(&mut self, new_ptr: *mut u8, parent: *mut u8, mut which_child: Dir) {
         if !parent.is_null() {
             let mut new_balance: i8;
-            unsafe { (*new_ptr).get_node() }.parent = parent;
-            let parent_node = unsafe { (*parent).get_node() };
+            get_node_p!(new_ptr, P, Tag).parent = parent;
+            let parent_node = get_node_p!(parent, P, Tag);
             parent_node.set_child(which_child, new_ptr);
             self.count += 1;
             /*
@@ -730,9 +753,9 @@ where
              * need to do a rotation.  If we back out of the tree we are done.
              * If we brought any subtree into perfect balance (0), we are also done.
              */
-            let mut data: *mut P::Target = parent;
+            let mut data: *mut u8 = parent;
             loop {
-                let node = unsafe { (*data).get_node() };
+                let node = get_node_p!(data, P, Tag);
                 let old_balance = node.balance;
                 new_balance = old_balance + which_child.to_balance();
                 if new_balance == 0 {
@@ -747,7 +770,7 @@ where
                 if parent_ptr.is_null() {
                     return;
                 }
-                which_child = unsafe { (*parent_ptr).get_node() }._child_direction(data);
+                which_child = get_node_p!(parent_ptr, P, Tag)._child_direction(data);
                 data = parent_ptr;
             }
             self.rotate(data, new_balance);
@@ -766,13 +789,11 @@ where
     /// if the given child of the node is already present we move to either
     /// the AVL_PREV or AVL_NEXT and reverse the insertion direction. Since
     /// every other node in the tree is a leaf, this always works.
-    unsafe fn _insert_here(
-        &mut self, new_ptr: *mut P::Target, here: NonNull<P::Target>, direction: Dir,
-    ) {
+    unsafe fn _insert_here(&mut self, new_ptr: *mut u8, here: NonNull<u8>, direction: Dir) {
         crate::trace_log!("_insert_here {new_ptr:p} here {here:p} dir {direction:?}");
         let mut dir_child = direction;
         unsafe {
-            let child = here.as_ref().get_node().get_child(dir_child);
+            let child = get_node_p!(here.as_ptr(), P, Tag).get_child(dir_child);
             let parent;
             if child.is_null() {
                 crate::trace_log!("direct at here {here:p}");
@@ -787,11 +808,11 @@ where
     }
 
     #[inline]
-    fn rotate(&mut self, data: *mut P::Target, balance: i8) -> bool {
+    fn rotate(&mut self, data: *mut u8, balance: i8) -> bool {
         /* when balance = -2, left will be 0 */
         //let dir = if balance < 0 { DIR_LEFT } else { DIR_RIGHT };
         let dir: Dir = (balance >= 0).into();
-        let node = unsafe { (*data).get_node() };
+        let node = get_node_p!(data, P, Tag);
         crate::trace_log!("rotate: {data:p} {node:?} balance: {balance}");
 
         let parent = node.get_parent();
@@ -800,10 +821,10 @@ where
         let right_heavy = -left_heavy;
 
         let child = node.get_child(dir);
-        let child_node = unsafe { (*child).get_node() };
+        let child_node = get_node_p!(child, P, Tag);
         let mut child_balance = child_node.balance;
 
-        let which_child = AvlNode::<P::Target, Tag>::child_direction(parent, data);
+        let which_child = AvlNode::<Tag>::child_direction::<P::Target>(parent, data);
         crate::trace_log!("rotate: choose {child_node:?} dir {dir:?}");
 
         /*
@@ -843,7 +864,7 @@ where
 
             // move "cright" to be node's left child
             let c_right = child_node.get_child(dir_inverse);
-            node.set_child2::<P>(dir, c_right, data);
+            node.set_child2::<P::Target>(dir, c_right, data);
             // move node to be child's right child
             node.balance = -child_balance;
 
@@ -854,7 +875,7 @@ where
             child_node.balance = child_balance;
             if !parent.is_null() {
                 child_node.parent = parent;
-                unsafe { (*parent).get_node() }.set_child(which_child, child);
+                get_node_p!(parent, P, Tag).set_child(which_child, child);
             } else {
                 child_node.parent = null_mut();
                 self.root = child;
@@ -896,12 +917,12 @@ where
         // move gright to left child of node and
         // move gleft to right child of node
         let g_child = child_node.get_child(dir_inverse);
-        let g_child_node = unsafe { (*g_child).get_node() };
+        let g_child_node = get_node_p!(g_child, P, Tag);
         let g_left = g_child_node.get_child(dir);
         let g_right = g_child_node.get_child(dir_inverse);
 
-        node.set_child2::<P>(dir, g_right, data);
-        child_node.set_child2::<P>(dir_inverse, g_left, child);
+        node.set_child2::<P::Target>(dir, g_right, data);
+        child_node.set_child2::<P::Target>(dir_inverse, g_left, child);
 
         /*
          * move child to left child of gchild and
@@ -930,7 +951,7 @@ where
 
         if !parent.is_null() {
             g_child_node.parent = parent;
-            unsafe { (*parent).get_node() }.set_child(which_child, g_child);
+            get_node_p!(parent, P, Tag).set_child(which_child, g_child);
         } else {
             g_child_node.parent = null_mut();
             self.root = g_child;
@@ -947,7 +968,7 @@ where
     ///
     /// For Arc/Rc, use [Self::remove_ref()] instead.
     ///
-    pub(crate) unsafe fn _remove(&mut self, del: *mut P::Target) {
+    pub(crate) unsafe fn _remove(&mut self, del: *mut u8) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
          * We swap a node with 2 children with a sequentially valued
@@ -958,9 +979,9 @@ where
          * is right heavy, otherwise the left neighbor. This reduces the
          * number of rotations needed.
          */
-        let del_node = unsafe { (*del).get_node() };
+        let del_node = get_node_p!(del, P, Tag);
         let old_parent = del_node.get_parent();
-        let mut del_dir = AvlNode::<P::Target, Tag>::child_direction(old_parent, del);
+        let mut del_dir = AvlNode::<Tag>::child_direction::<P::Target>(old_parent, del);
         let mut imm_parent = old_parent;
         let del_left = del_node.left();
         let del_right = del_node.right();
@@ -970,10 +991,10 @@ where
             let imm_child = del_node.get_child(dir_child);
             crate::trace_log!("del {del_node:?} direct with dir {dir_child:?} child {imm_child:p}",);
             if !imm_child.is_null() {
-                unsafe { (*imm_child).get_node() }.parent = imm_parent;
+                get_node_p!(imm_child, P, Tag).parent = imm_parent;
             }
             if !imm_parent.is_null() {
-                unsafe { (*imm_parent).get_node() }.set_child(del_dir, imm_child);
+                get_node_p!(imm_parent, P, Tag).set_child(del_dir, imm_child);
             } else {
                 self.root = imm_child;
             }
@@ -991,7 +1012,7 @@ where
             .as_ptr();
             if !old_parent.is_null() {
                 // hookup parent and the swap node
-                unsafe { (*old_parent).get_node() }.set_child(del_dir, child);
+                get_node_p!(old_parent, P, Tag).set_child(del_dir, child);
             } else {
                 self.root = child;
             }
@@ -1000,8 +1021,8 @@ where
                 // if we choose right, when the node swap must have no left child
 
                 // keep the parent direction of `child`, after swap it become the parent directonly del_node.
-                let parent_dir_child = AvlNode::<P::Target, Tag>::parent_direction(child);
-                let child_node = unsafe { (*child).get_node() };
+                let parent_dir_child = AvlNode::<Tag>::parent_direction::<P::Target>(child);
+                let child_node = get_node_p!(child, P, Tag);
                 imm_parent = child_node.get_parent();
                 crate::trace_log!(
                     "del {:?} swap with indirect child dir {:?} {:?} which parent_dir: {:?}",
@@ -1014,21 +1035,20 @@ where
 
                 // change the parent of delete's old child;
                 child_node.swap(del_node);
-
-                unsafe { (*del_left).get_node() }.parent = child;
-                unsafe { (*del_right).get_node() }.parent = child;
+                get_node_p!(del_left, P, Tag).parent = child;
+                get_node_p!(del_right, P, Tag).parent = child;
 
                 // we can forget old_parent now
                 del_dir = parent_dir_child;
                 let imm_child = del_node.get_child(dir_child);
                 if !imm_child.is_null() {
-                    unsafe { (*imm_child).get_node() }.parent = imm_parent;
+                    get_node_p!(imm_child, P, Tag).parent = imm_parent;
                 }
                 debug_assert!(!imm_parent.is_null());
-                unsafe { (*imm_parent).get_node() }.set_child(del_dir, imm_child);
+                get_node_p!(imm_parent, P, Tag).set_child(del_dir, imm_child);
                 debug_assert!(del_node.get_child(dir_child_inverse).is_null());
             } else {
-                let child_node = unsafe { (*child).get_node() };
+                let child_node = get_node_p!(child, P, Tag);
                 // the child is already leaf
                 // Directly replace del with child, swap del_node's other child to the child at the
                 // same direction
@@ -1043,7 +1063,7 @@ where
                 let other_child = del_node.get_child(dir_child_inverse);
                 debug_assert!(!other_child.is_null());
                 child_node.set_child(dir_child_inverse, other_child);
-                unsafe { (*other_child).get_node() }.parent = child;
+                get_node_p!(other_child, P, Tag).parent = child;
                 del_dir = dir_child;
                 imm_parent = child;
             }
@@ -1057,17 +1077,17 @@ where
 
     /// update balance & rotate
     #[inline]
-    fn _post_remove(&mut self, parent: *mut P::Target, mut which_child: Dir) {
+    fn _post_remove(&mut self, parent: *mut u8, mut which_child: Dir) {
         debug_assert!(!parent.is_null());
         // Connect parent directly to node (leaving out delete).
         //Since the subtree is now shorter, begin adjusting parent balances
         //and performing any needed rotations.
-        let mut node_data: *mut P::Target = parent;
+        let mut node_data: *mut u8 = parent;
         loop {
             // Move up the tree and adjust the balance.
             // Capture the parent and which_child values for the next
             // iteration before any rotations occur.
-            let node = unsafe { (*node_data).get_node() };
+            let node = get_node_p!(node_data, P, Tag);
             let balance_delta = -which_child.to_balance();
             let old_balance = node.balance;
 
@@ -1082,7 +1102,7 @@ where
             let new_balance = old_balance + balance_delta;
 
             let parent = node.get_parent();
-            let next_which_child = AvlNode::<P::Target, Tag>::child_direction(parent, node_data);
+            let next_which_child = AvlNode::<Tag>::child_direction::<P::Target>(parent, node_data);
             //If the new balance is zero, we don't need to rotate
             //else
             //need a rotation to fix the balance.
@@ -1111,10 +1131,10 @@ where
     }
 
     #[inline(always)]
-    fn bottom_child(mut data: NonNull<P::Target>, dir: Dir) -> NonNull<P::Target> {
+    fn bottom_child(mut data: NonNull<u8>, dir: Dir) -> NonNull<u8> {
         loop {
             unsafe {
-                let child = data.as_ref().get_node().get_child(dir);
+                let child = get_node_p!(data.as_ptr(), P, Tag).get_child(dir);
                 if !child.is_null() {
                     data = NonNull::new_unchecked(child);
                 } else {
@@ -1155,38 +1175,38 @@ where
     pub fn into_iter_rev(self) -> AvlIntoIter<P, Tag> {
         let node = self.root;
         core::mem::forget(self);
-        AvlIntoIter::new(node, DIR_RIGHT)
+        AvlIntoIter::<P, Tag>::new(node, DIR_RIGHT)
     }
 
     #[inline]
     pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
-        Self::_walk_dir(data.into(), DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
+        let p = unsafe { NonNull::new_unchecked(data as *const P::Target as *mut u8) };
+        Self::_walk_dir(p, DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
     #[inline]
     pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
-        Self::_walk_dir(data.into(), DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
+        let p = unsafe { NonNull::new_unchecked(data as *const P::Target as *mut u8) };
+        Self::_walk_dir(p, DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
-    fn _walk_dir(mut data_ptr: NonNull<P::Target>, dir: Dir) -> Option<NonNull<P::Target>> {
+    fn _walk_dir(mut data_ptr: NonNull<u8>, dir: Dir) -> Option<NonNull<u8>> {
         let dir_inverse = dir.reverse();
-        let node = unsafe { data_ptr.as_ref().get_node() };
+        let node = get_node_p!(data_ptr.as_ptr(), P, Tag);
         let temp = node.get_child(dir);
         if !temp.is_null() {
             unsafe { Some(Self::bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
         } else {
             let mut parent = node.parent;
             while !parent.is_null() {
-                let pdir = AvlNode::<P::Target, Tag>::child_direction(parent, data_ptr.as_ptr());
+                let pdir = AvlNode::<Tag>::child_direction::<P::Target>(parent, data_ptr.as_ptr());
                 if pdir == dir_inverse {
                     return Some(unsafe { NonNull::new_unchecked(parent) });
                 }
                 // move to upper parent
                 let data_ptr_raw = parent;
-                unsafe {
-                    parent = (*parent).get_node().parent;
-                    data_ptr = NonNull::new_unchecked(data_ptr_raw);
-                }
+                parent = get_node_p!(parent, P, Tag).get_parent();
+                data_ptr = unsafe { NonNull::new_unchecked(data_ptr_raw) };
             }
             // reach root
             debug_assert!(parent.is_null());
@@ -1254,14 +1274,14 @@ where
     where
         F: Fn(&P::Target, usize),
     {
-        let mut to_visit_stack: VecDeque<(*mut P::Target, usize)> = VecDeque::with_capacity(100);
+        let mut to_visit_stack: VecDeque<(*mut u8, usize)> = VecDeque::with_capacity(100);
         if self.root.is_null() {
             return;
         }
         to_visit_stack.push_front((self.root, 0));
         while let Some((data, level)) = to_visit_stack.pop_front() {
             unsafe {
-                let node = (*data).get_node();
+                let node = get_node_p!(data, P, Tag);
                 let left = node.left();
                 if !left.is_null() {
                     to_visit_stack.push_back((left, level + 1));
@@ -1270,7 +1290,7 @@ where
                 if !right.is_null() {
                     to_visit_stack.push_back((right, level + 1));
                 }
-                print_cb(&*data, level);
+                print_cb(&*(data as *const P::Target), level);
             }
         }
     }
@@ -1288,31 +1308,32 @@ where
         F: Fn(&P::Target, &P::Target) -> Ordering,
     {
         use alloc::collections::BTreeMap;
-        let mut height_map = BTreeMap::<*mut P::Target, usize>::new();
-        let mut visited_stack: Vec<*mut P::Target> = Vec::with_capacity(100);
-        let mut to_visit_stack: Vec<*mut P::Target> = Vec::with_capacity(100);
+        let mut height_map = BTreeMap::<*mut u8, usize>::new();
+        let mut visited_stack: Vec<*mut u8> = Vec::with_capacity(100);
+        let mut to_visit_stack: Vec<*mut u8> = Vec::with_capacity(100);
         let mut visit_count = 0;
         if self.root.is_null() {
             assert_eq!(self.count, 0);
             return;
         }
         let mut push_stack =
-            |data: *mut P::Target,
-             _to_visit: &mut Vec<*mut P::Target>,
-             _visited: &mut Vec<*mut P::Target>,
-             _height_map: &mut BTreeMap<*mut P::Target, usize>| {
+            |data: *mut u8,
+             _to_visit: &mut Vec<*mut u8>,
+             _visited: &mut Vec<*mut u8>,
+             _height_map: &mut BTreeMap<*mut u8, usize>| {
                 unsafe {
-                    let node = (*data).get_node();
+                    let node = get_node_p!(data, P, Tag);
                     let left = node.left();
                     let mut has_child = false;
                     if !left.is_null() {
                         has_child = true;
                         assert!(
-                            cmp_f(&*left, &*data) != Ordering::Greater,
+                            cmp_f(&*(left as *const P::Target), &*(data as *const P::Target))
+                                != Ordering::Greater,
                             "node {node:?} left not smaller"
                         );
                         assert_eq!(
-                            (*left).get_node().get_parent(),
+                            get_node_p!(left, P, Tag).get_parent(),
                             data,
                             "node {node:?} left parent not match"
                         );
@@ -1322,11 +1343,12 @@ where
                     if !right.is_null() {
                         has_child = true;
                         assert!(
-                            cmp_f(&*right, &*data) != Ordering::Less,
+                            cmp_f(&*(right as *const P::Target), &*(data as *const P::Target))
+                                != Ordering::Less,
                             "node {node:?} right not larger"
                         );
                         assert_eq!(
-                            (*right).get_node().get_parent(),
+                            get_node_p!(right, P, Tag).get_parent(),
                             data,
                             "node {node:?} right parent not match"
                         );
@@ -1350,27 +1372,25 @@ where
             push_stack(data, &mut to_visit_stack, &mut visited_stack, &mut height_map);
         }
         while let Some(data) = visited_stack.pop() {
-            unsafe {
-                let node = (*data).get_node();
-                let left = node.left();
-                let mut balance: isize = 0;
-                let mut my_height = 0;
-                if !left.is_null() {
-                    let left_height = *height_map.get(&left).unwrap();
-                    balance -= left_height as isize;
-                    my_height = left_height;
-                }
-                let right = node.right();
-                if !right.is_null() {
-                    let right_height = *height_map.get(&right).unwrap();
-                    balance += right_height as isize;
-                    if my_height < right_height {
-                        my_height = right_height;
-                    }
-                }
-                height_map.insert(data, my_height + 1);
-                assert_eq!(node.balance, balance as i8, "non-leaf node {node:?} balance wrong");
+            let node = get_node_p!(data, P, Tag);
+            let left = node.left();
+            let mut balance: isize = 0;
+            let mut my_height = 0;
+            if !left.is_null() {
+                let left_height = *height_map.get(&left).unwrap();
+                balance -= left_height as isize;
+                my_height = left_height;
             }
+            let right = node.right();
+            if !right.is_null() {
+                let right_height = *height_map.get(&right).unwrap();
+                balance += right_height as isize;
+                if my_height < right_height {
+                    my_height = right_height;
+                }
+            }
+            height_map.insert(data, my_height + 1);
+            assert_eq!(node.balance, balance as i8, "non-leaf node {node:?} balance wrong");
         }
         assert_eq!(visit_count, self.count);
     }
@@ -1415,7 +1435,7 @@ where
     fn into_iter(self) -> Self::IntoIter {
         let node = self.root;
         core::mem::forget(self);
-        AvlIntoIter::new(node, DIR_LEFT)
+        AvlIntoIter::<P, Tag>::new(node, DIR_LEFT)
     }
 }
 
@@ -1456,8 +1476,11 @@ impl<'a, P: Pointer> Deref for AvlNodeRef<'a, P> {
 
 impl<'a, P: Pointer> AvlNodeRef<'a, P> {
     #[inline]
-    fn new(p: *mut P::Target) -> Self {
-        Self { node: unsafe { NonNull::new_unchecked(p) }, _phan: Default::default() }
+    fn new(p: *mut u8) -> Self {
+        Self {
+            node: unsafe { NonNull::new_unchecked(p as *mut P::Target) },
+            _phan: Default::default(),
+        }
     }
 }
 
