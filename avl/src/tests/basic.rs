@@ -29,6 +29,7 @@ where
         let _new_node = IntAvlTree::<P>::new_node;
 
         let node1 = _new_node(1);
+        assert_eq!(node1.get_node().parent_direction(), DIR_LEFT);
         let node2 = _new_node(2);
         let node3 = _new_node(3);
 
@@ -40,10 +41,9 @@ where
         node1.get_node().set_child2::<T<P>>(DIR_LEFT, p2, p1);
         node2.get_node().set_child2::<T<P>>(DIR_RIGHT, p3, p2);
 
-        assert_eq!(AvlNode::<()>::parent_direction::<T<P>>(p2), DIR_LEFT);
+        assert_eq!(unsafe { IntAvlNode::get_node_from_ptr(p2) }.parent_direction(), DIR_LEFT);
         // This is tricky as node1 is not in a tree, its parent is not set.
-        // assert_eq!(tree.parent_direction2(p1), DIR_LEFT);
-        assert_eq!(AvlNode::<()>::parent_direction::<T<P>>(p3), DIR_RIGHT);
+        assert_eq!(unsafe { IntAvlNode::get_node_from_ptr(p3) }.parent_direction(), DIR_RIGHT);
         drop(tree);
     }
     assert_eq!(alive_count(), 0);
@@ -135,6 +135,7 @@ where
             tree.validate_tree();
             tree.add_int_node(_new_node(5));
         }
+        tree.validate_tree();
 
         let mut count = max;
         let mut iter = tree.iter_rev();

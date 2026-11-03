@@ -58,7 +58,7 @@ where
                     // I'm the root
                     if !right_child.is_null() {
                         self.node = right_child;
-                        get_node_p!(right_child, P, Tag).parent = null_mut();
+                        get_node_p!(right_child, P, Tag).clear_parent();
                     } else {
                         self.node = null_mut();
                     }

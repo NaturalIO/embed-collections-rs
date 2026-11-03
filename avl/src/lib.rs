@@ -364,15 +364,6 @@ impl From<bool> for Dir {
     }
 }
 
-pub struct AvlNode<Tag> {
-    pub parent: *mut u8,
-    pub children: [*mut u8; 2],
-    pub balance: i8,
-    _phan: PhantomData<fn(&Tag)>,
-}
-
-unsafe impl<Tag> Send for AvlNode<Tag> {}
-
 macro_rules! get_node_t {
     ($p: expr, $T: ty, $Tag: ty) => {{ unsafe { <T as AvlItem<$Tag>>::get_node_from_ptr($p) } }};
 }
@@ -386,13 +377,31 @@ macro_rules! get_node_p {
     }};
 }
 
+macro_rules! assert_balance {
+    ($balance: expr) => {{
+        debug_assert!((-1..=1).contains(&$balance), "balance {} out of range", $balance);
+    }};
+}
+
 pub(crate) use get_node_p;
+
+pub struct AvlNode<Tag> {
+    parent: usize,
+    children: [*mut u8; 2],
+    pub balance: i8,
+    _phan: PhantomData<fn(&Tag)>,
+}
+
+unsafe impl<Tag> Send for AvlNode<Tag> {}
+
+const DIR_MASK: usize = 0x1usize;
+const POINTER_MASK: usize = !DIR_MASK;
 
 impl<Tag> AvlNode<Tag> {
     #[inline(always)]
     pub fn detach(&mut self) {
         self.children = [null_mut(), null_mut()];
-        self.parent = null_mut();
+        self.parent = 0;
         self.balance = 0;
     }
 
@@ -423,52 +432,32 @@ impl<Tag> AvlNode<Tag> {
     #[inline(always)]
     fn set_child2<T: AvlItem<Tag>>(&mut self, dir: Dir, child: *mut u8, parent: *mut u8) {
         if !child.is_null() {
-            get_node_t!(child, T, Tag).parent = parent;
+            get_node_t!(child, T, Tag).set_parent(parent, dir);
         }
         self.set_child(dir, child);
     }
 
     #[inline(always)]
     fn get_parent(&self) -> *mut u8 {
-        self.parent
+        (self.parent & POINTER_MASK) as *mut u8
     }
 
     #[inline(always)]
-    fn _child_direction(&self, child_p: *mut u8) -> Dir {
-        // this is AvlTree::parent_direction in previous version
-        let is_right = self.children[1] == child_p;
-        #[cfg(debug_assertions)]
-        {
-            if !is_right {
-                debug_assert!(self.children[0] == child_p, "{self:?} find child {child_p:p}");
-            }
-        }
-        is_right.into()
+    fn set_parent(&mut self, parent: *mut u8, _parent_dir: Dir) {
+        self.parent = (parent as usize) | _parent_dir.to_usize();
     }
 
     #[inline(always)]
-    fn child_direction<T: AvlItem<Tag>>(parent: *mut u8, child_p: *mut u8) -> Dir {
-        // Avoid Miri stack borrowing rule:
-        // as we are holding del_node reference, don't call this with a ref again to avoid the
-        // borrow checker.
-        // Use raw pointer, as use in deletion.
-        if !parent.is_null() {
-            get_node_t!(parent, T, Tag)._child_direction(child_p)
-        } else {
-            DIR_LEFT
-        }
+    fn clear_parent(&mut self) {
+        self.parent = 0;
     }
 
+    /// When parent is null, return DIR_LEFT (according of child_direction in previous code)
+    ///
+    /// this is AvlTree::parent_direction2 in previous version
     #[inline(always)]
-    fn parent_direction<T: AvlItem<Tag>>(node: *mut u8) -> Dir {
-        // this is AvlTree::parent_direction2 in previous version
-
-        // Avoid Miri stack borrowing rule:
-        // as we are holding del_node reference, don't call this with a ref again to avoid the
-        // borrow checker.
-        // Use raw pointer, as use in deletion.
-        let parent = get_node_t!(node, T, Tag).get_parent();
-        Self::child_direction::<T>(parent, node)
+    fn parent_direction(&self) -> Dir {
+        ((self.parent & DIR_MASK) != 0).into()
     }
 
     // Swap two node but not there value
@@ -482,7 +471,7 @@ impl<Tag> Default for AvlNode<Tag> {
     fn default() -> Self {
         Self {
             children: [null_mut(), null_mut()],
-            parent: null_mut(),
+            parent: 0,
             balance: 0,
             _phan: Default::default(),
         }
@@ -492,7 +481,7 @@ impl<Tag> Default for AvlNode<Tag> {
 #[allow(unused_must_use)]
 impl<Tag> fmt::Debug for AvlNode<Tag> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "( {:p} parent: {:p} balance: {}", self, self.parent, self.balance)?;
+        write!(f, "( {:p} parent: {:p} balance: {}", self, self.get_parent(), self.balance)?;
         if !self.left().is_null() {
             write!(f, " left: {:p}", self.left())?;
         } else {
@@ -764,12 +753,13 @@ where
                 if old_balance != 0 {
                     break;
                 }
+                assert_balance!(new_balance);
                 node.balance = new_balance;
                 let parent_ptr = node.get_parent();
                 if parent_ptr.is_null() {
                     return;
                 }
-                which_child = get_node_p!(parent_ptr, P, Tag)._child_direction(data);
+                which_child = node.parent_direction();
                 data = parent_ptr;
             }
             self.rotate(data, new_balance);
@@ -808,6 +798,7 @@ where
 
     #[inline]
     fn rotate(&mut self, data: *mut u8, balance: i8) -> bool {
+        debug_assert!(!data.is_null());
         /* when balance = -2, left will be 0 */
         //let dir = if balance < 0 { DIR_LEFT } else { DIR_RIGHT };
         let dir: Dir = (balance >= 0).into();
@@ -815,6 +806,7 @@ where
         crate::trace_log!("rotate: {data:p} {node:?} balance: {balance}");
 
         let parent = node.get_parent();
+        let which_child = node.parent_direction();
         let dir_inverse = dir.reverse();
         let left_heavy = balance >> 1;
         let right_heavy = -left_heavy;
@@ -822,8 +814,6 @@ where
         let child = node.get_child(dir);
         let child_node = get_node_p!(child, P, Tag);
         let mut child_balance = child_node.balance;
-
-        let which_child = AvlNode::<Tag>::child_direction::<P::Target>(parent, data);
         crate::trace_log!("rotate: choose {child_node:?} dir {dir:?}");
 
         /*
@@ -865,6 +855,7 @@ where
             let c_right = child_node.get_child(dir_inverse);
             node.set_child2::<P::Target>(dir, c_right, data);
             // move node to be child's right child
+            assert_balance!(child_balance);
             node.balance = -child_balance;
             child_node.set_child2::<P::Target>(dir_inverse, data, child);
             // update the pointer into this subtree
@@ -873,7 +864,7 @@ where
             if !parent.is_null() {
                 get_node_p!(parent, P, Tag).set_child2::<P::Target>(which_child, child, parent);
             } else {
-                child_node.parent = null_mut();
+                child_node.clear_parent();
                 self.root = child;
             }
             return child_balance == 0;
@@ -945,7 +936,7 @@ where
         if !parent.is_null() {
             get_node_p!(parent, P, Tag).set_child2::<P::Target>(which_child, g_child, parent);
         } else {
-            g_child_node.parent = null_mut();
+            g_child_node.clear_parent();
             self.root = g_child;
         }
         true
@@ -973,7 +964,7 @@ where
          */
         let del_node = get_node_p!(del, P, Tag);
         let old_parent = del_node.get_parent();
-        let mut del_dir = AvlNode::<Tag>::child_direction::<P::Target>(old_parent, del);
+        let mut del_dir = del_node.parent_direction();
         let mut imm_parent = old_parent;
         let del_left = del_node.left();
         let del_right = del_node.right();
@@ -982,13 +973,14 @@ where
             let dir_child = (!del_right.is_null()).into();
             let imm_child = del_node.get_child(dir_child);
             crate::trace_log!("del {del_node:?} direct with dir {dir_child:?} child {imm_child:p}",);
-            if !imm_child.is_null() {
-                get_node_p!(imm_child, P, Tag).parent = imm_parent;
-            }
             if !imm_parent.is_null() {
-                get_node_p!(imm_parent, P, Tag).set_child(del_dir, imm_child);
+                get_node_p!(imm_parent, P, Tag)
+                    .set_child2::<P::Target>(del_dir, imm_child, imm_parent);
             } else {
                 self.root = imm_child;
+                if !imm_child.is_null() {
+                    get_node_p!(imm_child, P, Tag).clear_parent();
+                }
             }
         } else {
             // node has two child, to the swap
@@ -1013,8 +1005,8 @@ where
                 // if we choose right, when the node swap must have no left child
 
                 // keep the parent direction of `child`, after swap it become the parent directonly del_node.
-                let parent_dir_child = AvlNode::<Tag>::parent_direction::<P::Target>(child);
                 let child_node = get_node_p!(child, P, Tag);
+                let parent_dir_child = child_node.parent_direction();
                 imm_parent = child_node.get_parent();
                 crate::trace_log!(
                     "del {:?} swap with indirect child dir {:?} {:?} which parent_dir: {:?}",
@@ -1027,17 +1019,15 @@ where
 
                 // change the parent of delete's old child;
                 child_node.swap(del_node);
-                get_node_p!(del_left, P, Tag).parent = child;
-                get_node_p!(del_right, P, Tag).parent = child;
+                get_node_p!(del_left, P, Tag).set_parent(child, DIR_LEFT);
+                get_node_p!(del_right, P, Tag).set_parent(child, DIR_RIGHT);
 
                 // we can forget old_parent now
                 del_dir = parent_dir_child;
                 let imm_child = del_node.get_child(dir_child);
-                if !imm_child.is_null() {
-                    get_node_p!(imm_child, P, Tag).parent = imm_parent;
-                }
                 debug_assert!(!imm_parent.is_null());
-                get_node_p!(imm_parent, P, Tag).set_child(del_dir, imm_child);
+                get_node_p!(imm_parent, P, Tag)
+                    .set_child2::<P::Target>(del_dir, imm_child, imm_parent);
                 debug_assert!(del_node.get_child(dir_child_inverse).is_null());
             } else {
                 let child_node = get_node_p!(child, P, Tag);
@@ -1050,12 +1040,11 @@ where
                     child_node,
                     dir_child
                 );
-                child_node.parent = old_parent;
+                child_node.set_parent(old_parent, del_dir);
                 child_node.balance = del_node.balance;
                 let other_child = del_node.get_child(dir_child_inverse);
                 debug_assert!(!other_child.is_null());
-                child_node.set_child(dir_child_inverse, other_child);
-                get_node_p!(other_child, P, Tag).parent = child;
+                child_node.set_child2::<P::Target>(dir_child_inverse, other_child, child);
                 del_dir = dir_child;
                 imm_parent = child;
             }
@@ -1088,13 +1077,14 @@ where
             //due to a deletion.
             if old_balance == 0 {
                 crate::trace_log!("{node:?} update balance dir{which_child:?} {balance_delta}");
+                assert_balance!(balance_delta);
                 node.balance = balance_delta;
                 break;
             }
             let new_balance = old_balance + balance_delta;
 
             let parent = node.get_parent();
-            let next_which_child = AvlNode::<Tag>::child_direction::<P::Target>(parent, node_data);
+            let next_which_child = node.parent_direction();
             //If the new balance is zero, we don't need to rotate
             //else
             //need a rotation to fix the balance.
@@ -1192,23 +1182,23 @@ where
         Self::_walk_dir(p, DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
-    fn _walk_dir(mut data_ptr: NonNull<u8>, dir: Dir) -> Option<NonNull<u8>> {
+    fn _walk_dir(data_ptr: NonNull<u8>, dir: Dir) -> Option<NonNull<u8>> {
         let dir_inverse = dir.reverse();
         let node = get_node_p!(data_ptr.as_ptr(), P, Tag);
         let temp = node.get_child(dir);
         if !temp.is_null() {
             unsafe { Some(Self::bottom_child(NonNull::new_unchecked(temp), dir_inverse)) }
         } else {
-            let mut parent = node.parent;
+            let mut parent = node.get_parent();
+            let mut pdir = node.parent_direction();
             while !parent.is_null() {
-                let pdir = AvlNode::<Tag>::child_direction::<P::Target>(parent, data_ptr.as_ptr());
                 if pdir == dir_inverse {
                     return Some(unsafe { NonNull::new_unchecked(parent) });
                 }
                 // move to upper parent
-                let data_ptr_raw = parent;
-                parent = get_node_p!(parent, P, Tag).get_parent();
-                data_ptr = unsafe { NonNull::new_unchecked(data_ptr_raw) };
+                let parent_node = get_node_p!(parent, P, Tag);
+                parent = parent_node.get_parent();
+                pdir = parent_node.parent_direction();
             }
             // reach root
             debug_assert!(parent.is_null());
