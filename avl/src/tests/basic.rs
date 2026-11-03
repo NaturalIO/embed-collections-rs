@@ -351,8 +351,8 @@ where
         // test order
         for index in 0..ordered.len() {
             let node_ref = tree.get(&ordered[index]).unwrap();
-            let prev = tree.prev(&node_ref);
-            let next = tree.next(&node_ref);
+            let prev = unsafe { tree.prev(&node_ref) };
+            let next = unsafe { tree.next(&node_ref) };
             if index == 0 {
                 // first node
                 assert!(prev.is_none());

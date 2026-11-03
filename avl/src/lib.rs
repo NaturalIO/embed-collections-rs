@@ -1178,14 +1178,24 @@ where
         AvlIntoIter::<P, Tag>::new(node, DIR_RIGHT)
     }
 
+    /// Get previous node if there's any
+    ///
+    /// # Safety
+    ///
+    /// `data` must already in this AvlTree.
     #[inline]
-    pub fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
+    pub unsafe fn prev<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
         let p = unsafe { NonNull::new_unchecked(data as *const P::Target as *mut u8) };
         Self::_walk_dir(p, DIR_LEFT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
 
+    /// Get next node if there's any
+    ///
+    /// # Safety
+    ///
+    /// `data` must already in this AvlTree.
     #[inline]
-    pub fn next<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
+    pub unsafe fn next<'a>(&'a self, data: &'a P::Target) -> Option<AvlNodeRef<'a, P>> {
         let p = unsafe { NonNull::new_unchecked(data as *const P::Target as *mut u8) };
         Self::_walk_dir(p, DIR_RIGHT).map(|p| AvlNodeRef::new(p.as_ptr()))
     }
