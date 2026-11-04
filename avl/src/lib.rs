@@ -437,6 +437,17 @@ impl<Tag> AvlNode<Tag> {
         self.set_child(dir, child);
     }
 
+    // set child and both child's parent
+    //
+    // # Arguments:
+    // - `parent`: this pointer to this node (we don't know the offset here)
+    #[inline(always)]
+    fn set_child2_not_null<T: AvlItem<Tag>>(&mut self, dir: Dir, child: *mut u8, parent: *mut u8) {
+        debug_assert!(!child.is_null());
+        get_node_t!(child, T, Tag).set_parent(parent, dir);
+        self.set_child(dir, child);
+    }
+
     #[inline(always)]
     fn get_parent(&self) -> *mut u8 {
         (self.parent & POINTER_MASK) as *mut u8
@@ -730,10 +741,11 @@ where
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
     #[inline]
     pub(crate) fn _insert(&mut self, new_ptr: *mut u8, parent: *mut u8, mut which_child: Dir) {
+        debug_assert!(!new_ptr.is_null());
         if !parent.is_null() {
             let mut new_balance: i8;
             let parent_node = get_node_p!(parent, P, Tag);
-            parent_node.set_child2::<P::Target>(which_child, new_ptr, parent);
+            parent_node.set_child2_not_null::<P::Target>(which_child, new_ptr, parent);
             self.count += 1;
             /*
              * Now, back up the tree modifying the balance of all nodes above the
@@ -857,12 +869,16 @@ where
             // move node to be child's right child
             assert_balance!(child_balance);
             node.balance = -child_balance;
-            child_node.set_child2::<P::Target>(dir_inverse, data, child);
+            child_node.set_child2_not_null::<P::Target>(dir_inverse, data, child);
             // update the pointer into this subtree
 
             child_node.balance = child_balance;
             if !parent.is_null() {
-                get_node_p!(parent, P, Tag).set_child2::<P::Target>(which_child, child, parent);
+                get_node_p!(parent, P, Tag).set_child2_not_null::<P::Target>(
+                    which_child,
+                    child,
+                    parent,
+                );
             } else {
                 child_node.clear_parent();
                 self.root = child;
@@ -923,7 +939,7 @@ where
         } else {
             child_node.balance = 0;
         }
-        g_child_node.set_child2::<P::Target>(dir, child, g_child);
+        g_child_node.set_child2_not_null::<P::Target>(dir, child, g_child);
 
         if g_child_balance == left_heavy {
             node.balance = right_heavy;
@@ -931,10 +947,14 @@ where
             node.balance = 0;
         }
         g_child_node.balance = 0;
-        g_child_node.set_child2::<P::Target>(dir_inverse, data, g_child);
+        g_child_node.set_child2_not_null::<P::Target>(dir_inverse, data, g_child);
 
         if !parent.is_null() {
-            get_node_p!(parent, P, Tag).set_child2::<P::Target>(which_child, g_child, parent);
+            get_node_p!(parent, P, Tag).set_child2_not_null::<P::Target>(
+                which_child,
+                g_child,
+                parent,
+            );
         } else {
             g_child_node.clear_parent();
             self.root = g_child;
@@ -1044,7 +1064,7 @@ where
                 child_node.balance = del_node.balance;
                 let other_child = del_node.get_child(dir_child_inverse);
                 debug_assert!(!other_child.is_null());
-                child_node.set_child2::<P::Target>(dir_child_inverse, other_child, child);
+                child_node.set_child2_not_null::<P::Target>(dir_child_inverse, other_child, child);
                 del_dir = dir_child;
                 imm_parent = child;
             }
