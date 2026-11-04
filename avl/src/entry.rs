@@ -286,8 +286,9 @@ where
     pub fn remove_prev(&mut self) -> Option<P> {
         if let Some(prev) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             unsafe {
-                self.tree._remove(prev.as_ptr());
-                return Some(P::from_raw(prev.as_ptr() as *mut P::Target));
+                let p = prev.as_ptr();
+                self.tree._remove(p);
+                return Some(P::from_raw(p as *mut P::Target));
             }
         }
         None

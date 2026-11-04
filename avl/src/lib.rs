@@ -877,12 +877,6 @@ where
             // child is balance, or the same heavy
             // we do single rotation.
 
-            // move "cright" to be node's heavy child
-            let c_right = child_node.get_child(dir_inverse);
-            node.set_child2::<P::Target>(dir, c_right, data);
-            // move node to be child's right child
-            child_node.set_child2_not_null::<P::Target>(dir_inverse, data, child);
-
             /*
              **case 1**: child_balance == dir_bal
 
@@ -930,13 +924,26 @@ where
                 height unchanged, stop iteration.
             */
             let is_diff = child_balance != dir_bal;
-            if is_diff {
-                node.set_balance(dir_bal);
-                child_node.set_balance(inv_bal);
-            } else {
-                node.set_balance(0);
-                child_node.set_balance(0);
-            }
+            //if is_diff {
+            //    // child_balance == 0, dir_bal = 1, inv_bal = 2
+            //    // child_balance == 0, dir_bal == 2, inv_bal = 1
+            //    node.set_balance(dir_bal);
+            //    child_node.set_balance(inv_bal);
+            //} else {
+            //    // child_balance == 1, dir_bal = 1, inv_bal = 2
+            //    // child_balance == 2, dir_bal == 2, inv_bal = 1
+            //    //node.set_balance(0);
+            //    child_node.set_balance(0);
+            //}
+            node.set_balance(child_balance ^ dir_bal);
+            child_node.set_balance(inv_bal & (-(is_diff as i8)) as u8);
+
+            // move "cright" to be node's heavy child
+            let c_right = child_node.get_child(dir_inverse);
+            // move node to be child's right child
+            child_node.set_child2_not_null::<P::Target>(dir_inverse, data, child);
+            node.set_child2::<P::Target>(dir, c_right, data);
+
             // update the pointer into this subtree
             if !parent.is_null() {
                 get_node_p!(parent, P, Tag)
@@ -990,24 +997,23 @@ where
         let g_right = g_child_node.get_child(dir_inverse);
         let g_old_bal = g_child_node.get_balance();
 
+        let child_new_bal = if g_old_bal == inv_bal { dir_bal } else { 0 };
+        let node_new_bal = if g_old_bal == dir_bal { inv_bal } else { 0 };
+        //let node_new_bal = 0u8.wrapping_sub((g_old_bal == dir_bal) as u8) & inv_bal;
+        //let child_new_bal = 0u8.wrapping_sub((g_old_bal == inv_bal) as u8) & dir_bal;
         node.set_child2::<P::Target>(dir, g_right, data);
+        node.set_balance(node_new_bal);
         child_node.set_child2::<P::Target>(dir_inverse, g_left, child);
+        child_node.set_balance(child_new_bal);
 
         /*
          * move child to left child of gchild and
          * move node to right child of gchild and
          * fixup parent of all this to point to gchild
          */
-        g_child_node.set_child2_not_null::<P::Target>(dir, child, g_child);
         g_child_node.set_balance(0);
+        g_child_node.set_child2_not_null::<P::Target>(dir, child, g_child);
         g_child_node.set_child2_not_null::<P::Target>(dir_inverse, data, g_child);
-
-        child_node.set_balance(if g_old_bal == inv_bal { dir_bal } else { 0 });
-        node.set_balance(if g_old_bal == dir_bal { inv_bal } else { 0 });
-        //let node_new_bal = 0u8.wrapping_sub((child_old_bal == dir_bal) as u8) & inv_bal;
-        //let child_new_bal = 0u8.wrapping_sub((child_old_bal == inv_bal) as u8) & dir_bal;
-        //child_node.set_balance(child_new_bal);
-        //node.set_balance(node_new_bal);
         if !parent.is_null() {
             get_node_p!(parent, P, Tag)
                 .set_child2_not_null::<P::Target>(parent_dir, g_child, parent);
@@ -1135,48 +1141,50 @@ where
 
     /// update balance & rotate
     #[inline]
-    fn _post_remove(&mut self, parent: *mut u8, mut which_child: Dir) {
+    fn _post_remove(&mut self, mut parent: *mut u8, mut which_child: Dir) {
         debug_assert!(!parent.is_null());
         // Connect parent directly to node (leaving out delete).
         //Since the subtree is now shorter, begin adjusting parent balances
         //and performing any needed rotations.
-        let mut node_data: *mut u8 = parent;
         loop {
+            let node_data = parent;
             // Move up the tree and adjust the balance.
             // Capture the parent and which_child values for the next
             // iteration before any rotations occur.
             let node = get_node_p!(node_data, P, Tag);
             let old_balance = node.get_balance();
-            let balance_delta = which_child.reverse().to_balance();
-            //If a node was in perfect balance but isn't anymore then
-            //we can stop, since the height didn't change above this point
-            //due to a deletion.
-            if old_balance == 0 {
-                let new_balance = balance_delta;
-                crate::trace_log!("{node:?} update balance dir{which_child:?} {new_balance}");
-                node.set_balance(new_balance);
-                break;
-            }
-            let parent = node.get_parent();
-            let parent_dir = node.parent_direction::<P::Target>(node_data);
+            let which_child_inv = which_child.reverse();
+            let balance_delta = which_child_inv.to_balance();
+            parent = node.get_parent();
             if balance_delta != old_balance {
-                //If the new balance is zero, we don't need to rotate
-                crate::trace_log!("{node:?} update balance dir{which_child:?} 0");
-                node.set_balance(0);
-                if parent.is_null() {
+                if old_balance != 0 {
+                    //If the new balance is zero, we don't need to rotate
+                    crate::trace_log!("{node:?} update balance dir{which_child:?} 0");
+                    node.set_balance(0);
+                    if !parent.is_null() {
+                        which_child = node.parent_direction::<P::Target>(node_data);
+                    } else {
+                        break;
+                    }
+                } else {
+                    //If a node was in perfect balance but isn't anymore then
+                    //we can stop, since the height didn't change above this point
+                    //due to a deletion.
+                    crate::trace_log!("{node:?} update balance dir{which_child:?} {balance_delta}");
+                    node.set_balance(balance_delta);
                     break;
                 }
             } else {
+                let parent_dir = node.parent_direction::<P::Target>(node_data);
                 crate::trace_log!("_post_remove: node parent {node:?} which {:?}", which_child);
-                if self.rotate(node_data, which_child.reverse(), parent, parent_dir) {
+                if self.rotate(node_data, which_child_inv, parent, parent_dir) {
                     //If the rotation doesn't change the height
                     //of the sub-tree we have finished adjusting.
                     break;
                 }
+                which_child = parent_dir;
             }
             crate::trace_log!("move up {parent:?} for dir{which_child:?}");
-            node_data = parent;
-            which_child = parent_dir;
         }
         #[cfg(debug_assertions)]
         {
