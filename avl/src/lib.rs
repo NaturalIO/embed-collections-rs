@@ -1348,7 +1348,9 @@ where
                     }
                     if !has_child {
                         // leaf
-                        _height_map.insert(data, 1);
+                        if let Some(_old) = _height_map.insert(data, 1) {
+                            panic!("duplicate node {node:?} on level {_old}");
+                        }
                         assert_eq!(
                             node.balance, 0,
                             "leaf node {node:?} balance is not zero as leaf"
@@ -1381,7 +1383,9 @@ where
                     my_height = right_height;
                 }
             }
-            height_map.insert(data, my_height + 1);
+            if let Some(_old) = height_map.insert(data, my_height + 1) {
+                panic!("duplicate node {node:?} at level {_old}");
+            }
             assert_eq!(node.balance, balance as i8, "non-leaf node {node:?} balance wrong");
         }
         assert_eq!(visit_count, self.count);
