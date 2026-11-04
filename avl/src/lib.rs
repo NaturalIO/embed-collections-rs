@@ -877,12 +877,6 @@ where
             // child is balance, or the same heavy
             // we do single rotation.
 
-            // move "cright" to be node's heavy child
-            let c_right = child_node.get_child(dir_inverse);
-            node.set_child2::<P::Target>(dir, c_right, data);
-            // move node to be child's right child
-            child_node.set_child2_not_null::<P::Target>(dir_inverse, data, child);
-
             /*
              **case 1**: child_balance == dir_bal
 
@@ -944,6 +938,12 @@ where
             node.set_balance(child_balance ^ dir_bal);
             //child_node.set_balance();
             child_node.set_balance(inv_bal & (-(is_diff as i8)) as u8);
+
+            // move "cright" to be node's heavy child
+            let c_right = child_node.get_child(dir_inverse);
+            // move node to be child's right child
+            child_node.set_child2_not_null::<P::Target>(dir_inverse, data, child);
+            node.set_child2::<P::Target>(dir, c_right, data);
 
             // update the pointer into this subtree
             if !parent.is_null() {
