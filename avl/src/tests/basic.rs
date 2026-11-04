@@ -43,6 +43,10 @@ where
         type T<P> = <P as Pointer>::Target;
         node1.get_node().set_child2::<T<P>>(DIR_LEFT, p2, p1);
         node2.get_node().set_child2::<T<P>>(DIR_RIGHT, p3, p2);
+        node2.get_node().set_balance(DIR_RIGHT.to_balance());
+        assert_eq!(DIR_RIGHT.to_balance(), 1);
+        assert_eq!(DIR_LEFT.to_balance(), 2);
+        assert_eq!(node2.get_node().get_balance(), DIR_RIGHT.to_balance());
 
         assert_eq!(
             unsafe { IntAvlNode::get_node_from_ptr(p2) }
@@ -55,6 +59,9 @@ where
                 .parent_direction::<IntAvlNode>(node3.as_ptr() as *mut u8),
             DIR_RIGHT
         );
+        node2.get_node().clear_parent();
+        // test balance unchanged after clear_parent
+        assert_eq!(node2.get_node().get_balance(), DIR_RIGHT.to_balance());
         drop(tree);
     }
     assert_eq!(alive_count(), 0);
@@ -139,7 +146,10 @@ where
             count += 1;
         }
         assert_eq!(count, max);
+        // insert with order only trigger rotate case 1
+
         {
+            // a removal might trigger case 2
             assert_eq!(tree.get(&5).unwrap().value, 5);
             tree.remove_int(5);
             let ent = tree.entry(5).unwrap_vacant();
@@ -186,8 +196,11 @@ where
             tree.validate_tree();
             assert_eq!(tree.get(i).unwrap().value, *i);
         }
+        // insert trigger case 2
         assert_eq!(tree.len(), arr.len());
+        println!("insert done");
         for i in arr.iter() {
+            std::println!("removing {i}");
             assert!(tree.remove_int(*i));
             tree.validate_tree();
         }
