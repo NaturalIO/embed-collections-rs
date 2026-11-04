@@ -482,6 +482,18 @@ impl<Tag> AvlNode<Tag> {
     }
 
     #[inline(always)]
+    fn set_parent_with_bal(&mut self, parent: *mut u8, balance: u8, _parent_dir: Dir) {
+        #[cfg(target_pointer_width = "64")]
+        {
+            self.parent = (balance as usize) | (parent as usize) | _parent_dir.to_usize() << 2;
+        }
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            self.parent = (balance as usize) | (parent as usize);
+        }
+    }
+
+    #[inline(always)]
     fn clear_parent(&mut self) {
         self.parent &= BALANCE_MASK;
     }
