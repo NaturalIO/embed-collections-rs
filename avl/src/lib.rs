@@ -4,7 +4,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 //! An intrusive AVL tree implementation.
 //!
-//! The algorithm origin from open-zfs
+//! The algorithm take reference from open-zfs, with optimization in struct fields, removal and rotation.
 //!
 //! benchmarks: <https://github.com/NaturalIO/embed-collections-rs/wiki>
 //!

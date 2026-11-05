@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [embed-avl 0.5.0] - 2026-11-05 
+
+### Changed
+
+- avl: Remove parent type T in `AvlNode`, changed of `AvlItem` trait
+
+- avl: Change prev() / next() to unsafe
+
+- avl: store parent direction with parent pointer in 64-bit system
+
+- avl: pack balance with parent, to reduce `AvlNode` size
+
+- avl: Optimize get/insert and rotation
 
 ## [embed-dlist 0.4.2] - 2026-11-02
 

@@ -34,7 +34,7 @@ with `Pointer` trait for intrusive collections:
 Sub crates:
 - [embed-dlist](https://docs.rs/embed-dlist): Intrusive Doubly Linked List (Queue / Stack).
 - [embed-slist](https://docs.rs/embed-slist): Intrusive Singly Linked List ( Queue / stack).
-- [embed-avl](https://docs.rs/embed-avl): Intrusive AVL Tree (Balanced Binary Search Tree), port to rust from ZFS
+- [embed-avl](https://docs.rs/embed-avl): Intrusive AVL Tree (Balanced Binary Search Tree).
 
 **Disclaimer**
 
