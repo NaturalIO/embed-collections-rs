@@ -649,18 +649,19 @@ where
             unsafe {
                 loop {
                     // match is actually better optimized than if-else or table mapping
-                    let dir = match node.as_ref().cmp(&*(parent as *const P::Target)) {
-                        Ordering::Greater => DIR_RIGHT,
-                        Ordering::Less => DIR_LEFT,
-                        Ordering::Equal => return Err(node),
-                    };
-                    let child = get_node_p!(parent, P, Tag).get_child(dir);
-                    if !child.is_null() {
-                        parent = child;
+                    let r = node.as_ref().cmp(&*(parent as *const P::Target));
+                    if r != Ordering::Equal {
+                        let dir = (r == Ordering::Greater).into();
+                        let child = get_node_p!(parent, P, Tag).get_child(dir);
+                        if !child.is_null() {
+                            parent = child;
+                        } else {
+                            self._insert(node.into_raw() as *mut u8, parent, dir);
+                            return Ok(());
+                        }
                     } else {
-                        self._insert(node.into_raw() as *mut u8, parent, dir);
-                        return Ok(());
-                    }
+                        return Err(node);
+                    };
                 }
             }
         } else {
@@ -802,11 +803,12 @@ where
                 if old_balance == 0 {
                     node.set_balance(which_heavy);
                     let parent_ptr = node.get_parent();
-                    if parent_ptr.is_null() {
+                    if !parent_ptr.is_null() {
+                        which_child = node.parent_direction::<P::Target>(data);
+                        data = parent_ptr;
+                    } else {
                         return;
                     }
-                    which_child = node.parent_direction::<P::Target>(data);
-                    data = parent_ptr;
                 } else if old_balance != which_heavy {
                     debug_assert!(old_balance != 0);
                     node.set_balance(0);
