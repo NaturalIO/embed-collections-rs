@@ -719,15 +719,14 @@ where
             let mut parent = self.root;
             loop {
                 // match is actually better optimized than if-else or table mapping
-                let dir = match cmp_f(&key, unsafe { &*(parent as *const P::Target) }) {
-                    Ordering::Greater => DIR_RIGHT,
-                    Ordering::Less => DIR_LEFT,
-                    Ordering::Equal => {
-                        return Entry::Occupied(OccupiedEntry {
-                            node: unsafe { NonNull::new_unchecked(parent) },
-                            tree: self,
-                        });
-                    }
+                let r = cmp_f(&key, unsafe { &*(parent as *const P::Target) });
+                let dir = if r != Ordering::Equal {
+                    (r == Ordering::Greater).into()
+                } else {
+                    return Entry::Occupied(OccupiedEntry {
+                        node: unsafe { NonNull::new_unchecked(parent) },
+                        tree: self,
+                    });
                 };
                 let child = get_node_p!(parent, P, Tag).get_child(dir);
                 if !child.is_null() {
@@ -763,10 +762,11 @@ where
             let mut node = self.root;
             loop {
                 // match is actually better optimized than if-else or table mapping
-                let dir = match cmp_f(unsafe { &*(node as *const P::Target) }) {
-                    Ordering::Greater => DIR_RIGHT,
-                    Ordering::Less => DIR_LEFT,
-                    Ordering::Equal => return Some(AvlNodeRef::new(node)),
+                let r = cmp_f(unsafe { &*(node as *const P::Target) });
+                let dir = if r != Ordering::Equal {
+                    (r == Ordering::Greater).into()
+                } else {
+                    return Some(AvlNodeRef::new(node));
                 };
                 let child = get_node_p!(node, P, Tag).get_child(dir);
                 if !child.is_null() {
