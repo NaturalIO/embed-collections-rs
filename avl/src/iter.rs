@@ -90,7 +90,7 @@ where
 /// # Example
 ///
 /// ```rust
-/// use embed_avl::{AvlTree, AvlItem, AvlNode, impl_ord_with_borrow};
+/// use embed_avl::{AvlTree, AvlItem, AvlNode, impl_ord_with_borrow_unique};
 /// use core::cell::UnsafeCell;
 /// use core::cmp::Ordering;
 /// use core::borrow::Borrow;
@@ -115,7 +115,7 @@ where
 ///         unsafe { &mut *self.avl_node.get() }
 ///     }
 /// }
-/// impl_ord_with_borrow!(MyNode, i32);
+/// impl_ord_with_borrow_unique!(MyNode, i32);
 ///
 /// let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
 ///

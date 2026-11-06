@@ -14,17 +14,17 @@
 //!
 //! Refer to the example of [AvlItem] document.
 //!
-//! **Duplicated value or unique value**
+//! ## Duplicated value or unique value
 //!
 //! Whether or not a tree support duplicated value, depends on the `Ord` implementation.
 //! You decide whether or not taking the node address into comparison.
 //!
 //! Summary of behavior differences:
 //!
-//! - Ord:
-//!    - Use macro [impl_ord_with_borrow] To restrict unique value in a tree,
-//! - [add()](AvlTree::add) will return `Err()` when Ord return cmp::Ordering::Equal, ensuring a
-//!     unique tree.
+//! - [add()](AvlTree::add) will return `Err()` when Ord return cmp::Ordering::Equal, ensuring a unique tree.
+//!   - Use macro [impl_ord_with_borrow_unique] To restrict unique value in a tree,
+//!   - Use macro [impl_ord_with_borrow_and_addr] to allow duplicate value in a tree
+//!     - which implement `Ord` for `P::Target` to compare the address when value is equal.
 //! - [remove()](AvlTree::remove), will remove node by reference, regardless whether there's same
 //!   value.
 //! - [remove_by_key()](AvlTree::remove_by_key), will match any value equals to key, but execute only once.
@@ -52,7 +52,7 @@
 //! ## Using `Box` to search and remove by key
 //!
 //! ```rust
-//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow_unique};
 //! use core::cell::UnsafeCell;
 //! use core::borrow::Borrow;
 //! extern crate format_attr;
@@ -76,23 +76,22 @@
 //!     }
 //! }
 //!
-//! impl_ord_with_borrow!(MyNode, i32);
+//! impl_ord_with_borrow_unique!(MyNode, i32);
 //!
 //! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
-//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) })).expect("add ok");
+//! tree.add(Box::new(MyNode { value: 10, avl_node: UnsafeCell::new(Default::default()) })).expect("adding");
 //!
 //! // Search and remove
 //! if let Some(node) = tree.remove_by_key::<i32>(&10i32) {
 //!     assert_eq!(node.value, 10);
 //! }
 //! assert!(tree.is_empty());
-//!
 //! ```
 //!
-//! ## Using `Arc` to search and remove by node
+//! ## using `Arc` on a tree with duplicated value
 //!
 //! ```rust
-//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow_and_addr};
 //! use core::cell::UnsafeCell;
 //! use core::borrow::Borrow;
 //! extern crate format_attr;
@@ -118,31 +117,28 @@
 //!     }
 //! }
 //!
-//! impl_ord_with_borrow!(MyNode, i32);
-//!
-//! // Using `Arc` for multiple ownership
-//! // remove_ref only available to `Arc` and `Rc`
+//! impl_ord_with_borrow_and_addr!(MyNode, i32);
 //!
 //! let mut tree = AvlTree::<Arc<MyNode>, ()>::new();
 //! let node = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
 //!
-//! // Alternative way of insert
-//! if let Entry::Vacant(ent) = tree.entry(node.value) {
-//!     ent.insert_node(node.clone());
-//! } else {
-//!     unreachable!();
-//! }
-//! assert_eq!(tree.len(), 1);
+//! tree.add(node.clone()).expect("adding");
+//!
+//! let node_dupl = Arc::new(MyNode { value: 42, avl_node: UnsafeCell::new(Default::default()) });
+//! tree.add(node_dupl.clone()).expect("adding");
+//! assert_eq!(tree.len(), 2);
 //!
 //! // Remove by reference (detach from avl tree)
 //! tree.remove(&node);
+//! assert_eq!(tree.len(), 1);
+//! tree.remove(&node_dupl);
 //! assert_eq!(tree.len(), 0);
 //! ```
 //!
 //! ## Efficient bulk insertion
 //!
 //! ```rust
-//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry, impl_ord_with_borrow};
+//! use embed_avl::{AvlTree, AvlItem, AvlNode, Entry};
 //! use core::cell::UnsafeCell;
 //! use core::borrow::Borrow;
 //! extern crate format_attr;
@@ -166,21 +162,28 @@
 //!     }
 //! }
 //!
-//! impl_ord_with_borrow!(MyNode, i32);
-//!
 //! let mut tree = AvlTree::<Box<MyNode>, ()>::new();
 //! let mut ent = tree.last_entry();
+//!
+//! // For bulk insertion, we don't need the Ord.
+//! // produce a tree with duplicated value.
 //! for i in 0..100 {
 //!     ent = unsafe{ent.append_unchecked(
 //!         Box::new(MyNode { value: i, avl_node: UnsafeCell::new(Default::default()) })
 //!     )};
+//!     ent = unsafe{ent.append_unchecked(
+//!         Box::new(MyNode { value: i, avl_node: UnsafeCell::new(Default::default()) })
+//!     )};
 //! }
+//! tree.validate_with(|this, other|{
+//!     this.value.cmp(&other.value)
+//! });
 //!
 //! // Search
 //! if let Some(node) = tree.get::<i32>(&10) {
 //!     assert_eq!(node.value, 10);
 //! }
-//! assert_eq!(tree.len(), 100);
+//! assert_eq!(tree.len(), 200);
 //!
 //! ```
 
@@ -222,7 +225,7 @@ use pointers::{CloneablePointer, Pointer};
 /// # Example (struct field as key)
 ///
 /// ```
-/// use embed_avl::{AvlItem, AvlNode, impl_ord_with_borrow};
+/// use embed_avl::{AvlItem, AvlNode, impl_ord_with_borrow_unique};
 /// extern crate format_attr;
 /// use core::borrow::Borrow;
 /// use core::cell::UnsafeCell;
@@ -246,7 +249,7 @@ use pointers::{CloneablePointer, Pointer};
 ///     }
 /// }
 ///
-/// impl_ord_with_borrow!(IntAvlNode, i64);
+/// impl_ord_with_borrow_unique!(IntAvlNode, i64);
 /// ```
 ///
 /// # Example (impl Ord for struct)
@@ -318,14 +321,16 @@ pub unsafe trait AvlItem<Tag>: Sized {
 /// - cls: struct name
 /// - key_type: `cls: Borrow<$key_type>`
 #[macro_export]
-macro_rules! impl_ord_with_borrow {
+macro_rules! impl_ord_with_borrow_unique {
     ($cls: ty, $key_type: ty) => {
         impl PartialOrd for $cls {
+            #[inline]
             fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
                 Some(Ord::cmp(self, other))
             }
         }
         impl PartialEq for $cls {
+            #[inline]
             fn eq(&self, other: &Self) -> bool {
                 Borrow::<$key_type>::borrow(self) == Borrow::<$key_type>::borrow(other)
             }
@@ -333,8 +338,47 @@ macro_rules! impl_ord_with_borrow {
         impl Eq for $cls {}
 
         impl Ord for $cls {
+            #[inline]
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 Borrow::<$key_type>::borrow(self).cmp(Borrow::<$key_type>::borrow(other))
+            }
+        }
+    };
+}
+
+/// Implement Ord with `Borrow<K>`
+///
+/// # Arguments
+/// - cls: struct name
+/// - key_type: `cls: Borrow<$key_type>`
+#[macro_export]
+macro_rules! impl_ord_with_borrow_and_addr {
+    ($cls: ty, $key_type: ty) => {
+        impl PartialOrd for $cls {
+            #[inline]
+            fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+                Some(Ord::cmp(self, other))
+            }
+        }
+        impl PartialEq for $cls {
+            #[inline]
+            fn eq(&self, other: &Self) -> bool {
+                core::ptr::eq(self, other)
+            }
+        }
+        impl Eq for $cls {}
+
+        impl Ord for $cls {
+            #[inline]
+            fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+                let r = Borrow::<$key_type>::borrow(self).cmp(Borrow::<$key_type>::borrow(other));
+                if r != core::cmp::Ordering::Equal {
+                    r
+                } else {
+                    let this_addr = self as *const $cls as usize;
+                    let other_addr = other as *const $cls as usize;
+                    this_addr.cmp(&other_addr)
+                }
             }
         }
     };
