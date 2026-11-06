@@ -271,12 +271,20 @@ where
         unsafe { CloneablePointer::from_raw_and_clone(self.node.as_ptr() as *const P::Target) }
     }
 
+    #[inline(always)]
+    fn _remove(&mut self, del: *mut u8) {
+        let del_node = get_node_p!(del, P, Tag);
+        let old_parent = del_node.get_parent();
+        let del_dir = del_node.parent_direction::<P::Target>(del);
+        unsafe { self.tree._remove(del_node, old_parent, del_dir) };
+    }
+
     /// Remove the node from the tree
     #[inline]
-    pub fn remove(self) -> P {
+    pub fn remove(mut self) -> P {
         let p = self.node.as_ptr();
         unsafe {
-            self.tree._remove(p);
+            self._remove(p);
             P::from_raw(p as *mut P::Target)
         }
     }
@@ -287,7 +295,7 @@ where
         if let Some(prev) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_LEFT) {
             unsafe {
                 let p = prev.as_ptr();
-                self.tree._remove(p);
+                self._remove(p);
                 return Some(P::from_raw(p as *mut P::Target));
             }
         }
@@ -299,8 +307,9 @@ where
     pub fn remove_next(&mut self) -> Option<P> {
         if let Some(next) = AvlTree::<P, Tag>::_walk_dir(self.node, DIR_RIGHT) {
             unsafe {
-                self.tree._remove(next.as_ptr());
-                return Some(P::from_raw(next.as_ptr() as *mut P::Target));
+                let p = next.as_ptr();
+                self._remove(p);
+                return Some(P::from_raw(p as *mut P::Target));
             }
         }
         None

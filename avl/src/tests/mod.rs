@@ -1,5 +1,6 @@
 mod basic;
 mod iter;
+mod mutable;
 //mod range_tree;
 pub use embed_collections_test::*;
 
