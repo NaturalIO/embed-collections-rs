@@ -53,7 +53,7 @@ type IntAvlTreeArc = AvlTree<Arc<IntAvlNode>, ()>;
 
 fn bench_bulk_insert_box(c: &mut Criterion) {
     for &size in &SIZES {
-        let data = TestData::new_random(size);
+        let data = TestData::new_sequential(size);
         let desc = size_desc(size);
 
         let mut group = c.benchmark_group("insert_bulk_box");
@@ -73,7 +73,7 @@ fn bench_bulk_insert_box(c: &mut Criterion) {
 
 fn bench_bulk_insert_arc(c: &mut Criterion) {
     for &size in &SIZES {
-        let data = TestData::new_random(size);
+        let data = TestData::new_sequential(size);
         let desc = size_desc(size);
 
         let mut group = c.benchmark_group("insert_bulk_arc");
