@@ -14,6 +14,24 @@
 //!
 //! Refer to the example of [AvlItem] document.
 //!
+//! **Duplicated value or unique value**
+//!
+//! Whether or not a tree support duplicated value, depends on the `Ord` implementation.
+//! You decide whether or not taking the node address into comparison.
+//!
+//! Summary of behavior differences:
+//!
+//! - Ord:
+//!    - Use macro [impl_ord_with_borrow] To restrict unique value in a tree,
+//! - [add()](AvlTree::add) will return `Err()` when Ord return cmp::Ordering::Equal, ensuring a
+//!     unique tree.
+//! - [remove()](AvlTree::remove), will remove node by reference, regardless whether there's same
+//!   value.
+//! - [remove_by_key()](AvlTree::remove_by_key), will match any value equals to key, but execute only once.
+//! - [get()](AvlTree::get), [get_with](AvlTree::get_with) will find the first node with value match the key
+//! - [entry()](AvlTree::entry), [entry_with](AvlTree::entry_with) will find the first node with value match
+//!   the key
+//!
 //! ## Internal mutability of value
 //!
 //! When it's possible one or multiple nodes value changed after inserted, making the tree out of order.
@@ -28,9 +46,6 @@
 //! - [OccupiedEntry::insert_prev_unchecked], [OccupiedEntry::insert_next_unchecked]  ( does not change current `OccupiedEntry`)
 //! - [OccupiedEntry::insert_move_prev_unchecked], OccupiedEntry::insert_move_next_unchecked] (return the newlly inserted OccupiedEntry, reduce additional seek cost)
 //! - [OccupiedEntry::remove_prev] , [OccupiedEntry::remove_next] (does not change current `OccupiedEntry`)
-//!
-//!
-//! Refer to the example of [AvlItem] document.
 //!
 //! # Examples
 //!
@@ -643,6 +658,8 @@ where
     }
 
     /// Adds a new node to the tree, requires P::Target has `Ord`.
+    /// It may allow duplicated values,
+    /// as long is your `Ord` implementation takes the address of P into comparison.
     ///
     /// (If you want more freedom of Ordering, see also [Self::entry_with])
     ///
