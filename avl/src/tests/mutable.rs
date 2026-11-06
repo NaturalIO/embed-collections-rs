@@ -2,16 +2,17 @@ use super::super::*;
 use super::*;
 use captains_log::logfn;
 use core::cell::UnsafeCell;
+use fastrand::Rng;
 use rstest::*;
-use std::println;
-
 use std::cmp::Ordering as CmpOrdering;
+use std::println;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 #[derive(format_attr::DebugAttr)]
 #[fmt("MutNode {id} {} {:?}", self.value.load(Relaxed), self.get_node())]
-#[repr(C)]
+// using repr c makes the AvlNode the same with &P
+//#[repr(C)]
 pub struct MutNode {
     pub node: UnsafeCell<AvlNode<()>>,
     pub id: usize,
@@ -77,7 +78,7 @@ impl Ord for MutNode {
 
 #[logfn]
 #[rstest]
-fn int_avl_tree_remove_add_fixed5() {
+fn int_avl_tree_remove_add_non_root() {
     reset_alive_count();
     let _new_node = MutNode::new;
     {
@@ -113,6 +114,130 @@ fn int_avl_tree_remove_add_fixed5() {
         tree.dump(|_node: &MutNode, _level: usize| {
             println!("[l{_level}] {:?}", _node);
         });
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+fn int_avl_tree_remove_add_root() {
+    reset_alive_count();
+    let _new_node = MutNode::new;
+    {
+        let mut tree = AvlTree::<Arc<MutNode>, ()>::new();
+        let node1 = _new_node(1, 262142);
+        tree.add(node1.clone()).expect("add");
+        let node0 = _new_node(0, 262137);
+        tree.add(node0.clone()).expect("add");
+        let node2 = _new_node(2, 262142);
+        tree.add(node2.clone()).expect("add");
+        let node3 = _new_node(3, 262136);
+        tree.add(node3.clone()).expect("add");
+        tree.validate();
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        println!("removing");
+        tree.remove(&node1);
+        tree.remove(&node2);
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        tree.validate();
+        assert_eq!(tree.len(), 2);
+        tree.add(node1).expect("add");
+        tree.add(node2).expect("add");
+        tree.validate();
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+fn int_avl_tree_remove_add_duplicated_key() {
+    reset_alive_count();
+    let _new_node = MutNode::new;
+    {
+        let mut tree = AvlTree::<Arc<MutNode>, ()>::new();
+        let node0 = _new_node(0, 26);
+        tree.add(node0.clone()).expect("add");
+        let node1 = _new_node(1, 26);
+        tree.add(node1.clone()).expect("add");
+        let node2 = _new_node(2, 36);
+        tree.add(node2.clone()).expect("add");
+        let node3 = _new_node(3, 36);
+        tree.add(node3.clone()).expect("add");
+        tree.validate();
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        println!("removing");
+        tree.remove(&node1);
+        tree.remove(&node2);
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        tree.validate();
+        assert_eq!(tree.len(), 2);
+        tree.add(node1).expect("add");
+        tree.add(node2).expect("add");
+        tree.validate();
+        println!("---");
+        tree.dump(|_node: &MutNode, _level: usize| {
+            println!("[l{_level}] {:?}", _node);
+        });
+        drop(tree);
+    }
+    assert_eq!(alive_count(), 0);
+}
+
+#[logfn]
+#[rstest]
+fn int_avl_tree_remove_ref_random() {
+    let count = {
+        #[cfg(miri)]
+        {
+            1000
+        }
+        #[cfg(not(miri))]
+        {
+            100000
+        }
+    };
+    reset_alive_count();
+    let _new_node = MutNode::new;
+    {
+        let mut rng = Rng::new();
+        let mut nodes = Vec::with_capacity(count);
+        let mut tree = AvlTree::<Arc<MutNode>, ()>::new();
+        for i in 0..count {
+            let value: usize = rng.usize(..);
+            let node = _new_node(i, value);
+            nodes.push(node.clone());
+            tree.add(node).expect("adding");
+        }
+        tree.validate();
+        assert_eq!(tree.len(), count);
+        //        println!("---");
+        //        tree.dump(|_node: &MutNode, _level: usize| {
+        //            println!("[l{_level}] {:?}", _node);
+        //        });
+        println!("removing");
+        for node in nodes {
+            tree.remove(&node);
+        }
+        tree.validate();
+        assert_eq!(tree.len(), 0);
         drop(tree);
     }
     assert_eq!(alive_count(), 0);
