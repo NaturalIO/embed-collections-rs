@@ -15,7 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [embed-avl 0.5.0] - 2026-11-05 
+## [embed-avl 0.6.0] - 2026-11-06
+
+### Fixed
+
+- avl: Fix remove() when tree is out of order.
+  we should not looking up the nodes again by cmp function.
+  Add notice in doc that all the changed nodes should be removed.
+
+### Added
+
+- avl: Add macro `impl_ord_with_borrow_and_addr`, add doc section for unique/dupliate value
+
+### Changed
+
+- avl: Rename macro `impl_ord_with_borrow` to `impl_ord_with_borrow_unique`
+
+## [embed-avl 0.5.0] - 2026-11-05
 
 ### Changed
 
