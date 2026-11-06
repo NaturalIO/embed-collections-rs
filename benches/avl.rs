@@ -38,6 +38,7 @@ impl Borrow<u32> for IntAvlNode {
         &self.value
     }
 }
+
 impl_ord_with_borrow!(IntAvlNode, u32);
 
 fn new_intnode_box(i: u32) -> Box<IntAvlNode> {
@@ -102,6 +103,9 @@ fn bench_insert_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
+                    // random is possible duplicate,
+                    // add does not allow duplicate value,
+                    // leading to key not added into tree, so we are not asserting success.
                     let _ = black_box(tree.add(new_intnode_box(data.keys[i])));
                 }
             });
@@ -121,6 +125,9 @@ fn bench_insert_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
+                    // random is possible duplicate,
+                    // add does not allow duplicate value,
+                    // leading to key not added into tree, so we are not asserting success.
                     let _ = black_box(tree.add(new_intnode_arc(data.keys[i])));
                 }
             });
@@ -174,6 +181,9 @@ fn bench_get_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
+            // random is possible duplicate,
+            // add does not allow duplicate value,
+            // leading to key not added into tree. so this test contain some posibility of duplicated get.
             let _ = tree.add(new_intnode_box(data.keys[i]));
         }
 
@@ -197,6 +207,9 @@ fn bench_get_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
+            // random is possible duplicate,
+            // add does not allow duplicate value,
+            // leading to key not added into tree. so this test contain some posibility of duplicated get.
             let _ = tree.add(new_intnode_arc(data.keys[i]));
         }
 
@@ -342,6 +355,9 @@ fn bench_remove_rand_by_key(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
+                        // it's possible duplicate,
+                        // add does not allow duplicate value,
+                        // leading to key not added into tree, but it's ok for remove_by_key.
                         let _ = tree.add(new_intnode_box(data.keys[i]));
                     }
                     tree
@@ -372,7 +388,7 @@ fn bench_remove_rand_arc(c: &mut Criterion) {
                     let mut tree = IntAvlTreeArc::new();
                     for i in 0..size {
                         let node = new_intnode_arc(data.keys[i]);
-                        let _ = tree.add(node.clone());
+                        tree.add(node.clone()).expect("add");
                         nodes.push(node);
                     }
                     (tree, nodes)
