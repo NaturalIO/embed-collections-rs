@@ -303,11 +303,11 @@ fn bench_iter_arc(c: &mut Criterion) {
     }
 }
 
-fn bench_remove_seq_box(c: &mut Criterion) {
+fn bench_remove_seq_by_key(c: &mut Criterion) {
     for &size in &SIZES {
         let desc = size_desc(size);
         // the speed of remove in ordering is stable to compare because the dataset is fixed
-        let mut group = c.benchmark_group("remove_seq_box");
+        let mut group = c.benchmark_group("remove_seq_by_key_box");
         group.throughput(Throughput::Elements(size as u64));
         group.bench_function(format!("{}", desc), |b| {
             b.iter_batched(
@@ -330,12 +330,12 @@ fn bench_remove_seq_box(c: &mut Criterion) {
     }
 }
 
-fn bench_remove_rand_box(c: &mut Criterion) {
+fn bench_remove_rand_by_key(c: &mut Criterion) {
     for &size in &SIZES {
         let data = TestData::new_random(size);
         let desc = size_desc(size);
 
-        let mut group = c.benchmark_group("remove_rand_box");
+        let mut group = c.benchmark_group("remove_rand_by_key_box");
         group.throughput(Throughput::Elements(size as u64));
         group.bench_function(format!("{}", desc), |b| {
             b.iter_batched(
@@ -368,15 +368,18 @@ fn bench_remove_rand_arc(c: &mut Criterion) {
         group.bench_function(format!("{}", desc), |b| {
             b.iter_batched(
                 || {
+                    let mut nodes = Vec::with_capacity(size);
                     let mut tree = IntAvlTreeArc::new();
                     for i in 0..size {
-                        let _ = tree.add(new_intnode_arc(data.keys[i]));
+                        let node = new_intnode_arc(data.keys[i]);
+                        let _ = tree.add(node.clone());
+                        nodes.push(node);
                     }
-                    tree
+                    (tree, nodes)
                 },
-                |mut tree: IntAvlTreeArc| {
-                    for i in 0..size {
-                        black_box(tree.remove_by_key(&data.keys[i]));
+                |(mut tree, nodes)| {
+                    for node in nodes {
+                        black_box(tree.remove(&node));
                     }
                 },
                 criterion::BatchSize::LargeInput,
@@ -458,8 +461,8 @@ criterion_group!(
     bench_get_sequential_arc,
     bench_iter_box,
     bench_iter_arc,
-    bench_remove_seq_box,
-    bench_remove_rand_box,
+    bench_remove_seq_by_key,
+    bench_remove_rand_by_key,
     bench_remove_rand_arc,
     bench_into_iter_box,
     bench_drop_box
