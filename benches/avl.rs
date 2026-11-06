@@ -4,7 +4,7 @@ mod btree_common;
 
 use core::cell::UnsafeCell;
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use embed_avl::{AvlItem, AvlNode, AvlTree, impl_ord_with_borrow};
+use embed_avl::{AvlItem, AvlNode, AvlTree, impl_ord_with_borrow_and_addr};
 use std::borrow::Borrow;
 use std::fmt;
 use std::sync::Arc;
@@ -38,7 +38,8 @@ impl Borrow<u32> for IntAvlNode {
         &self.value
     }
 }
-impl_ord_with_borrow!(IntAvlNode, u32);
+
+impl_ord_with_borrow_and_addr!(IntAvlNode, u32);
 
 fn new_intnode_box(i: u32) -> Box<IntAvlNode> {
     Box::new(IntAvlNode { value: i, ..Default::default() })
@@ -102,7 +103,7 @@ fn bench_insert_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    let _ = black_box(tree.add(new_intnode_box(data.keys[i])));
+                    black_box(tree.add(new_intnode_box(data.keys[i]))).expect("add");
                 }
             });
         });
@@ -121,7 +122,10 @@ fn bench_insert_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    let _ = black_box(tree.add(new_intnode_arc(data.keys[i])));
+                    // random is possible duplicate,
+                    // add does not allow duplicate value,
+                    // leading to key not added into tree, so we are not asserting success.
+                    black_box(tree.add(new_intnode_arc(data.keys[i]))).expect("add");
                 }
             });
         });
@@ -140,7 +144,7 @@ fn bench_insert_sequential_box(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeBox::new();
                 for i in 0..size {
-                    let _ = black_box(tree.add(new_intnode_box(data.keys[i])));
+                    black_box(tree.add(new_intnode_box(data.keys[i]))).expect("add");
                 }
             });
         });
@@ -159,7 +163,7 @@ fn bench_insert_sequential_arc(c: &mut Criterion) {
             b.iter(|| {
                 let mut tree = IntAvlTreeArc::new();
                 for i in 0..size {
-                    let _ = black_box(tree.add(new_intnode_arc(data.keys[i])));
+                    black_box(tree.add(new_intnode_arc(data.keys[i]))).expect("add");
                 }
             });
         });
@@ -174,7 +178,7 @@ fn bench_get_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
-            let _ = tree.add(new_intnode_box(data.keys[i]));
+            tree.add(new_intnode_box(data.keys[i])).expect("add");
         }
 
         let mut group = c.benchmark_group("get_rand_box");
@@ -197,7 +201,7 @@ fn bench_get_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            let _ = tree.add(new_intnode_arc(data.keys[i]));
+            tree.add(new_intnode_arc(data.keys[i])).expect("add");
         }
 
         let mut group = c.benchmark_group("get_rand_arc");
@@ -243,7 +247,7 @@ fn bench_get_sequential_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            let _ = tree.add(new_intnode_arc(data.keys[i]));
+            tree.add(new_intnode_arc(data.keys[i])).expect("add");
         }
 
         let mut group = c.benchmark_group("get_seq_arc");
@@ -266,7 +270,7 @@ fn bench_iter_box(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeBox::new();
         for i in 0..size {
-            let _ = tree.add(new_intnode_box(data.keys[i]));
+            tree.add(new_intnode_box(data.keys[i])).expect("add");
         }
 
         let mut group = c.benchmark_group("iter_box");
@@ -288,7 +292,7 @@ fn bench_iter_arc(c: &mut Criterion) {
 
         let mut tree = IntAvlTreeArc::new();
         for i in 0..size {
-            let _ = tree.add(new_intnode_arc(data.keys[i]));
+            tree.add(new_intnode_arc(data.keys[i])).expect("add");
         }
 
         let mut group = c.benchmark_group("iter_arc");
@@ -314,7 +318,7 @@ fn bench_remove_seq_by_key(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
-                        let _ = tree.add(new_intnode_box(i as u32));
+                        tree.add(new_intnode_box(i as u32)).expect("add");
                     }
                     tree
                 },
@@ -342,7 +346,10 @@ fn bench_remove_rand_by_key(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
-                        let _ = tree.add(new_intnode_box(data.keys[i]));
+                        // it's possible duplicate,
+                        // add does not allow duplicate value,
+                        // leading to key not added into tree, but it's ok for remove_by_key.
+                        tree.add(new_intnode_box(data.keys[i])).expect("add");
                     }
                     tree
                 },
@@ -372,7 +379,7 @@ fn bench_remove_rand_arc(c: &mut Criterion) {
                     let mut tree = IntAvlTreeArc::new();
                     for i in 0..size {
                         let node = new_intnode_arc(data.keys[i]);
-                        let _ = tree.add(node.clone());
+                        tree.add(node.clone()).expect("add");
                         nodes.push(node);
                     }
                     (tree, nodes)
@@ -407,7 +414,7 @@ fn bench_into_iter_box(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
-                        let _ = tree.add(new_intnode_box(data.keys[i]));
+                        tree.add(new_intnode_box(data.keys[i])).expect("add");
                     }
                     tree
                 },
@@ -433,7 +440,7 @@ fn bench_drop_box(c: &mut Criterion) {
                 || {
                     let mut tree = IntAvlTreeBox::new();
                     for i in 0..size {
-                        let _ = tree.add(new_intnode_box(data.keys[i]));
+                        tree.add(new_intnode_box(data.keys[i])).expect("add");
                     }
                     tree
                 },
