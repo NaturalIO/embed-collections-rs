@@ -42,7 +42,7 @@ unsafe impl AvlItem<()> for IntAvlNode {
     }
 }
 
-impl_ord_with_borrow!(IntAvlNode, i64);
+impl_ord_with_borrow_unique!(IntAvlNode, i64);
 
 #[derive(Debug)]
 pub struct IntAvlTree<P: Pointer<Target = IntAvlNode>>(AvlTree<P, ()>);
