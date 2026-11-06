@@ -1397,7 +1397,7 @@ where
         self.validate_with(P::Target::cmp)
     }
 
-    fn validate_with<F>(&self, cmp_f: F)
+    pub fn validate_with<F>(&self, cmp_f: F)
     where
         F: Fn(&P::Target, &P::Target) -> Ordering,
     {
