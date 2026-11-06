@@ -687,15 +687,35 @@ where
         }
     }
 
-    /// remove a node from the tree (useful if P is multiple ownership)
+    /// remove a node from the tree directly (if P is multiple ownership)
+    ///
+    /// # Safety
+    ///
+    /// This function check `node` must already in this AVL tree, otherwise it will panic.
+    ///
+    /// When it's possible one or multiple nodes value changed, making the tree out of order,
+    /// the only valid operation is removing all of the changed nodes, before any further insertion.
     #[inline]
-    pub fn remove(&mut self, node: &P)
+    pub fn remove(&mut self, node: &P::Target)
     where
         P::Target: Ord,
     {
-        let _cmp = |_cur: &&P::Target, node: &P::Target| -> Ordering { _cur.cmp(&node.borrow()) };
-        if let Entry::Occupied(ent) = self.entry_with::<&P::Target, _>(node.as_ref(), _cmp) {
-            ent.remove();
+        unsafe {
+            let this_p: *mut u8 = (node as *const P::Target) as *mut u8;
+            // Safety:
+            // Miri won't let us destroy *const P::Target as long is &P::Target is valid,
+            // we get the pointer from parent node.
+            let del_node = get_node_p!(this_p, P, Tag);
+            let old_parent = del_node.get_parent();
+            let del_dir = del_node.parent_direction::<P::Target>(this_p);
+            let del_p = if !old_parent.is_null() {
+                get_node_p!(old_parent, P, Tag).get_child(del_dir)
+            } else {
+                self.root
+            };
+            assert_eq!(del_p, this_p, "delete a node not in the tree {:p}", node);
+            self._remove(del_node, old_parent, del_dir);
+            let _ = P::from_raw(del_p as *const P::Target);
         }
     }
 
@@ -1027,16 +1047,13 @@ where
         }
     }
 
-    /// Requires `del` to be a valid pointer to a node in this tree.
-    ///
     /// # Safety
     ///
     /// It does not drop the node data, only unlinks it.
     /// Caller is responsible for re-taking ownership (e.g. via from_raw) and dropping if needed.
-    ///
-    /// For Arc/Rc, use [Self::remove_ref()] instead.
-    ///
-    pub(crate) unsafe fn _remove(&mut self, del: *mut u8) {
+    pub(crate) unsafe fn _remove(
+        &mut self, del_node: &mut AvlNode<Tag>, old_parent: *mut u8, mut del_dir: Dir,
+    ) {
         /*
          * Deletion is easiest with a node that has at most 1 child.
          * We swap a node with 2 children with a sequentially valued
@@ -1047,9 +1064,7 @@ where
          * is right heavy, otherwise the left neighbor. This reduces the
          * number of rotations needed.
          */
-        let del_node = get_node_p!(del, P, Tag);
-        let old_parent = del_node.get_parent();
-        let mut del_dir = del_node.parent_direction::<P::Target>(del);
+
         let mut imm_parent = old_parent;
         let del_left = del_node.left();
         let del_right = del_node.right();
@@ -1057,8 +1072,10 @@ where
             // one of the child is empty, or all of them empty
             let dir_child = (!del_right.is_null()).into();
             let imm_child = del_node.get_child(dir_child);
-            crate::trace_log!("del {del_node:?} direct with dir {dir_child:?} child {imm_child:p}",);
             if !imm_parent.is_null() {
+                crate::trace_log!(
+                    "del {del_node:?} direct with dir {dir_child:?} child {imm_child:p} parent {imm_parent:p}"
+                );
                 get_node_p!(imm_parent, P, Tag)
                     .set_child2::<P::Target>(del_dir, imm_child, imm_parent);
             } else {
@@ -1066,6 +1083,7 @@ where
                 if !imm_child.is_null() {
                     get_node_p!(imm_child, P, Tag).clear_parent();
                 }
+                crate::trace_log!("del {del_node:?} direct root replace {imm_child:?}");
             }
         } else {
             // node has two child, to the swap
