@@ -15,7 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-## [embed-avl 0.5.0] - 2026-11-05 
+## [embed-avl 0.6.0] - 2026-11-06
+
+### Fixed
+
+- avl: Fix remove() when tree is out of order.
+  we should not looking up the nodes again by cmp function.
+  Add notice in doc that all the changed nodes should be removed.
+
+## [embed-avl 0.5.0] - 2026-11-05
 
 ### Changed
 
