@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- VariousMap: impl Default
+
+## [embed-btree 0.5.0] - 2026-11-23
+
+### Added
+
 - VariousMap: Add `first_key_value()`, `last_key_value()`, `first_entry()` and `last_entry()`, `pop_first()`, `pop_last()`
 
 - VariousMap: Implement Debug for Entry, OccupiedEntry, VacantEntry
