@@ -209,6 +209,68 @@ impl<K: Ord, V> VariousMap<K, V> {
             _ => false,
         }
     }
+
+    #[inline]
+    pub fn first_key_value(&self) -> Option<(&K, &V)> {
+        match self {
+            Self::One(Some(item)) => Some((&item.0, &item.1)),
+            Self::Multi(map) => map.first_key_value(),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn last_key_value(&self) -> Option<(&K, &V)> {
+        match self {
+            Self::One(Some(item)) => Some((&item.0, &item.1)),
+            Self::Multi(map) => map.last_key_value(),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn first_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
+        match self {
+            Self::One(o) => {
+                if o.is_some() {
+                    Some(OccupiedEntry::One(o))
+                } else {
+                    None
+                }
+            }
+            Self::Multi(map) => Some(OccupiedEntry::Multi(map.first_entry().unwrap())),
+        }
+    }
+
+    #[inline]
+    pub fn last_entry(&mut self) -> Option<OccupiedEntry<'_, K, V>> {
+        match self {
+            Self::One(o) => {
+                if o.is_some() {
+                    Some(OccupiedEntry::One(o))
+                } else {
+                    None
+                }
+            }
+            Self::Multi(map) => Some(OccupiedEntry::Multi(map.last_entry().unwrap())),
+        }
+    }
+
+    #[inline]
+    pub fn pop_first(&mut self) -> Option<(K, V)> {
+        match self {
+            Self::One(o) => o.take(),
+            Self::Multi(map) => map.pop_first(),
+        }
+    }
+
+    #[inline]
+    pub fn pop_last(&mut self) -> Option<(K, V)> {
+        match self {
+            Self::One(o) => o.take(),
+            Self::Multi(map) => map.pop_last(),
+        }
+    }
 }
 
 impl<K, V> IntoIterator for VariousMap<K, V> {
@@ -576,7 +638,8 @@ impl<'a, K, V> DoubleEndedIterator for ValuesMut<'a, K, V> {
     }
 }
 
-pub enum Entry<'a, K: 'a, V: 'a> {
+#[derive(Debug)]
+pub enum Entry<'a, K: 'a + Ord, V: 'a> {
     Occupied(OccupiedEntry<'a, K, V>),
     Vacant(VacantEntry<'a, K, V>),
 }
@@ -584,6 +647,20 @@ pub enum Entry<'a, K: 'a, V: 'a> {
 pub enum OccupiedEntry<'a, K: 'a, V: 'a> {
     One(&'a mut Option<(K, V)>),
     Multi(btree_map::OccupiedEntry<'a, K, V>),
+}
+
+impl<'a, K, V> Debug for OccupiedEntry<'a, K, V>
+where
+    K: 'a + Ord + Debug,
+    V: 'a + Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::One(o) => o.fmt(f),
+            Self::Multi(ent) => ent.fmt(f),
+        }
+    }
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V>
@@ -657,6 +734,20 @@ where
 pub enum VacantEntry<'a, K, V> {
     One(VacantEntryOne<'a, K, V>),
     Multi(btree_map::VacantEntry<'a, K, V>),
+}
+
+impl<'a, K, V> Debug for VacantEntry<'a, K, V>
+where
+    K: 'a + Ord + Debug,
+    V: 'a + Debug,
+{
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::One(o) => write!(f, "VacantEntry key={:?}", o.key),
+            Self::Multi(ent) => ent.fmt(f),
+        }
+    }
 }
 
 struct VacantEntryOne<'a, K: 'a, V: 'a> {
@@ -1127,5 +1218,21 @@ mod tests {
         }
         assert_eq!(map.len(), 1);
         assert!(map.contains_key(&1));
+    }
+
+    #[test]
+    fn test_first() {
+        let mut map = VariousMap::<usize, usize>::new();
+        assert_eq!(map.first_key_value(), None);
+        assert!(map.first_entry().is_none());
+        map.insert(1, 1);
+        assert_eq!(map.first_key_value(), Some((&1, &1)));
+        let mut ent = map.first_entry().unwrap();
+        *ent.get_mut() = 2;
+        assert_eq!(map.first_key_value(), Some((&1, &2)));
+        map.insert(0, 0);
+        assert_eq!(map.first_key_value(), Some((&0, &0)));
+        assert_eq!(map.pop_first(), Some((0, 0)));
+        assert_eq!(map.first_key_value(), Some((&1, &2)));
     }
 }
