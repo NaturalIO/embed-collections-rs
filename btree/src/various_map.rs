@@ -21,6 +21,13 @@ pub enum VariousMap<K, V> {
     Multi(BTreeMap<K, V>),
 }
 
+impl<K: Ord, V> Default for VariousMap<K, V> {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<K: Ord, V> VariousMap<K, V> {
     #[inline]
     pub fn new() -> Self {
